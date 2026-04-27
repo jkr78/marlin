@@ -1,0 +1,15 @@
+# Binding-local build artifacts. The crate is excluded from the workspace,
+# so it gets its own Cargo.lock — treat it the same way fuzz/ does.
+Cargo.lock
+
+# uv's dev-env lockfile — downstream users install pre-built wheels, so this
+# only pins the local pytest/maturin environment. Same library-vs-binary
+# rationale as Cargo.lock above.
+uv.lock
+
+# Python bytecode + extension modules built in-place by `maturin develop`.
+__pycache__/
+.pytest_cache/
+*.pyc
+*.so
+*.abi3.so

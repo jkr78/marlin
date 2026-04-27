@@ -1,0 +1,9 @@
+{
+  "include": ["python", "tests", "examples"],
+  "extraPaths": ["python"],
+  "pythonVersion": "3.9",
+  "typeCheckingMode": "standard",
+  "venvPath": "../../",
+  "venv": ".venv",
+  "reportMissingImports": "error"
+}

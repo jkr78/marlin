@@ -1,0 +1,42 @@
+[package]
+name = "marlin-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+marlin-nmea-envelope = { path = "../crates/marlin-nmea-envelope" }
+marlin-ais = { path = "../crates/marlin-ais" }
+
+# Fuzz targets must be opt-out of the usual noise.
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ais_armor"
+path = "fuzz_targets/ais_armor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ais_bit_reader"
+path = "fuzz_targets/ais_bit_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ais_parser"
+path = "fuzz_targets/ais_parser.rs"
+test = false
+doc = false
+bench = false

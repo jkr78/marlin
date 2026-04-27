@@ -1,0 +1,19 @@
+[package]
+name = "marlin-ais"
+description = "Sans-I/O typed decoders for AIS (AIVDM/AIVDO) messages. Built on marlin-nmea-envelope."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["ais", "aivdm", "parser", "maritime", "vessel"]
+categories = ["parser-implementations"]
+
+[dependencies]
+marlin-nmea-envelope = { path = "../marlin-nmea-envelope", version = "0.1.0" }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

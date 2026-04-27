@@ -1,0 +1,23 @@
+[
+  {
+    "__class__": "Hdt",
+    "heading_true_deg": 99.9000015258789,
+    "talker": {
+      "__bytes__": "494e"
+    }
+  },
+  {
+    "__class__": "Vtg",
+    "course_magnetic_deg": 0.0,
+    "course_true_deg": 0.0,
+    "mode": {
+      "__enum__": "VtgMode",
+      "value": 1
+    },
+    "speed_kmh": 0.0,
+    "speed_knots": 0.0,
+    "talker": {
+      "__bytes__": "4750"
+    }
+  }
+]

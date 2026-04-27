@@ -1,0 +1,25 @@
+[package]
+name = "marlin-nmea-envelope"
+description = "Sans-I/O NMEA 0183 envelope parser: checksum, framing, TAG block recognition. Foundation for the marlin suite."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["nmea", "nmea-0183", "parser", "maritime", "sans-io"]
+categories = ["parser-implementations"]
+
+[features]
+default = []
+tracing = ["dep:tracing"]
+
+[dependencies]
+nom = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true, optional = true }
+
+[lints]
+workspace = true

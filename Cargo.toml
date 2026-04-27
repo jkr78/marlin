@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/marlin-nmea-envelope",
+    "crates/marlin-nmea-0183",
+    "crates/marlin-ais",
+]
+# The fuzz crate is not part of the main workspace because it requires
+# nightly rustc (cargo-fuzz uses unstable sanitizers). Run it via
+# `cargo +nightly fuzz run <target>`.
+exclude = ["fuzz", "bindings/python"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+authors = ["Jurdanas"]
+repository = "https://github.com/jurdanas/marlin"
+readme = "README.md"
+
+[workspace.dependencies]
+nom = { version = "8", default-features = false, features = ["alloc"] }
+bytes = "1"
+thiserror = "2"
+tracing = { version = "0.1", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

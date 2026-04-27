@@ -1,0 +1,27 @@
+[
+  {
+    "__class__": "Gga",
+    "altitude_m": 545.4000244140625,
+    "dgps_age_s": null,
+    "dgps_station_id": null,
+    "fix_quality": {
+      "__enum__": "GgaFixQuality",
+      "value": 1
+    },
+    "geoid_separation_m": 46.900001525878906,
+    "hdop": 0.8999999761581421,
+    "latitude_deg": 48.11729999999999,
+    "longitude_deg": 11.516666666666667,
+    "satellites_used": 8,
+    "talker": {
+      "__bytes__": "4750"
+    },
+    "utc": {
+      "__class__": "UtcTime",
+      "hour": 12,
+      "millisecond": 0,
+      "minute": 35,
+      "second": 19
+    }
+  }
+]

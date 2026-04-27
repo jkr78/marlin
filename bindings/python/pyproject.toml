@@ -1,0 +1,81 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "marlin"
+version = "0.1.0"
+description = "Sans-I/O NMEA 0183 + AIS (AIVDM/AIVDO) parser, Rust-backed"
+readme = "README.md"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "Jurdanas" }]
+requires-python = ">=3.9"
+keywords = [
+    "nmea",
+    "nmea-0183",
+    "ais",
+    "aivdm",
+    "aivdo",
+    "marine",
+    "maritime",
+    "gps",
+    "parser",
+    "sans-io",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Communications",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Networking",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "hypothesis>=6", "mypy>=1.8"]
+
+[project.urls]
+Homepage = "https://github.com/jkr78/marlin"
+Repository = "https://github.com/jkr78/marlin"
+Documentation = "https://github.com/jkr78/marlin/tree/main/bindings/python"
+Changelog = "https://github.com/jkr78/marlin/blob/main/bindings/python/CHANGELOG.md"
+Issues = "https://github.com/jkr78/marlin/issues"
+
+[tool.maturin]
+python-source = "python"
+module-name = "marlin._core"
+features = ["pyo3/extension-module"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+files = ["python/marlin", "tests", "examples"]
+
+[[tool.mypy.overrides]]
+module = ["conftest", "golden", "golden.*", "properties", "properties.*", "test_errors", "test_import", "unit", "unit.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+check_untyped_defs = false
+warn_return_any = false
+
+# Pytest's source uses Python 3.10+ match statements; with python_version="3.9"
+# mypy can't parse it. Skip following imports into pytest internals — we only
+# call its public API.
+[[tool.mypy.overrides]]
+module = ["_pytest.*"]
+follow_imports = "skip"

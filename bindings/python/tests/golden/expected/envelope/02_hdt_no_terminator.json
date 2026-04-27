@@ -1,0 +1,24 @@
+[
+  {
+    "checksum_ok": true,
+    "fields": [
+      {
+        "__bytes__": "3132332e34"
+      },
+      {
+        "__bytes__": "54"
+      }
+    ],
+    "raw": {
+      "__bytes__": "24494e4844542c3132332e342c542a3231"
+    },
+    "sentence_type": "HDT",
+    "start_delimiter": {
+      "__bytes__": "24"
+    },
+    "tag_block": null,
+    "talker": {
+      "__bytes__": "494e"
+    }
+  }
+]

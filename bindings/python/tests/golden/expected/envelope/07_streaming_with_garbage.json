@@ -1,0 +1,43 @@
+[
+  {
+    "checksum_ok": true,
+    "fields": [
+      {
+        "__bytes__": "41"
+      }
+    ],
+    "raw": {
+      "__bytes__": "2447504747412c412a3342"
+    },
+    "sentence_type": "GGA",
+    "start_delimiter": {
+      "__bytes__": "24"
+    },
+    "tag_block": null,
+    "talker": {
+      "__bytes__": "4750"
+    }
+  },
+  {
+    "checksum_ok": true,
+    "fields": [
+      {
+        "__bytes__": "312e30"
+      },
+      {
+        "__bytes__": "54"
+      }
+    ],
+    "raw": {
+      "__bytes__": "24494e4844542c312e302c542a3234"
+    },
+    "sentence_type": "HDT",
+    "start_delimiter": {
+      "__bytes__": "24"
+    },
+    "tag_block": null,
+    "talker": {
+      "__bytes__": "494e"
+    }
+  }
+]

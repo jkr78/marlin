@@ -1,0 +1,22 @@
+[package]
+name = "marlin-nmea-0183"
+description = "Sans-I/O typed decoders for NMEA 0183 sentences (GGA, VTG, HDT, PSXN, PRDID). Built on marlin-nmea-envelope."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["nmea", "nmea-0183", "parser", "maritime", "gnss"]
+categories = ["parser-implementations"]
+
+[dependencies]
+marlin-nmea-envelope = { path = "../marlin-nmea-envelope", version = "0.1.0" }
+thiserror = { workspace = true }
+# Pure-Rust transcendental math (sin/cos/asin) for no_std builds.
+# Used by the PSXN decoder for sine-encoded roll/pitch recovery.
+libm = "0.2"
+
+[lints]
+workspace = true

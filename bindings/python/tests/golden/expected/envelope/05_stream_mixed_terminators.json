@@ -1,0 +1,92 @@
+[
+  {
+    "checksum_ok": true,
+    "fields": [
+      {
+        "__bytes__": "31"
+      },
+      {
+        "__bytes__": "32"
+      },
+      {
+        "__bytes__": "33"
+      }
+    ],
+    "raw": {
+      "__bytes__": "2447504747412c312c322c332a3441"
+    },
+    "sentence_type": "GGA",
+    "start_delimiter": {
+      "__bytes__": "24"
+    },
+    "tag_block": null,
+    "talker": {
+      "__bytes__": "4750"
+    }
+  },
+  {
+    "checksum_ok": true,
+    "fields": [
+      {
+        "__bytes__": "39392e39"
+      },
+      {
+        "__bytes__": "54"
+      }
+    ],
+    "raw": {
+      "__bytes__": "24494e4844542c39392e392c542a3143"
+    },
+    "sentence_type": "HDT",
+    "start_delimiter": {
+      "__bytes__": "24"
+    },
+    "tag_block": null,
+    "talker": {
+      "__bytes__": "494e"
+    }
+  },
+  {
+    "checksum_ok": true,
+    "fields": [
+      {
+        "__bytes__": "302e30"
+      },
+      {
+        "__bytes__": "54"
+      },
+      {
+        "__bytes__": "302e30"
+      },
+      {
+        "__bytes__": "4d"
+      },
+      {
+        "__bytes__": "302e30"
+      },
+      {
+        "__bytes__": "4e"
+      },
+      {
+        "__bytes__": "302e30"
+      },
+      {
+        "__bytes__": "4b"
+      },
+      {
+        "__bytes__": "41"
+      }
+    ],
+    "raw": {
+      "__bytes__": "2447505654472c302e302c542c302e302c4d2c302e302c4e2c302e302c4b2c412a3233"
+    },
+    "sentence_type": "VTG",
+    "start_delimiter": {
+      "__bytes__": "24"
+    },
+    "tag_block": null,
+    "talker": {
+      "__bytes__": "4750"
+    }
+  }
+]
