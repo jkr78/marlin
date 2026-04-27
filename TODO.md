@@ -88,7 +88,7 @@ track deliverables (not conversational state).
 - [x] **Type 19** — `ExtendedPositionReportB` (Class B extended position report with static tail: name, ship type, dimensions, EPFD). 312 bits, ITU-R M.1371-5 §5.3.19
 - [x] **Type 24A / 24B** — `StaticDataB24A` + `StaticDataB24B` + `decode_static_data_b` dispatcher (routes on part-number field)
 - [x] Shared `Dimensions` + `EpfdType` + `trim_ais_string` helpers
-- [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/18/24A/24B to typed variants, everything else (incl. Type 19, reserved Type 24 parts) to `Other { msg_type, raw_payload, total_bits }`
+- [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/18/19/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
 - [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — per-channel per-sequential-id fragment buffers; in-order enforcement; channel-mismatch detection; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`feed_fragment_at`/`tick(now_ms)` (caller owns the clock — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
 - [x] **`AisFragmentParser<P>` generic wrapper + `Parser` enum** — mirrors `Nmea0183Parser` pattern; composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `next_message_at(now_ms)` variant drives the reassembler clock for time-based expiry
 - [x] **cargo-fuzz targets** (PRD §F1) — `ais_armor`, `ais_bit_reader`, `ais_parser`. 15 s smoke runs each: 9 M / 1.5 M / 1.25 M executions, zero panics. `just fuzz-smoke-all` and `just fuzz-release` wrap up the set
@@ -128,7 +128,7 @@ track deliverables (not conversational state).
 - [x] Per-crate `README.md` (envelope, nmea-0183, ais)
 - [x] `justfile` for common recipes
 - [x] GitHub Actions CI (build + test + clippy + fmt + doc + MSRV 1.82 + 30 s fuzz smoke)
-- [ ] `CHANGELOG.md` starting at 0.1.0 (PRD §10.2)
+- [ ] Per-crate `CHANGELOG.md` for the Rust crates (envelope, nmea-0183, ais), starting at 0.1.0 (PRD §10.2). The Python binding's CHANGELOG already lives at `bindings/python/CHANGELOG.md`.
 - [ ] `docs.rs` metadata (`package.metadata.docs.rs`) for feature-aware docs at publish time
 
 ---
@@ -137,6 +137,8 @@ track deliverables (not conversational state).
 
 ### Done
 
+#### Core surface
+
 - [x] Scaffold: PyO3 0.27 + maturin, `cdylib` named `_core`
 - [x] Error hierarchy: `MarlinError` → `{Envelope,Decode,Ais,Reassembly}Error`
 - [x] Envelope: `RawSentence`, `OneShotParser`, `StreamingParser`, `parse()`
@@ -144,27 +146,33 @@ track deliverables (not conversational state).
       enums, `DecodeOptions`, per-sentence extension-point functions
 - [x] AIS typed: `AisParser` (three clock modes), `AisMessage`, all
       message variants, `BitReader`
-- [x] `.pyi` stubs, `py.typed`, mypy --strict CI gate
-- [x] pytest unit + golden round-trip + hypothesis panic-freedom
-- [x] CI: wheels for Linux x86_64/aarch64, macOS universal2, Windows x86_64
-- [x] Six example programs (PRD §10 deliverable 7 + stdin reader + live AIS dashboard)
 
-### Done (continued)
+#### Ergonomics
 
 - [x] Context manager support (`__enter__` / `__exit__`) on every parser
       (`with OneShotParser() as p:`, `with StreamingParser() as p:`,
       `with Nmea0183Parser.streaming() as p:`, `with AisParser.streaming() as p:`)
 - [x] Async iterator helpers in `marlin.aio`: `aiter_sentences`,
       `aiter_nmea_messages`, `aiter_ais_messages` for `asyncio.StreamReader`
-- [x] `bindings/python/CHANGELOG.md` following Keep-a-Changelog format
-
-### Done (continued)
-
 - [x] `@dataclass`-style frozen mirrors in `marlin.dataclasses` with
       `to_dataclass(msg)` dispatcher — JSON / msgspec / dataclasses-asdict
       friendly. Covers all typed runtime classes: envelope RawSentence, NMEA
       Gga/Vtg/Hdt/Psxn/Prdid/Unknown, AIS message variants, and AisMessage
       wrapper. Enums serialize as integer values.
+
+#### Quality + tooling
+
+- [x] `.pyi` stubs, `py.typed`, mypy --strict CI gate
+- [x] pytest unit + golden round-trip + hypothesis panic-freedom
+- [x] CI: wheels for Linux x86_64/aarch64, macOS universal2, Windows x86_64
+
+#### Documentation + examples
+
+- [x] Six example programs (PRD §10 deliverable 7 + stdin reader + live AIS dashboard)
+- [x] `bindings/python/GUIDE.md` — usage guide covering streaming, asyncio
+      integration, per-protocol filtering, context managers, and dataclass
+      serialization
+- [x] `bindings/python/CHANGELOG.md` following Keep-a-Changelog format
 
 ### Deferred (post-v0.1)
 
