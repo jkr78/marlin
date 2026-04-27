@@ -23,7 +23,7 @@ unit-test byte slices.
 ### NMEA 0183 (non-AIS)
 
 Typed decoders for these sentence types, regardless of talker prefix
-(`GP`, `IN`, `HE`, etc.):
+(`GP` for GPS-only, `GN` for multi-GNSS fixes, `IN`, `HE`, etc.):
 
 - **GGA** — GPS fix data: time, position, fix quality, satellites,
   HDOP, altitude, geoid separation, DGPS metadata
