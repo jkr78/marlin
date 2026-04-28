@@ -16,7 +16,7 @@ edition = "2021"
 rust-version = "1.82"
 license = "MIT OR Apache-2.0"
 authors = ["Jurdanas"]
-repository = "https://github.com/jurdanas/marlin"
+repository = "https://github.com/jkr78/marlin"
 readme = "README.md"
 
 [workspace.dependencies]
