@@ -13,9 +13,9 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
-# cargo-fuzz runtime artifacts (don't commit crashes or the in-progress
-# corpus — release fuzzing will curate a small regression corpus later,
-# per PRD §F3)
+# cargo-fuzz runtime artifacts. The persistent regression corpus lives
+# at fuzz/seeds/ (PRD §F3); fuzz/corpus/ is the libfuzzer working set
+# and is re-seeded from fuzz/seeds/ on every `just fuzz` run.
 fuzz/artifacts/
 fuzz/corpus/
 fuzz/Cargo.lock

@@ -62,10 +62,20 @@ ci: fmt-check build test lint doc
 fuzz-build:
     cd fuzz && cargo +nightly fuzz build
 
+# Bootstrap the libfuzzer working corpus from the persistent regression
+# seeds at fuzz/seeds/<target>/. Idempotent: cp -n preserves any better
+# minimizations libfuzzer may have produced since the seed was curated.
+# Auto-invoked by `just fuzz`. PRD §F3.
+fuzz-bootstrap target="envelope":
+    @mkdir -p fuzz/corpus/{{target}}
+    @cp -n fuzz/seeds/{{target}}/* fuzz/corpus/{{target}}/ 2>/dev/null || :
+
 # Run a single fuzz target. `target` is one of `envelope`, `ais_armor`,
 # `ais_bit_reader`, `ais_parser`. Duration is in seconds (default 60).
+# Bootstraps the corpus from fuzz/seeds/ first so the regression suite
+# is always part of the working set.
 # Usage: `just fuzz envelope 300`, `just fuzz ais_parser`.
-fuzz target="envelope" duration=fuzz_time:
+fuzz target="envelope" duration=fuzz_time: (fuzz-bootstrap target)
     cd fuzz && cargo +nightly fuzz run {{target}} -- -max_total_time={{duration}} -print_final_stats=1
 
 # Smoke-test every target for 30 s each. Roughly what CI does per push.
