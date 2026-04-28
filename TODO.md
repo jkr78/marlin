@@ -176,7 +176,7 @@ track deliverables (not conversational state).
 
 ### Deferred (post-v0.1)
 
-- [ ] PyPI publish (name reservation, release workflow)
+- [x] PyPI publish (name reservation, release workflow). Distribution name: `marlin-py` (the bare `marlin` was taken by an unrelated project). Published 2026-04-28: [marlin-py 0.1.0 on PyPI](https://pypi.org/project/marlin-py/). Trusted Publishing via GitHub OIDC; future tag pushes auto-publish through `.github/workflows/python-bindings.yml`
 - [ ] JSON / msgspec helper submodule
 - [ ] Structure-aware fuzzing integration (once Rust crates gain
       `arbitrary::Arbitrary` derives)
@@ -195,7 +195,7 @@ Must complete before publishing to crates.io:
 - [x] MSRV double-check: whole workspace compiles on 1.82 (verified 2026-04-28)
 - [x] Curate fuzz corpus down to a small regression suite (PRD §F3); commit it. Lives at `fuzz/seeds/<target>/`; auto-bootstrapped on every `just fuzz`
 - [ ] Resolve remaining open API questions (checksum policy, `Error::Truncated`) so we don't ship with breaking changes imminent
-- [ ] Reserve final crate names on crates.io (currently `marlin-*`)
+- [x] Reserve final crate names on crates.io. Published 2026-04-28: [marlin-nmea-envelope 0.1.0](https://crates.io/crates/marlin-nmea-envelope), [marlin-nmea-0183 0.1.0](https://crates.io/crates/marlin-nmea-0183), [marlin-ais 0.1.0](https://crates.io/crates/marlin-ais)
 - [x] Tag `v0.1.0`, draft release notes from commit history. **Tag created locally, not pushed; awaiting fuzz-release pass.**
 
 ---
