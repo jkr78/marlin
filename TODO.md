@@ -187,7 +187,7 @@ track deliverables (not conversational state).
 
 Must complete before publishing to crates.io:
 
-- [ ] One CPU-hour fuzz run on each of `envelope`, `ais_armor`, `ais_bit_reader`, `ais_parser`, zero findings (PRD §F2). Run: `just fuzz-release`. **Pending — gates the v0.1.0 tag push.**
+- [x] One CPU-hour fuzz run on each of `envelope`, `ais_armor`, `ais_bit_reader`, `ais_parser`, zero findings (PRD §F2). Completed 2026-04-28: 2.69 B total executions across the four targets (envelope 306 M, ais_armor 1.79 B, ais_bit_reader 341 M, ais_parser 251 M), zero panics, zero sanitizer hits, zero artifacts. Re-run with `just fuzz-release` before any future tag push.
 - [ ] Replace synthetic fixtures with ≥ 5 real captures per sentence / message type (PRD §G3). Document source of each in fixtures README
 - [ ] **Validate PSXN decoder against real captures.** Implementation matches legacy Python semantics but hasn't been cross-checked against a live Seapath/MRU feed. Candidates: `$PSXN,10,...` with known roll/pitch/heave; `$PSXN,11,...` quality-0 variant; any TCMS source using an `sqh` layout
 - [ ] **Validate PRDID dialects against real captures.** Dialect orderings come from public integration guides and TSS/Teledyne convention reading. Need live samples from each hardware type
