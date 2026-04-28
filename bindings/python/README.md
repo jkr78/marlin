@@ -14,13 +14,17 @@ package; mypy `--strict` is clean across the entire `python/marlin/`, `tests/`, 
 
 ## Install
 
+The PyPI distribution name is `marlin-py`; the Python import name stays
+plain `marlin`.
+
 ```bash
-# Local development — build the extension in-place.
+# From PyPI (once the v0.1.0 wheels publish)
+pip install marlin-py
+
+# Local development — build the extension in-place
 cd bindings/python
 maturin develop
 ```
-
-PyPI publish is deferred to post-v0.1. No wheel is currently on PyPI.
 
 ## Quickstart: envelope
 
