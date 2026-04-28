@@ -128,8 +128,8 @@ track deliverables (not conversational state).
 - [x] Per-crate `README.md` (envelope, nmea-0183, ais)
 - [x] `justfile` for common recipes
 - [x] GitHub Actions CI (build + test + clippy + fmt + doc + MSRV 1.82 + 30 s fuzz smoke)
-- [ ] Per-crate `CHANGELOG.md` for the Rust crates (envelope, nmea-0183, ais), starting at 0.1.0 (PRD §10.2). The Python binding's CHANGELOG already lives at `bindings/python/CHANGELOG.md`.
-- [ ] `docs.rs` metadata (`package.metadata.docs.rs`) for feature-aware docs at publish time
+- [x] Per-crate `CHANGELOG.md` for the Rust crates (envelope, nmea-0183, ais), starting at 0.1.0 (PRD §10.2). The Python binding's CHANGELOG already lives at `bindings/python/CHANGELOG.md`.
+- [x] `docs.rs` metadata (`package.metadata.docs.rs`) for feature-aware docs at publish time
 
 ---
 
@@ -187,16 +187,16 @@ track deliverables (not conversational state).
 
 Must complete before publishing to crates.io:
 
-- [ ] One CPU-hour fuzz run on each of `envelope`, `ais_armor`, `ais_bit_reader`, `ais_parser`, zero findings (PRD §F2). Run: `just fuzz-release`
+- [ ] One CPU-hour fuzz run on each of `envelope`, `ais_armor`, `ais_bit_reader`, `ais_parser`, zero findings (PRD §F2). Run: `just fuzz-release`. **Pending — gates the v0.1.0 tag push.**
 - [ ] Replace synthetic fixtures with ≥ 5 real captures per sentence / message type (PRD §G3). Document source of each in fixtures README
 - [ ] **Validate PSXN decoder against real captures.** Implementation matches legacy Python semantics but hasn't been cross-checked against a live Seapath/MRU feed. Candidates: `$PSXN,10,...` with known roll/pitch/heave; `$PSXN,11,...` quality-0 variant; any TCMS source using an `sqh` layout
 - [ ] **Validate PRDID dialects against real captures.** Dialect orderings come from public integration guides and TSS/Teledyne convention reading. Need live samples from each hardware type
 - [ ] Validate AIS decoders against real AIVDM captures — specifically lat/lon sign handling (PRD §A4) and 27/28-bit signed coordinate edge cases
-- [ ] MSRV double-check: whole workspace compiles on 1.82
-- [ ] Curate fuzz corpus down to a small regression suite (PRD §F3); commit it
+- [x] MSRV double-check: whole workspace compiles on 1.82 (verified 2026-04-28)
+- [x] Curate fuzz corpus down to a small regression suite (PRD §F3); commit it. Lives at `fuzz/seeds/<target>/`; auto-bootstrapped on every `just fuzz`
 - [ ] Resolve remaining open API questions (checksum policy, `Error::Truncated`) so we don't ship with breaking changes imminent
 - [ ] Reserve final crate names on crates.io (currently `marlin-*`)
-- [ ] Tag `v0.1.0`, draft release notes from commit history
+- [x] Tag `v0.1.0`, draft release notes from commit history. **Tag created locally, not pushed; awaiting fuzz-release pass.**
 
 ---
 

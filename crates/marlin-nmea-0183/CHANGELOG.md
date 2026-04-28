@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-28
+
 ### Added
 
 - Initial release of `marlin-nmea-0183` — typed sans-I/O decoders for
