@@ -2,13 +2,13 @@
 
 use marlin_nmea_envelope::RawSentence;
 
-use crate::sentences::{GgaData, HdtData, PrdidData, PsxnData, VtgData};
+use crate::sentences::{GgaData, GllData, HdtData, PrdidData, PsxnData, RmcData, VtgData};
 
 /// A typed NMEA 0183 message.
 ///
-/// `#[non_exhaustive]` so future sentence-type support (RMC, GLL, GSA,
-/// VTG, PSXN, PRDID, ...) lands without a breaking change. Consumers
-/// must include a wildcard arm in their matches.
+/// `#[non_exhaustive]` so future sentence-type support (GSA, GSV, ZDA,
+/// DBT, MWV, ...) lands without a breaking change. Consumers must
+/// include a wildcard arm in their matches.
 ///
 /// The variant for unrecognized sentences is [`Self::Unknown`], which
 /// carries the original [`RawSentence`] — callers can log, skip, or
@@ -18,8 +18,13 @@ use crate::sentences::{GgaData, HdtData, PrdidData, PsxnData, VtgData};
 pub enum Nmea0183Message<'a> {
     /// GGA — Global Positioning System Fix Data.
     Gga(GgaData),
+    /// GLL — Geographic Position, Latitude/Longitude.
+    Gll(GllData),
     /// HDT — True Heading.
     Hdt(HdtData),
+    /// RMC — Recommended Minimum Specific GNSS Data (single-sentence
+    /// carrier of position + velocity + UTC date/time).
+    Rmc(RmcData),
     /// VTG — Course Over Ground and Ground Speed.
     Vtg(VtgData),
     /// PSXN — Kongsberg-family proprietary motion sentence. The

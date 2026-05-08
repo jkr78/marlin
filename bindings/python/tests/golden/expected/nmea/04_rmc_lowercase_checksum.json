@@ -1,9 +1,32 @@
 [
   {
-    "__class__": "Unknown",
-    "sentence_type": "RMC",
+    "__class__": "Rmc",
+    "course_true_deg": 84.4000015258789,
+    "date": {
+      "__class__": "UtcDate",
+      "day": 23,
+      "month": 3,
+      "year_yy": 94
+    },
+    "latitude_deg": 48.11729999999999,
+    "longitude_deg": 11.516666666666667,
+    "magnetic_variation_deg": -3.0999999046325684,
+    "mode": null,
+    "nav_status": null,
+    "speed_knots": 22.399999618530273,
+    "status": {
+      "__enum__": "DataStatus",
+      "value": 0
+    },
     "talker": {
       "__bytes__": "4750"
+    },
+    "utc": {
+      "__class__": "UtcTime",
+      "hour": 12,
+      "millisecond": 0,
+      "minute": 35,
+      "second": 19
     }
   }
 ]

@@ -10,14 +10,17 @@ use pyo3::types::{PyBytes, PyModule};
 use pyo3::wrap_pyfunction;
 
 use marlin_nmea_0183::{
-    decode as rust_decode, decode_gga as rust_decode_gga, decode_hdt as rust_decode_hdt,
-    decode_prdid as rust_decode_prdid, decode_psxn as rust_decode_psxn,
+    decode as rust_decode, decode_gga as rust_decode_gga, decode_gll as rust_decode_gll,
+    decode_hdt as rust_decode_hdt, decode_prdid as rust_decode_prdid,
+    decode_psxn as rust_decode_psxn, decode_rmc as rust_decode_rmc,
     decode_vtg as rust_decode_vtg, decode_with as rust_decode_with,
-    DecodeOptions as RustDecodeOptions, GgaData, GgaFixQuality as RustGgaFixQuality, HdtData,
-    Nmea0183Error, Nmea0183Message, Nmea0183Parser as RustNmea0183, PrdidData,
-    PrdidDialect as RustPrdidDialect, PrdidPitchRollHeading as RustPrdidPitchRollHeading,
+    DataStatus as RustDataStatus, DecodeOptions as RustDecodeOptions, GgaData,
+    GgaFixQuality as RustGgaFixQuality, GllData, HdtData, Nmea0183Error, Nmea0183Message,
+    Nmea0183Parser as RustNmea0183, PrdidData, PrdidDialect as RustPrdidDialect,
+    PrdidPitchRollHeading as RustPrdidPitchRollHeading,
     PrdidRollPitchHeading as RustPrdidRollPitchHeading, PsxnData, PsxnLayout as RustPsxnLayout,
-    PsxnSlot as RustPsxnSlot, UtcTime as RustUtcTime, VtgData, VtgMode as RustVtgMode,
+    PsxnSlot as RustPsxnSlot, RmcData, RmcNavStatus as RustRmcNavStatus,
+    UtcDate as RustUtcDate, UtcTime as RustUtcTime, VtgData, VtgMode as RustVtgMode,
 };
 use marlin_nmea_envelope::{OneShot, Streaming};
 
@@ -112,6 +115,64 @@ impl From<RustVtgMode> for PyVtgMode {
     }
 }
 
+/// A/V validity status carried by RMC and GLL (mirrors `DataStatus`).
+///
+/// `DataStatus::Other(u8)` collapses to `VOID` for v0.1 — fieldless
+/// Python enum cannot carry the raw byte. Same trade-off as
+/// `PyGgaFixQuality` and `PyVtgMode`.
+#[pyclass(name = "DataStatus", eq, eq_int, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyDataStatus {
+    #[pyo3(name = "ACTIVE")]
+    Active = 0,
+    #[pyo3(name = "VOID")]
+    Void = 1,
+}
+
+impl From<RustDataStatus> for PyDataStatus {
+    // `Other(u8)` collapses to `Void` via the wildcard — fieldless Python
+    // enum cannot carry the raw byte. Defaulting to `Void` is the
+    // safety-conservative choice since callers reject non-Active fixes.
+    #[allow(clippy::match_same_arms)]
+    fn from(v: RustDataStatus) -> Self {
+        match v {
+            RustDataStatus::Active => Self::Active,
+            RustDataStatus::Void => Self::Void,
+            _ => Self::Void,
+        }
+    }
+}
+
+/// RMC nav-status indicator (NMEA 4.10+, mirrors `RmcNavStatus`).
+///
+/// `RmcNavStatus::Other(u8)` collapses to `NOT_VALID`; same fieldless-
+/// enum information loss as the other discriminator types here.
+#[pyclass(name = "RmcNavStatus", eq, eq_int, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyRmcNavStatus {
+    #[pyo3(name = "SAFE")]
+    Safe = 0,
+    #[pyo3(name = "CAUTION")]
+    Caution = 1,
+    #[pyo3(name = "UNSAFE")]
+    Unsafe = 2,
+    #[pyo3(name = "NOT_VALID")]
+    NotValid = 3,
+}
+
+impl From<RustRmcNavStatus> for PyRmcNavStatus {
+    #[allow(clippy::match_same_arms)]
+    fn from(v: RustRmcNavStatus) -> Self {
+        match v {
+            RustRmcNavStatus::Safe => Self::Safe,
+            RustRmcNavStatus::Caution => Self::Caution,
+            RustRmcNavStatus::Unsafe => Self::Unsafe,
+            RustRmcNavStatus::NotValid => Self::NotValid,
+            _ => Self::NotValid,
+        }
+    }
+}
+
 // ---------- UtcTime ----------
 
 /// Frozen UTC time-of-day value (mirrors `UtcTime`).
@@ -155,6 +216,53 @@ impl From<RustUtcTime> for PyUtcTime {
             minute: t.minute,
             second: t.second,
             millisecond: t.millisecond,
+        }
+    }
+}
+
+// ---------- UtcDate ----------
+
+/// Frozen UTC calendar date carried by RMC's `ddmmyy` field
+/// (mirrors `UtcDate`).
+///
+/// `year_yy` is the raw two-digit year — callers apply their own
+/// century-resolution rule (the spec does not pin a pivot year).
+#[pyclass(name = "UtcDate", frozen, eq, hash, module = "marlin.nmea")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PyUtcDate {
+    #[pyo3(get)]
+    day: u8,
+    #[pyo3(get)]
+    month: u8,
+    #[pyo3(get)]
+    year_yy: u8,
+}
+
+#[pymethods]
+impl PyUtcDate {
+    #[new]
+    fn new(day: u8, month: u8, year_yy: u8) -> Self {
+        Self {
+            day,
+            month,
+            year_yy,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "UtcDate({:02}-{:02}-{:02})",
+            self.day, self.month, self.year_yy
+        )
+    }
+}
+
+impl From<RustUtcDate> for PyUtcDate {
+    fn from(d: RustUtcDate) -> Self {
+        Self {
+            day: d.day,
+            month: d.month,
+            year_yy: d.year_yy,
         }
     }
 }
@@ -414,6 +522,228 @@ impl From<HdtData> for PyHdt {
         Self {
             talker: d.talker,
             heading_true_deg: d.heading_true_deg,
+        }
+    }
+}
+
+// ---------- Rmc ----------
+
+/// Frozen `$__RMC` message (mirrors `RmcData`).
+///
+/// Single-sentence carrier of UTC time + date + position + speed +
+/// course + magnetic variation. Safety-critical consumers should
+/// reject [`Self::status`] of `DataStatus.VOID` before using the
+/// position or velocity values.
+#[pyclass(name = "Rmc", frozen, module = "marlin.nmea")]
+#[derive(Clone, Debug)]
+pub struct PyRmc {
+    talker: Option<[u8; 2]>,
+    utc: Option<PyUtcTime>,
+    status: PyDataStatus,
+    latitude_deg: Option<f64>,
+    longitude_deg: Option<f64>,
+    speed_knots: Option<f32>,
+    course_true_deg: Option<f32>,
+    date: Option<PyUtcDate>,
+    magnetic_variation_deg: Option<f32>,
+    mode: Option<PyVtgMode>,
+    nav_status: Option<PyRmcNavStatus>,
+}
+
+#[pymethods]
+impl PyRmc {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        talker: Option<&[u8]>,
+        utc: Option<PyUtcTime>,
+        status: PyDataStatus,
+        latitude_deg: Option<f64>,
+        longitude_deg: Option<f64>,
+        speed_knots: Option<f32>,
+        course_true_deg: Option<f32>,
+        date: Option<PyUtcDate>,
+        magnetic_variation_deg: Option<f32>,
+        mode: Option<PyVtgMode>,
+        nav_status: Option<PyRmcNavStatus>,
+    ) -> PyResult<Self> {
+        let talker = normalize_talker(talker)?;
+        Ok(Self {
+            talker,
+            utc,
+            status,
+            latitude_deg,
+            longitude_deg,
+            speed_knots,
+            course_true_deg,
+            date,
+            magnetic_variation_deg,
+            mode,
+            nav_status,
+        })
+    }
+
+    #[getter]
+    fn talker<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.talker.map(|t| PyBytes::new(py, &t))
+    }
+    #[getter]
+    fn utc(&self) -> Option<PyUtcTime> {
+        self.utc.clone()
+    }
+    #[getter]
+    fn status(&self) -> PyDataStatus {
+        self.status
+    }
+    #[getter]
+    fn latitude_deg(&self) -> Option<f64> {
+        self.latitude_deg
+    }
+    #[getter]
+    fn longitude_deg(&self) -> Option<f64> {
+        self.longitude_deg
+    }
+    #[getter]
+    fn speed_knots(&self) -> Option<f32> {
+        self.speed_knots
+    }
+    #[getter]
+    fn course_true_deg(&self) -> Option<f32> {
+        self.course_true_deg
+    }
+    #[getter]
+    fn date(&self) -> Option<PyUtcDate> {
+        self.date.clone()
+    }
+    #[getter]
+    fn magnetic_variation_deg(&self) -> Option<f32> {
+        self.magnetic_variation_deg
+    }
+    #[getter]
+    fn mode(&self) -> Option<PyVtgMode> {
+        self.mode
+    }
+    #[getter]
+    fn nav_status(&self) -> Option<PyRmcNavStatus> {
+        self.nav_status
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Rmc(talker={}, status={:?}, lat={:?}, lon={:?}, sog_kn={:?}, cog_true={:?})",
+            repr_talker(self.talker),
+            self.status,
+            self.latitude_deg,
+            self.longitude_deg,
+            self.speed_knots,
+            self.course_true_deg,
+        )
+    }
+}
+
+impl From<RmcData> for PyRmc {
+    fn from(d: RmcData) -> Self {
+        Self {
+            talker: d.talker,
+            utc: d.utc.map(PyUtcTime::from),
+            status: d.status.into(),
+            latitude_deg: d.latitude_deg,
+            longitude_deg: d.longitude_deg,
+            speed_knots: d.speed_knots,
+            course_true_deg: d.course_true_deg,
+            date: d.date.map(PyUtcDate::from),
+            magnetic_variation_deg: d.magnetic_variation_deg,
+            mode: d.mode.map(PyVtgMode::from),
+            nav_status: d.nav_status.map(PyRmcNavStatus::from),
+        }
+    }
+}
+
+// ---------- Gll ----------
+
+/// Frozen `$__GLL` message (mirrors `GllData`).
+///
+/// Position-only sentence with UTC time and an A/V validity status.
+/// Safety-critical consumers should reject `DataStatus.VOID` before
+/// using the position values.
+#[pyclass(name = "Gll", frozen, module = "marlin.nmea")]
+#[derive(Clone, Debug)]
+pub struct PyGll {
+    talker: Option<[u8; 2]>,
+    latitude_deg: Option<f64>,
+    longitude_deg: Option<f64>,
+    utc: Option<PyUtcTime>,
+    status: PyDataStatus,
+    mode: Option<PyVtgMode>,
+}
+
+#[pymethods]
+impl PyGll {
+    #[new]
+    fn new(
+        talker: Option<&[u8]>,
+        latitude_deg: Option<f64>,
+        longitude_deg: Option<f64>,
+        utc: Option<PyUtcTime>,
+        status: PyDataStatus,
+        mode: Option<PyVtgMode>,
+    ) -> PyResult<Self> {
+        let talker = normalize_talker(talker)?;
+        Ok(Self {
+            talker,
+            latitude_deg,
+            longitude_deg,
+            utc,
+            status,
+            mode,
+        })
+    }
+
+    #[getter]
+    fn talker<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.talker.map(|t| PyBytes::new(py, &t))
+    }
+    #[getter]
+    fn latitude_deg(&self) -> Option<f64> {
+        self.latitude_deg
+    }
+    #[getter]
+    fn longitude_deg(&self) -> Option<f64> {
+        self.longitude_deg
+    }
+    #[getter]
+    fn utc(&self) -> Option<PyUtcTime> {
+        self.utc.clone()
+    }
+    #[getter]
+    fn status(&self) -> PyDataStatus {
+        self.status
+    }
+    #[getter]
+    fn mode(&self) -> Option<PyVtgMode> {
+        self.mode
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Gll(talker={}, status={:?}, lat={:?}, lon={:?})",
+            repr_talker(self.talker),
+            self.status,
+            self.latitude_deg,
+            self.longitude_deg,
+        )
+    }
+}
+
+impl From<GllData> for PyGll {
+    fn from(d: GllData) -> Self {
+        Self {
+            talker: d.talker,
+            latitude_deg: d.latitude_deg,
+            longitude_deg: d.longitude_deg,
+            utc: d.utc.map(PyUtcTime::from),
+            status: d.status.into(),
+            mode: d.mode.map(PyVtgMode::from),
         }
     }
 }
@@ -1093,8 +1423,10 @@ impl PyNmea0183Parser {
 /// underlying envelope buffer borrow open.
 enum OwnedMessage {
     Gga(GgaData),
-    Vtg(VtgData),
+    Gll(GllData),
     Hdt(HdtData),
+    Rmc(RmcData),
+    Vtg(VtgData),
     Psxn(PsxnData),
     Prdid(PrdidData),
     Unknown {
@@ -1110,8 +1442,10 @@ enum OwnedMessage {
 fn owned_message_from_borrowed(msg: Nmea0183Message<'_>) -> OwnedMessage {
     match msg {
         Nmea0183Message::Gga(d) => OwnedMessage::Gga(d),
-        Nmea0183Message::Vtg(d) => OwnedMessage::Vtg(d),
+        Nmea0183Message::Gll(d) => OwnedMessage::Gll(d),
         Nmea0183Message::Hdt(d) => OwnedMessage::Hdt(d),
+        Nmea0183Message::Rmc(d) => OwnedMessage::Rmc(d),
+        Nmea0183Message::Vtg(d) => OwnedMessage::Vtg(d),
         Nmea0183Message::Psxn(d) => OwnedMessage::Psxn(d),
         Nmea0183Message::Prdid(d) => OwnedMessage::Prdid(d),
         Nmea0183Message::Unknown(raw) => OwnedMessage::Unknown {
@@ -1126,8 +1460,10 @@ impl OwnedMessage {
     fn into_pyany(self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match self {
             Self::Gga(d) => Py::new(py, PyGga::from(d))?.into_any(),
-            Self::Vtg(d) => Py::new(py, PyVtg::from(d))?.into_any(),
+            Self::Gll(d) => Py::new(py, PyGll::from(d))?.into_any(),
             Self::Hdt(d) => Py::new(py, PyHdt::from(d))?.into_any(),
+            Self::Rmc(d) => Py::new(py, PyRmc::from(d))?.into_any(),
+            Self::Vtg(d) => Py::new(py, PyVtg::from(d))?.into_any(),
             Self::Psxn(d) => Py::new(py, PyPsxn::from(d))?.into_any(),
             Self::Prdid(d) => Py::new(py, PyPrdid::from(d))?.into_any(),
             Self::Unknown {
@@ -1252,6 +1588,24 @@ fn py_decode_hdt(raw: &PyRawSentence) -> PyResult<PyHdt> {
 }
 
 #[pyfunction]
+#[pyo3(name = "decode_rmc")]
+fn py_decode_rmc(raw: &PyRawSentence) -> PyResult<PyRmc> {
+    let rust_raw = raw.to_rust();
+    rust_decode_rmc(&rust_raw)
+        .map(PyRmc::from)
+        .map_err(decode_err)
+}
+
+#[pyfunction]
+#[pyo3(name = "decode_gll")]
+fn py_decode_gll(raw: &PyRawSentence) -> PyResult<PyGll> {
+    let rust_raw = raw.to_rust();
+    rust_decode_gll(&rust_raw)
+        .map(PyGll::from)
+        .map_err(decode_err)
+}
+
+#[pyfunction]
 #[pyo3(name = "decode_psxn")]
 fn py_decode_psxn(raw: &PyRawSentence, layout: &PyPsxnLayout) -> PyResult<PyPsxn> {
     let rust_raw = raw.to_rust();
@@ -1275,14 +1629,19 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     let m = PyModule::new(py, "nmea")?;
     m.add_class::<PyGgaFixQuality>()?;
     m.add_class::<PyVtgMode>()?;
+    m.add_class::<PyDataStatus>()?;
+    m.add_class::<PyRmcNavStatus>()?;
     m.add_class::<PyPsxnSlot>()?;
     m.add_class::<PyPrdidDialect>()?;
     m.add_class::<PyUtcTime>()?;
+    m.add_class::<PyUtcDate>()?;
     m.add_class::<PyPsxnLayout>()?;
     m.add_class::<PyDecodeOptions>()?;
     m.add_class::<PyGga>()?;
+    m.add_class::<PyGll>()?;
     m.add_class::<PyVtg>()?;
     m.add_class::<PyHdt>()?;
+    m.add_class::<PyRmc>()?;
     m.add_class::<PyPsxn>()?;
     m.add_class::<PyPrdidPitchRollHeading>()?;
     m.add_class::<PyPrdidRollPitchHeading>()?;
@@ -1294,8 +1653,10 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     m.add_function(wrap_pyfunction!(py_decode, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_with, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_gga, &m)?)?;
+    m.add_function(wrap_pyfunction!(py_decode_gll, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_vtg, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_hdt, &m)?)?;
+    m.add_function(wrap_pyfunction!(py_decode_rmc, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_psxn, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_prdid, &m)?)?;
     parent.add_submodule(&m)?;

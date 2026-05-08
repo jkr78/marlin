@@ -41,6 +41,18 @@ class UtcTime:
 
 
 @dataclass(frozen=True)
+class UtcDate:
+    """Mirror of marlin.nmea.UtcDate (RMC `ddmmyy` field).
+
+    `year_yy` is the raw two-digit year — caller applies century resolution.
+    """
+
+    day: int
+    month: int
+    year_yy: int
+
+
+@dataclass(frozen=True)
 class Eta:
     """Mirror of marlin.ais.Eta. All fields are Optional[int]."""
 
@@ -123,6 +135,43 @@ class Hdt:
 
     talker: Optional[bytes]
     heading_true_deg: Optional[float]
+
+
+@dataclass(frozen=True)
+class Rmc:
+    """Mirror of marlin.nmea.Rmc.
+
+    `status`, `mode`, and `nav_status` are stored as int (wire values) for
+    JSON compatibility. `mode` and `nav_status` are Optional because they
+    only exist on NMEA 2.3+ / 4.10+ sentences respectively.
+    """
+
+    talker: Optional[bytes]
+    utc: Optional[UtcTime]
+    status: int
+    latitude_deg: Optional[float]
+    longitude_deg: Optional[float]
+    speed_knots: Optional[float]
+    course_true_deg: Optional[float]
+    date: Optional[UtcDate]
+    magnetic_variation_deg: Optional[float]
+    mode: Optional[int]
+    nav_status: Optional[int]
+
+
+@dataclass(frozen=True)
+class Gll:
+    """Mirror of marlin.nmea.Gll.
+
+    `status` is stored as int (wire value) for JSON compatibility.
+    """
+
+    talker: Optional[bytes]
+    latitude_deg: Optional[float]
+    longitude_deg: Optional[float]
+    utc: Optional[UtcTime]
+    status: int
+    mode: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -330,7 +379,7 @@ class AisMessage:
 
 # ---------- type aliases ----------
 
-NmeaMessage = Union[Gga, Vtg, Hdt, Psxn, Prdid, Unknown]
+NmeaMessage = Union[Gga, Gll, Hdt, Rmc, Vtg, Psxn, Prdid, Unknown]
 
 
 # ---------- dispatcher ----------
@@ -391,6 +440,29 @@ def to_dataclass(msg: object) -> object:
             talker=msg.talker,
             heading_true_deg=msg.heading_true_deg,
         )
+    if isinstance(msg, _nmea.Rmc):
+        return Rmc(
+            talker=msg.talker,
+            utc=_convert_utc(msg.utc),
+            status=int(msg.status),
+            latitude_deg=msg.latitude_deg,
+            longitude_deg=msg.longitude_deg,
+            speed_knots=msg.speed_knots,
+            course_true_deg=msg.course_true_deg,
+            date=_convert_date(msg.date),
+            magnetic_variation_deg=msg.magnetic_variation_deg,
+            mode=int(msg.mode) if msg.mode is not None else None,
+            nav_status=int(msg.nav_status) if msg.nav_status is not None else None,
+        )
+    if isinstance(msg, _nmea.Gll):
+        return Gll(
+            talker=msg.talker,
+            latitude_deg=msg.latitude_deg,
+            longitude_deg=msg.longitude_deg,
+            utc=_convert_utc(msg.utc),
+            status=int(msg.status),
+            mode=int(msg.mode) if msg.mode is not None else None,
+        )
     if isinstance(msg, _nmea.Unknown):
         return Unknown(
             talker=msg.talker,
@@ -439,6 +511,18 @@ def to_dataclass(msg: object) -> object:
 
 
 # ---------- private converters ----------
+
+
+def _convert_date(date: object) -> Optional[UtcDate]:
+    import marlin.nmea as _nmea
+
+    if date is None:
+        return None
+    if isinstance(date, _nmea.UtcDate):
+        return UtcDate(day=date.day, month=date.month, year_yy=date.year_yy)
+    raise TypeError(
+        f"_convert_date: expected marlin.nmea.UtcDate, got {type(date).__qualname__!r}"
+    )
 
 
 def _convert_utc(utc: object) -> Optional[UtcTime]:

@@ -37,6 +37,22 @@ class VtgMode:
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
 
+class DataStatus:
+    ACTIVE: DataStatus
+    VOID: DataStatus
+    def __int__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
+class RmcNavStatus:
+    SAFE: RmcNavStatus
+    CAUTION: RmcNavStatus
+    UNSAFE: RmcNavStatus
+    NOT_VALID: RmcNavStatus
+    def __int__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
 class PsxnSlot:
     ROLL: PsxnSlot
     PITCH: PsxnSlot
@@ -72,6 +88,15 @@ class UtcTime:
     def second(self) -> int: ...
     @property
     def millisecond(self) -> int: ...
+
+class UtcDate:
+    def __init__(self, day: int, month: int, year_yy: int) -> None: ...
+    @property
+    def day(self) -> int: ...
+    @property
+    def month(self) -> int: ...
+    @property
+    def year_yy(self) -> int: ...
 
 class Gga:
     def __init__(
@@ -147,6 +172,67 @@ class Hdt:
     def talker(self) -> bytes | None: ...
     @property
     def heading_true_deg(self) -> float | None: ...
+
+class Rmc:
+    def __init__(
+        self,
+        talker: bytes | None,
+        utc: UtcTime | None,
+        status: DataStatus,
+        latitude_deg: float | None,
+        longitude_deg: float | None,
+        speed_knots: float | None,
+        course_true_deg: float | None,
+        date: UtcDate | None,
+        magnetic_variation_deg: float | None,
+        mode: VtgMode | None,
+        nav_status: RmcNavStatus | None,
+    ) -> None: ...
+    @property
+    def talker(self) -> bytes | None: ...
+    @property
+    def utc(self) -> UtcTime | None: ...
+    @property
+    def status(self) -> DataStatus: ...
+    @property
+    def latitude_deg(self) -> float | None: ...
+    @property
+    def longitude_deg(self) -> float | None: ...
+    @property
+    def speed_knots(self) -> float | None: ...
+    @property
+    def course_true_deg(self) -> float | None: ...
+    @property
+    def date(self) -> UtcDate | None: ...
+    @property
+    def magnetic_variation_deg(self) -> float | None: ...
+    @property
+    def mode(self) -> VtgMode | None: ...
+    @property
+    def nav_status(self) -> RmcNavStatus | None: ...
+
+class Gll:
+    def __init__(
+        self,
+        talker: bytes | None,
+        latitude_deg: float | None,
+        longitude_deg: float | None,
+        utc: UtcTime | None,
+        status: DataStatus,
+        mode: VtgMode | None,
+    ) -> None: ...
+    @property
+    def talker(self) -> bytes | None: ...
+    @property
+    def latitude_deg(self) -> float | None: ...
+    @property
+    def longitude_deg(self) -> float | None: ...
+    @property
+    def utc(self) -> UtcTime | None: ...
+    @property
+    def status(self) -> DataStatus: ...
+    @property
+    def mode(self) -> VtgMode | None: ...
 
 class Unknown:
     def __init__(
@@ -232,7 +318,7 @@ class Prdid:
         self,
     ) -> PrdidPitchRollHeading | PrdidRollPitchHeading | PrdidRaw: ...
 
-Nmea0183Message: TypeAlias = Union[Gga, Vtg, Hdt, Psxn, Prdid, Unknown]
+Nmea0183Message: TypeAlias = Union[Gga, Gll, Hdt, Rmc, Vtg, Psxn, Prdid, Unknown]
 
 class DecodeOptions:
     def __init__(self) -> None: ...
@@ -266,16 +352,20 @@ class Nmea0183Parser:
 def decode(raw: RawSentence) -> Nmea0183Message: ...
 def decode_with(raw: RawSentence, options: DecodeOptions) -> Nmea0183Message: ...
 def decode_gga(raw: RawSentence) -> Gga: ...
+def decode_gll(raw: RawSentence) -> Gll: ...
 def decode_vtg(raw: RawSentence) -> Vtg: ...
 def decode_hdt(raw: RawSentence) -> Hdt: ...
+def decode_rmc(raw: RawSentence) -> Rmc: ...
 def decode_psxn(raw: RawSentence, layout: PsxnLayout) -> Psxn: ...
 def decode_prdid(raw: RawSentence, dialect: PrdidDialect) -> Prdid: ...
 
 __all__ = [
+    "DataStatus",
     "DecodeError",
     "DecodeOptions",
     "Gga",
     "GgaFixQuality",
+    "Gll",
     "Hdt",
     "Nmea0183Message",
     "Nmea0183Parser",
@@ -287,15 +377,20 @@ __all__ = [
     "Psxn",
     "PsxnLayout",
     "PsxnSlot",
+    "Rmc",
+    "RmcNavStatus",
     "Unknown",
+    "UtcDate",
     "UtcTime",
     "Vtg",
     "VtgMode",
     "decode",
     "decode_gga",
+    "decode_gll",
     "decode_hdt",
     "decode_prdid",
     "decode_psxn",
+    "decode_rmc",
     "decode_vtg",
     "decode_with",
 ]

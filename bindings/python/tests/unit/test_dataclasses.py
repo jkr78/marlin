@@ -119,15 +119,17 @@ def test_unknown_round_trip() -> None:
     from marlin.envelope import StreamingParser
     from marlin.nmea import decode
 
-    rmc_bytes = b"$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A\r\n"
+    # GSV is still un-typed (PRD §11 deferred); RMC and GLL would route
+    # to their typed variants now.
+    gsv_bytes = b"$GPGSV,3,1,11,18,87,050,48,22,56,250,49,21,55,122,49,03,40,284,47*78\r\n"
     p = StreamingParser()
-    p.feed(rmc_bytes)
+    p.feed(gsv_bytes)
     sentence = next(iter(p))
     msg = decode(sentence)
 
     dc = to_dataclass(msg)
     assert isinstance(dc, DCUnknown)
-    assert dc.sentence_type == "RMC"
+    assert dc.sentence_type == "GSV"
 
 
 def test_prdid_raw_round_trip() -> None:

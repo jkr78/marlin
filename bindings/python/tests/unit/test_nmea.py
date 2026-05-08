@@ -4,10 +4,12 @@ import pytest
 
 from marlin.envelope import EnvelopeError, parse
 from marlin.nmea import (
+    DataStatus,
     DecodeError,
     DecodeOptions,
     Gga,
     GgaFixQuality,
+    Gll,
     Hdt,
     Nmea0183Parser,
     Prdid,
@@ -18,15 +20,20 @@ from marlin.nmea import (
     Psxn,
     PsxnLayout,
     PsxnSlot,
+    Rmc,
+    RmcNavStatus,
     Unknown,
+    UtcDate,
     UtcTime,
     Vtg,
     VtgMode,
     decode,
     decode_gga,
+    decode_gll,
     decode_hdt,
     decode_prdid,
     decode_psxn,
+    decode_rmc,
     decode_vtg,
     decode_with,
 )
@@ -312,3 +319,151 @@ def test_decode_with_custom_psxn_layout_round_trip() -> None:
     raw = parse(PSXN_SENTENCE)
     msg = decode_with(raw, opts)
     assert isinstance(msg, Psxn)
+
+
+# ---------- RMC ----------
+
+
+def test_rmc_full_with_mode_decodes() -> None:
+    sentence = _with_checksum(
+        b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A"
+    )
+    p = Nmea0183Parser.streaming()
+    p.feed(sentence)
+    m = p.next_message()
+    assert isinstance(m, Rmc)
+    assert m.talker == b"GP"
+    assert m.status == DataStatus.ACTIVE
+    assert m.mode == VtgMode.AUTONOMOUS
+    assert m.utc is not None
+    assert m.utc.hour == 12 and m.utc.minute == 35 and m.utc.second == 19
+    assert m.latitude_deg is not None and abs(m.latitude_deg - 48.1173) < 1e-4
+    assert m.longitude_deg is not None and abs(m.longitude_deg - 11.51667) < 1e-4
+    assert m.speed_knots is not None and abs(m.speed_knots - 22.4) < 1e-2
+    assert m.course_true_deg is not None and abs(m.course_true_deg - 84.4) < 1e-2
+    assert m.date == UtcDate(day=23, month=3, year_yy=94)
+    assert m.magnetic_variation_deg is not None
+    assert abs(m.magnetic_variation_deg - (-3.1)) < 1e-2
+    assert m.nav_status is None
+
+
+def test_rmc_void_status_propagates() -> None:
+    sentence = _with_checksum(b"GPRMC,,V,,,,,,,,,,N")
+    p = Nmea0183Parser.streaming()
+    p.feed(sentence)
+    m = p.next_message()
+    assert isinstance(m, Rmc)
+    assert m.status == DataStatus.VOID
+    assert m.mode == VtgMode.NOT_VALID
+    assert m.utc is None and m.latitude_deg is None
+
+
+def test_rmc_eastern_variation_is_positive() -> None:
+    sentence = _with_checksum(
+        b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,005.0,E,A"
+    )
+    p = Nmea0183Parser.streaming()
+    p.feed(sentence)
+    m = p.next_message()
+    assert isinstance(m, Rmc)
+    assert m.magnetic_variation_deg is not None
+    assert abs(m.magnetic_variation_deg - 5.0) < 1e-2
+
+
+def test_rmc_with_nav_status() -> None:
+    sentence = _with_checksum(
+        b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A,S"
+    )
+    p = Nmea0183Parser.streaming()
+    p.feed(sentence)
+    m = p.next_message()
+    assert isinstance(m, Rmc)
+    assert m.nav_status == RmcNavStatus.SAFE
+
+
+def test_decode_rmc_extension_point_round_trip() -> None:
+    sentence = _with_checksum(
+        b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A"
+    )
+    raw = parse(sentence)
+    m = decode_rmc(raw)
+    assert isinstance(m, Rmc)
+    assert m.status == DataStatus.ACTIVE
+
+
+def test_data_status_enum_values() -> None:
+    assert int(DataStatus.ACTIVE) == 0
+    assert int(DataStatus.VOID) == 1
+    assert DataStatus.ACTIVE != DataStatus.VOID
+
+
+def test_rmc_nav_status_enum_values() -> None:
+    assert int(RmcNavStatus.SAFE) == 0
+    assert int(RmcNavStatus.CAUTION) == 1
+    assert int(RmcNavStatus.UNSAFE) == 2
+    assert int(RmcNavStatus.NOT_VALID) == 3
+
+
+def test_utc_date_construct_and_read() -> None:
+    d = UtcDate(23, 3, 94)
+    assert d.day == 23 and d.month == 3 and d.year_yy == 94
+    assert UtcDate(23, 3, 94) == UtcDate(23, 3, 94)
+
+
+# ---------- GLL ----------
+
+
+def test_gll_full_with_mode_decodes() -> None:
+    sentence = _with_checksum(b"GPGLL,4916.45,N,12311.12,W,225444,A,A")
+    p = Nmea0183Parser.streaming()
+    p.feed(sentence)
+    m = p.next_message()
+    assert isinstance(m, Gll)
+    assert m.talker == b"GP"
+    assert m.status == DataStatus.ACTIVE
+    assert m.mode == VtgMode.AUTONOMOUS
+    assert m.latitude_deg is not None and abs(m.latitude_deg - 49.27417) < 1e-4
+    assert m.longitude_deg is not None and abs(m.longitude_deg - (-123.18533)) < 1e-4
+    assert m.utc is not None and m.utc.hour == 22 and m.utc.minute == 54
+
+
+def test_gll_pre_2_3_form_has_no_mode() -> None:
+    sentence = _with_checksum(b"GPGLL,4916.45,N,12311.12,W,225444,A")
+    p = Nmea0183Parser.streaming()
+    p.feed(sentence)
+    m = p.next_message()
+    assert isinstance(m, Gll)
+    assert m.mode is None
+
+
+def test_gll_void_status_propagates() -> None:
+    sentence = _with_checksum(b"GPGLL,,,,,,V,N")
+    p = Nmea0183Parser.streaming()
+    p.feed(sentence)
+    m = p.next_message()
+    assert isinstance(m, Gll)
+    assert m.status == DataStatus.VOID
+    assert m.mode == VtgMode.NOT_VALID
+    assert m.latitude_deg is None and m.longitude_deg is None
+
+
+def test_decode_gll_extension_point_round_trip() -> None:
+    sentence = _with_checksum(b"GPGLL,4916.45,N,12311.12,W,225444,A,A")
+    raw = parse(sentence)
+    m = decode_gll(raw)
+    assert isinstance(m, Gll)
+    assert m.status == DataStatus.ACTIVE
+
+
+def test_decode_routes_rmc_to_typed_variant() -> None:
+    sentence = _with_checksum(
+        b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A"
+    )
+    raw = parse(sentence)
+    assert isinstance(decode(raw), Rmc)
+
+
+def test_decode_routes_gll_to_typed_variant() -> None:
+    sentence = _with_checksum(b"GPGLL,4916.45,N,12311.12,W,225444,A,A")
+    raw = parse(sentence)
+    assert isinstance(decode(raw), Gll)

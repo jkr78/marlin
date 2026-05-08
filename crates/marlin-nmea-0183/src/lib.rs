@@ -81,10 +81,11 @@ pub use error::DecodeError;
 pub use message::Nmea0183Message;
 pub use parser::{Nmea0183Error, Nmea0183Parser, Parser};
 pub use sentences::{
-    decode_gga, decode_hdt, decode_prdid, decode_prdid_pitch_roll_heading,
-    decode_prdid_roll_pitch_heading, decode_psxn, decode_vtg, GgaData, GgaFixQuality, HdtData,
-    PrdidData, PrdidDialect, PrdidPitchRollHeading, PrdidRollPitchHeading, PsxnData, PsxnLayout,
-    PsxnLayoutParseError, PsxnSlot, UtcTime, VtgData, VtgMode,
+    decode_gga, decode_gll, decode_hdt, decode_prdid, decode_prdid_pitch_roll_heading,
+    decode_prdid_roll_pitch_heading, decode_psxn, decode_rmc, decode_vtg, DataStatus, GgaData,
+    GgaFixQuality, GllData, HdtData, PrdidData, PrdidDialect, PrdidPitchRollHeading,
+    PrdidRollPitchHeading, PsxnData, PsxnLayout, PsxnLayoutParseError, PsxnSlot, RmcData,
+    RmcNavStatus, UtcDate, UtcTime, VtgData, VtgMode,
 };
 
 // Re-export the envelope's `RawSentence` for convenience — most callers
@@ -135,7 +136,9 @@ pub fn decode_with<'a>(
 ) -> Result<Nmea0183Message<'a>, DecodeError> {
     match raw.sentence_type {
         "GGA" => Ok(Nmea0183Message::Gga(decode_gga(raw)?)),
+        "GLL" => Ok(Nmea0183Message::Gll(decode_gll(raw)?)),
         "HDT" => Ok(Nmea0183Message::Hdt(decode_hdt(raw)?)),
+        "RMC" => Ok(Nmea0183Message::Rmc(decode_rmc(raw)?)),
         "VTG" => Ok(Nmea0183Message::Vtg(decode_vtg(raw)?)),
         "PSXN" => Ok(Nmea0183Message::Psxn(decode_psxn(
             raw,

@@ -64,7 +64,7 @@ pub enum VtgMode {
 }
 
 impl VtgMode {
-    fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Self {
         match b {
             b'A' | b'a' => Self::Autonomous,
             b'D' | b'd' => Self::Differential,

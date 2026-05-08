@@ -7,18 +7,24 @@
 //! type and this module decodes the fields.
 
 mod gga;
+mod gll;
 mod hdt;
 mod prdid;
 mod psxn;
+mod rmc;
+mod status;
 mod utc_time;
 mod vtg;
 
 pub use gga::{decode_gga, GgaData, GgaFixQuality};
+pub use gll::{decode_gll, GllData};
 pub use hdt::{decode_hdt, HdtData};
 pub use prdid::{
     decode_prdid, decode_prdid_pitch_roll_heading, decode_prdid_roll_pitch_heading, PrdidData,
     PrdidDialect, PrdidPitchRollHeading, PrdidRollPitchHeading,
 };
 pub use psxn::{decode_psxn, PsxnData, PsxnLayout, PsxnLayoutParseError, PsxnSlot};
+pub use rmc::{decode_rmc, RmcData, RmcNavStatus, UtcDate};
+pub use status::DataStatus;
 pub use utc_time::UtcTime;
 pub use vtg::{decode_vtg, VtgData, VtgMode};
