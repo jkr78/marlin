@@ -31,8 +31,12 @@ pub enum AisError {
     #[error("invalid fill-bits count {0} (must be 0..=5)")]
     InvalidFillBits(u8),
 
-    /// The declared fill-bits count exceeds the payload's bit count.
-    #[error("fill-bits count exceeds payload size")]
+    /// The payload has fewer bits than the operation needs. Surfaces
+    /// from `armor::decode` when the declared fill-bits count exceeds
+    /// the payload's gross bit count, and from per-type decoders when
+    /// `total_bits` is below the minimum the chosen message layout
+    /// requires (e.g. 160 bits for Type 24 Part A, 168 for Part B).
+    #[error("payload too short for the chosen decoder")]
     PayloadTooShort,
 
     /// The payload length × 6 would overflow `usize`.

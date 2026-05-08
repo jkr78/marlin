@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Type 24 Part A decoder rejected every spec-canonical 160-bit
+  payload** with `AisError::PayloadTooShort`. The previous floor of
+  168 bits was Part B's size; ITU-R M.1371-5 §5.3.24.1 specifies Part A
+  as 6 + 2 + 30 + 2 + 120 = 160 bits exactly. Real-world transmitters
+  emit Part A at 160 bits with no padding; v0.1.0 silently dropped all
+  such frames. Reported via the Python bindings against a 161-sentence
+  batch from a public AIS feed.
+
+### Changed
+
+- `STATIC_DATA_B_BITS` (the wrong-for-Part-A constant) is replaced by
+  two part-specific constants: `STATIC_DATA_B_24A_BITS = 160` and
+  `STATIC_DATA_B_24B_BITS = 168`. The dispatcher and per-part decoders
+  now use the correct minimum for each part. Breaking change to the
+  public re-export at `marlin_ais::STATIC_DATA_B_BITS` — callers that
+  referenced the constant must switch to one of the two new names.
+- `AisError::PayloadTooShort` error message is now "payload too short
+  for the chosen decoder" (was "fill-bits count exceeds payload size",
+  which only described the armor-decoder case and was misleading when
+  the variant surfaced from a per-type decoder).
+
 ## [0.1.0] - 2026-04-28
 
 ### Added

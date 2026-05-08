@@ -14,8 +14,14 @@ use alloc::string::String;
 use crate::shared_types::{dim_u6, dim_u9, trim_ais_string, Dimensions};
 use crate::{AisError, BitReader};
 
-/// Minimum valid payload size for either part (ITU-R M.1371-5 §5.3.24).
-pub const STATIC_DATA_B_BITS: usize = 168;
+/// Spec-canonical bit count for Type 24 Part A (ITU-R M.1371-5 §5.3.24.1):
+/// 6 `msg_type` + 2 `repeat` + 30 `mmsi` + 2 `part` + 120 `name` = **160**.
+pub const STATIC_DATA_B_24A_BITS: usize = 160;
+
+/// Spec-canonical bit count for Type 24 Part B (ITU-R M.1371-5 §5.3.24.2):
+/// 40-bit header + 8 `ship_type` + 42 `vendor_id` + 42 `callsign` +
+/// 30 `dimensions` + 4 `EPFD` + 2 spare = **168**.
+pub const STATIC_DATA_B_24B_BITS: usize = 168;
 
 /// Which part of Type 24 a sentence carries. Encoded in bits 38–39
 /// of the payload.
@@ -83,12 +89,17 @@ pub enum StaticDataB {
 /// Decode a Type 24 payload, dispatching on the 2-bit part-number
 /// field to the appropriate part-specific decoder.
 ///
+/// The dispatcher uses Part A's smaller minimum (160 bits) as its own
+/// floor; the per-part decoder it dispatches to enforces its own
+/// stricter minimum (168 for Part B).
+///
 /// # Errors
 ///
-/// [`AisError::PayloadTooShort`] if `total_bits < 168`.
+/// [`AisError::PayloadTooShort`] if `total_bits < 160`, or any error
+/// from the dispatched per-part decoder.
 #[allow(clippy::cast_possible_truncation)]
 pub fn decode_static_data_b(bits: &[u8], total_bits: usize) -> Result<StaticDataB, AisError> {
-    if total_bits < STATIC_DATA_B_BITS {
+    if total_bits < STATIC_DATA_B_24A_BITS {
         return Err(AisError::PayloadTooShort);
     }
     let mut peek = BitReader::new(bits, total_bits);
@@ -112,12 +123,16 @@ pub fn decode_static_data_b(bits: &[u8], total_bits: usize) -> Result<StaticData
 /// The caller asserts the part by calling this function; this decoder
 /// does not verify the part-number field. Use
 /// [`decode_static_data_b`] if you want automatic dispatch.
+///
+/// # Errors
+///
+/// [`AisError::PayloadTooShort`] if `total_bits < 160`.
 #[allow(clippy::cast_possible_truncation)]
 pub fn decode_static_data_b_24a(
     bits: &[u8],
     total_bits: usize,
 ) -> Result<StaticDataB24A, AisError> {
-    if total_bits < STATIC_DATA_B_BITS {
+    if total_bits < STATIC_DATA_B_24A_BITS {
         return Err(AisError::PayloadTooShort);
     }
     let mut r = BitReader::new(bits, total_bits);
@@ -131,12 +146,16 @@ pub fn decode_static_data_b_24a(
 }
 
 /// Decode a Type 24 Part B sentence.
+///
+/// # Errors
+///
+/// [`AisError::PayloadTooShort`] if `total_bits < 168`.
 #[allow(clippy::cast_possible_truncation)]
 pub fn decode_static_data_b_24b(
     bits: &[u8],
     total_bits: usize,
 ) -> Result<StaticDataB24B, AisError> {
-    if total_bits < STATIC_DATA_B_BITS {
+    if total_bits < STATIC_DATA_B_24B_BITS {
         return Err(AisError::PayloadTooShort);
     }
     let mut r = BitReader::new(bits, total_bits);
@@ -169,7 +188,12 @@ pub fn decode_static_data_b_24b(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::cast_possible_truncation
+)]
 mod tests {
     use super::*;
     use crate::testing::BitWriter;
@@ -189,8 +213,7 @@ mod tests {
         w.u(30, u64::from(mmsi));
         w.u(2, 0); // part A
         write_ais_str(&mut w, name, 20);
-        // Pad to 168 bits total — 8 bits of spare.
-        w.u(8, 0);
+        // Total: 6 + 2 + 30 + 2 + 120 = 160 bits per ITU-R M.1371-5 §5.3.24.1.
         w.finish()
     }
 
@@ -295,10 +318,58 @@ mod tests {
 
     #[test]
     fn too_short_payload_rejected() {
-        let buf = [0u8; 10];
+        // 100 bits is below the spec-canonical Part A floor of 160.
+        let buf = [0u8; 13];
         match decode_static_data_b(&buf, 100) {
             Err(AisError::PayloadTooShort) => {}
             other => panic!("expected PayloadTooShort, got {other:?}"),
+        }
+    }
+
+    /// Regression: real-world Type 24 Part A sentences are 27 chars × 6
+    /// bits = 162 gross bits, minus 2 fill bits = **160 bits exact**.
+    /// That matches ITU-R M.1371-5 §5.3.24.1 (40-bit header + 120-bit
+    /// name). v0.1.0 enforced 168 as the floor for both parts and
+    /// rejected every Part A frame with `PayloadTooShort`. Reported by
+    /// a Python-bindings consumer with a batch of 160 sentences.
+    #[test]
+    fn part_a_at_spec_canonical_160_bits_decodes() {
+        let payload = b"H42O55i18tMET00000000000000";
+        let (bits, total_bits) = crate::armor::decode(payload, 2).unwrap();
+        assert_eq!(total_bits, 160, "real-world Part A is 160 bits exactly");
+        // Direct decoder works.
+        let direct = decode_static_data_b_24a(&bits, total_bits)
+            .expect("Part A decode at 160 bits must succeed");
+        // Dispatcher routes to PartA.
+        match decode_static_data_b(&bits, total_bits)
+            .expect("dispatcher must accept 160-bit Part A")
+        {
+            StaticDataB::PartA(via_dispatcher) => {
+                assert_eq!(via_dispatcher, direct, "dispatcher and direct must agree");
+                assert_ne!(direct.mmsi, 0, "real payload has a non-zero MMSI");
+                assert!(direct.vessel_name.is_some(), "name field decodes");
+            }
+            other => panic!("expected PartA, got {other:?}"),
+        }
+    }
+
+    /// 160-bit input declaring part-number = 1 (Part B). The dispatcher
+    /// passes its own 160-bit floor, peeks part=1, dispatches to the
+    /// Part B decoder, which rejects on its stricter 168-bit floor.
+    #[test]
+    fn part_b_below_168_bits_rejected_by_part_b_decoder() {
+        let mut w = BitWriter::new();
+        w.u(6, 24);
+        w.u(2, 0);
+        w.u(30, 1);
+        w.u(2, 1); // part B
+        w.u(64, 0); // 64
+        w.u(56, 0); // +56 = 120 bits of zero name field
+        let (bits, total) = w.finish();
+        assert_eq!(total, 160);
+        match decode_static_data_b(&bits, total) {
+            Err(AisError::PayloadTooShort) => {}
+            other => panic!("expected PayloadTooShort from Part B decoder, got {other:?}"),
         }
     }
 }

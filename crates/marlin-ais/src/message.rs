@@ -261,10 +261,11 @@ mod tests {
         w.u(2, 0);
         w.u(30, u64::from(mmsi));
         w.u(2, 0); // part A
-                   // 20 6-bit @-chars + 8 pad = 128 bits.
-        for _ in 0..16 {
+                   // 20 6-bit @-chars = 120 bits of name.
+        for _ in 0..15 {
             w.u(8, 0);
         }
+        // Header (40) + name (120) = 160 bits per ITU-R M.1371-5 §5.3.24.1.
         w.finish()
     }
 
@@ -562,6 +563,25 @@ mod tests {
         match decode(&raw) {
             Err(AisError::InvalidArmorChar(0x7E)) => {}
             other => panic!("expected InvalidArmorChar(0x7E), got {other:?}"),
+        }
+    }
+
+    /// Regression for the v0.1.0 Type 24 Part A bug: real-world Part A
+    /// sentences are exactly 160 bits (27 chars × 6 - 2 fill). The
+    /// decoder previously enforced a 168-bit floor on both parts and
+    /// rejected every Part A frame. Reported by a python-bindings
+    /// consumer with a batch of 160 sentences. This test pulls one
+    /// exemplar through the full envelope → armor → decode pipeline.
+    #[test]
+    fn decode_real_world_type_24_part_a_at_160_bits() {
+        let bytes = b"!AIVDM,1,1,,A,H42O55i18tMET00000000000000,2*6D";
+        let raw = parse_raw(bytes);
+        let msg = decode(&raw).expect("real-world Part A must decode");
+        match msg.body {
+            AisMessageBody::Type24A(part_a) => {
+                assert_ne!(part_a.mmsi, 0, "non-zero MMSI from real payload");
+            }
+            other => panic!("expected Type24A, got {other:?}"),
         }
     }
 }

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- AIS Type 24 Part A messages now decode correctly. v0.1.0 enforced a
+  168-bit minimum on both parts of Type 24, but the spec (ITU-R
+  M.1371-5 §5.3.24.1) defines Part A as 160 bits exactly. All
+  spec-canonical Part A frames (27-character payloads with `fill_bits=2`)
+  were silently rejected with a `PayloadTooShort`-equivalent error.
+  Fix lives in the underlying `marlin-ais` crate.
+
 ## [0.1.0] - 2026-04-28
 
 ### Added
