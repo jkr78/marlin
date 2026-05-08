@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-08
+
 ### Added
 
 - Typed `Rmc` and `Gll` Python classes with full attribute getters,
   matching the new `marlin-nmea-0183` decoders. The default
   `Nmea0183Parser` iterator now surfaces `RMC` and `GLL` sentences as
   typed objects instead of `Unknown`.
-- New shared types: `DataStatus` (Active / Void), `RmcNavStatus`
-  (Safe / Caution / Unsafe / NotValid), and `UtcDate` (day / month /
-  year_yy).
+- New shared types: `DataStatus` (`ACTIVE` / `VOID`), `RmcNavStatus`
+  (`SAFE` / `CAUTION` / `UNSAFE` / `NOT_VALID`), and `UtcDate`
+  (day / month / year_yy).
 - Per-sentence extension-point functions `decode_rmc` and `decode_gll`
   alongside the existing `decode_gga` / `decode_vtg` / etc.
 - Frozen dataclass mirrors `Rmc`, `Gll`, and `UtcDate` in

@@ -100,10 +100,10 @@ while chunk := source.read(4096):
             print(f"heading: {msg.heading_true_deg}°")
 ```
 
-`Nmea0183Parser` decodes GGA, VTG, HDT, PSXN, and PRDID into typed
-classes. Anything it doesn't recognize, AIVDM included, surfaces as
-`Unknown`. Match `Unknown` to forward those sentences elsewhere, or skip
-it if you only care about typed messages.
+`Nmea0183Parser` decodes GGA, GLL, HDT, RMC, VTG, PSXN, and PRDID into
+typed classes. Anything it doesn't recognize, AIVDM included, surfaces
+as `Unknown`. Match `Unknown` to forward those sentences elsewhere, or
+skip it if you only care about typed messages.
 
 For a specific PSXN or PRDID hardware dialect, pass `DecodeOptions`:
 

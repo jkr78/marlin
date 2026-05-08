@@ -67,7 +67,9 @@ track deliverables (not conversational state).
 
 ### Remaining (non-blocking)
 
-- [ ] Additional NMEA sentences: RMC, GLL, GSA, GSV, ZDA, DBT, MWV (PRD §11)
+- [x] **RMC** — recommended minimum (UTC + date + position + speed + course + magnetic variation), pre-2.3 / 2.3+ / 4.10+ forms (added v0.1.1 2026-05-08)
+- [x] **GLL** — geographic position with validity status and optional 2.3+ mode (added v0.1.1 2026-05-08)
+- [ ] Additional NMEA sentences: GSA, GSV, ZDA, DBT, MWV (PRD §11)
 - [ ] Golden-file fixtures from real receivers (synthetic today)
 - [ ] Example program under `examples/` showing log-file replay
 
@@ -206,7 +208,7 @@ Tracked here so we don't forget:
 
 - AIS message types beyond 1/2/3/5/18/19/24A/24B (PRD §11)
 - AIS Type 24 part-A/part-B pairing (higher-layer concern; PRD §A6)
-- Additional NMEA sentences (RMC, GLL, GSA, GSV, ZDA, DBT, MWV, etc. — PRD §11)
+- Additional NMEA sentences (GSA, GSV, ZDA, DBT, MWV, etc. — PRD §11)
 - NMEA 2000 (entirely separate protocol; would be a new crate)
 - Encoding / serialization (v0.1 is read-only)
 - WASM target verification

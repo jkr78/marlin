@@ -7,10 +7,11 @@ multi-sentence reassembly.
 ## Status
 
 Wraps three Rust crates: `marlin-nmea-envelope` (framing + checksum),
-`marlin-nmea-0183` (GGA, VTG, HDT, PSXN, PRDID typed decoders), and
-`marlin-ais` (Types 1/2/3/5/18/19/24A/24B + reassembly). API surface is
-feature-complete for v0.1. `py.typed` marker and `.pyi` stubs ship with the
-package; mypy `--strict` is clean across the entire `python/marlin/`, `tests/`, and `examples/` tree.
+`marlin-nmea-0183` (GGA, GLL, HDT, RMC, VTG, PSXN, PRDID typed
+decoders), and `marlin-ais` (Types 1/2/3/5/18/19/24A/24B + reassembly).
+`py.typed` marker and `.pyi` stubs ship with the package; mypy
+`--strict` is clean across the entire `python/marlin/`, `tests/`, and
+`examples/` tree.
 
 ## Install
 
@@ -18,7 +19,8 @@ The PyPI distribution name is `marlin-py`; the Python import name stays
 plain `marlin`.
 
 ```bash
-# From PyPI (once the v0.1.0 wheels publish)
+# From PyPI — wheels for Linux x86_64 / aarch64, macOS universal2,
+# Windows x86_64. abi3 wheel covers Python 3.9 through 3.13+.
 pip install marlin-py
 
 # Local development — build the extension in-place

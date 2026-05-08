@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-08
+
+Released alongside `marlin-nmea-0183 0.1.1` and `marlin-ais 0.1.1`. No
+behavioral changes in this crate; the version bump tracks the workspace
+release that adds RMC and GLL decoders to the sibling NMEA crate and
+fixes a Type 24 Part A floor in the AIS crate.
+
 ## [0.1.0] - 2026-04-28
 
 ### Added

@@ -7,18 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-08
+
 ### Added
 
 - `RMC` decoder (`decode_rmc`, `RmcData`, re-exported types
-  `RmcNavStatus`, `UtcDate`). Single-sentence carrier of UTC time +
-  date + position + speed + course + magnetic variation. Accepts
+  `RmcNavStatus`, `UtcDate`). Single-sentence carrier of UTC time,
+  date, position, speed, course, and magnetic variation. Accepts
   pre-NMEA-2.3 (11 fields), NMEA-2.3+ with mode (12 fields), and
   NMEA-4.10+ with nav status (13 fields).
 - `GLL` decoder (`decode_gll`, `GllData`). Position-only sentence
   with UTC time, validity status, and optional mode indicator
   (NMEA 2.3+).
-- `DataStatus` shared validity-flag enum (Active / Void / Other) used
-  by both RMC and GLL.
+- `DataStatus` shared validity-flag enum (`Active` / `Void` / `Other`)
+  used by both RMC and GLL.
 - `Nmea0183Message::Rmc` and `Nmea0183Message::Gll` variants on the
   top-level message enum. The dispatcher in `decode` / `decode_with`
   now routes `RMC` and `GLL` sentence types to typed variants instead

@@ -12,7 +12,7 @@ unit-test byte slices.
 | Crate | Purpose | Status |
 | --- | --- | --- |
 | [`marlin-nmea-envelope`](./crates/marlin-nmea-envelope) | NMEA 0183 framing, checksum, TAG block recognition | feature-complete (v0.1) |
-| [`marlin-nmea-0183`](./crates/marlin-nmea-0183) | Typed NMEA sentence decoders (GGA, VTG, HDT, PSXN, PRDID) | feature-complete (v0.1) |
+| [`marlin-nmea-0183`](./crates/marlin-nmea-0183) | Typed NMEA sentence decoders (GGA, GLL, HDT, RMC, VTG, PSXN, PRDID) | feature-complete (v0.1) |
 | [`marlin-ais`](./crates/marlin-ais) | Typed AIS message decoders + multi-sentence reassembly | feature-complete (v0.1) |
 
 `marlin-nmea-0183` and `marlin-ais` are siblings; both depend on
@@ -27,9 +27,15 @@ Typed decoders for these sentence types, regardless of talker prefix
 
 - **GGA** — GPS fix data: time, position, fix quality, satellites,
   HDOP, altitude, geoid separation, DGPS metadata
+- **GLL** — geographic position with UTC time, validity status, and
+  optional 2.3+ mode indicator
+- **HDT** — true heading
+- **RMC** — recommended minimum: UTC time + date + position + speed
+  + course + magnetic variation, with validity status; pre-2.3, 2.3+
+  with mode indicator, and 4.10+ with nav status all decode through
+  one path
 - **VTG** — course over ground and speed: course (true and magnetic),
   speed (knots and km/h), mode indicator; both pre-2.3 and 2.3+ forms
-- **HDT** — true heading
 - **PSXN** — Seapath / Kongsberg attitude with install-configurable
   6-slot layout (roll, pitch, heave, sine-encoded variants)
 - **PRDID** — TSS / Teledyne motion in either pitch-roll-heading or
