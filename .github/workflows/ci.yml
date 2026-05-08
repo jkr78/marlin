@@ -60,6 +60,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: extractions/setup-just@v2
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        # Resolve cargo-fuzz's transitive deps fresh instead of using its
+        # bundled Cargo.lock. The lockfile pins rustix 0.36 (June 2025)
+        # which breaks on newer nightly rustc — fresh resolution picks a
+        # newer rustix that compiles. CI fuzz-smoke is not a reproducible
+        # release artifact so install-time drift is acceptable.
+        run: cargo install cargo-fuzz
       - name: Run envelope fuzz target for 30s
         run: just fuzz envelope 30
