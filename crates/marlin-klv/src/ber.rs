@@ -102,7 +102,12 @@ pub(crate) fn read_i32(v: &[u8]) -> Option<i32> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod ber_tests {
     use alloc::vec::Vec;
 

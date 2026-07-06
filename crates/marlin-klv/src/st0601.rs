@@ -201,12 +201,15 @@ pub fn encode_to_bytes(set: &St0601) -> Result<bytes::Bytes, Error> {
 
 #[cfg(test)]
 #[allow(
-    clippy::unwrap_used, clippy::expect_used, clippy::panic,
-    clippy::indexing_slicing, clippy::cast_possible_truncation
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
 )]
 mod encode_tests {
-    use alloc::{vec, vec::Vec};
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn uas_ls_key_first_and_last_bytes() {
@@ -271,12 +274,15 @@ mod encode_tests {
 
 #[cfg(test)]
 #[allow(
-    clippy::unwrap_used, clippy::expect_used, clippy::panic,
-    clippy::indexing_slicing, clippy::cast_possible_truncation
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
 )]
 mod decode_tests {
-    use alloc::{vec, vec::Vec};
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn round_trip_preserves_all_typed_fields() {
@@ -410,12 +416,15 @@ mod decode_tests {
 
 #[cfg(test)]
 #[allow(
-    clippy::unwrap_used, clippy::expect_used, clippy::panic,
-    clippy::indexing_slicing, clippy::cast_possible_truncation
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
 )]
 mod precision_timestamp_tests {
-    use alloc::{vec, vec::Vec};
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn present_timestamp_is_returned_without_full_decode() {
@@ -453,8 +462,11 @@ mod precision_timestamp_tests {
 
 #[cfg(all(test, feature = "bytes"))]
 #[allow(
-    clippy::unwrap_used, clippy::expect_used, clippy::panic,
-    clippy::indexing_slicing, clippy::cast_possible_truncation
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
 )]
 mod bytes_feature_tests {
     use super::*;
@@ -472,4 +484,3 @@ mod bytes_feature_tests {
         assert_eq!(bytes_out.as_ref(), vec_out.as_slice());
     }
 }
-

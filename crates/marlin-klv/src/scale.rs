@@ -74,12 +74,19 @@ pub(crate) fn units_to_u8(v: f64) -> u8 {
 }
 
 fn nan_to(v: f64, fallback: f64) -> f64 {
-    if v.is_nan() { fallback } else { v }
+    if v.is_nan() {
+        fallback
+    } else {
+        v
+    }
 }
 
 #[cfg(test)]
 #[allow(
-    clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
     clippy::unreadable_literal
 )]
 mod tests {
@@ -100,7 +107,11 @@ mod tests {
 
     #[test]
     fn encode_clamps_and_never_emits_sentinel() {
-        assert_eq!(units_to_i16(-999.0, 50.0), -32767, "clamped min, NOT -32768");
+        assert_eq!(
+            units_to_i16(-999.0, 50.0),
+            -32767,
+            "clamped min, NOT -32768"
+        );
         assert_eq!(units_to_i16(999.0, 50.0), 32767);
         assert_eq!(units_to_i32(-999.0, 90.0), -2_147_483_647);
         assert_eq!(units_to_i32(999.0, 90.0), 2_147_483_647);
@@ -123,7 +134,10 @@ mod tests {
     fn altitude_offset_round_trips() {
         let raw = units_to_u16_offset(0.0, 19900.0, -900.0);
         let back = u16_offset_to_units(raw, 19900.0, -900.0);
-        assert!((back - 0.0).abs() < 0.5, "0 m round-trips within LSB (~0.3 m), got {back}");
+        assert!(
+            (back - 0.0).abs() < 0.5,
+            "0 m round-trips within LSB (~0.3 m), got {back}"
+        );
     }
 
     #[test]
