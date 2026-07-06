@@ -1,14 +1,15 @@
 # marlin-py
 
 Python bindings for the Marlin Rust suite — NMEA 0183 envelope parsing,
-typed sentence decoding, and AIS (AIVDM/AIVDO) message decoding with
-multi-sentence reassembly.
+typed sentence decoding, AIS (AIVDM/AIVDO) message decoding with
+multi-sentence reassembly, and MISB ST 0601 (KLV) encode/decode.
 
 ## Status
 
-Wraps three Rust crates: `marlin-nmea-envelope` (framing + checksum),
+Wraps four Rust crates: `marlin-nmea-envelope` (framing + checksum),
 `marlin-nmea-0183` (GGA, GLL, HDT, RMC, VTG, PSXN, PRDID typed
-decoders), and `marlin-ais` (Types 1/2/3/5/18/19/24A/24B + reassembly).
+decoders), `marlin-ais` (Types 1/2/3/5/18/19/24A/24B + reassembly), and
+`marlin-klv` (MISB ST 0601 UAS Datalink Local Set encode/decode).
 `py.typed` marker and `.pyi` stubs ship with the package; mypy
 `--strict` is clean across the entire `python/marlin/`, `tests/`, and
 `examples/` tree.
@@ -88,6 +89,26 @@ for msg in parser:
 Multi-sentence reassembly is automatic — feed fragments in order and the
 parser yields a complete `AisMessage` only when the last fragment arrives.
 
+## Quickstart: KLV
+
+```python
+from marlin.klv import St0601, decode, encode
+
+s = St0601(timestamp_us=1_700_000_000_000_000)
+s.sensor_latitude_degrees = 60.1768      # engineering-unit property
+s.platform_heading_degrees = 159.97
+wire = encode(s)                          # bytes
+got = decode(wire)
+print(got.sensor_latitude_degrees, got.timestamp_us)
+```
+
+`St0601` fields are properties, not setter methods: assign
+`s.sensor_latitude_degrees = ...`, don't call
+`s.set_sensor_latitude_degrees(...)`. `decode` raises `KlvError` on a
+malformed local set (bad key, truncated bytes, checksum mismatch).
+`precision_timestamp(data)` reads Tag 2 alone, without verifying the
+checksum, for callers that only need a cheap timestamp peek.
+
 ## AIS clock modes
 
 Fragment reassembly has three timeout behaviours, selected at construction.
@@ -136,6 +157,8 @@ Every exception is a `MarlinError` subclass (importable from `marlin`):
 - `AisError` — AIS armor or bit-level decode failure
 - `ReassemblyError` — fragment reassembly violation (out-of-order, channel
   mismatch, or timeout eviction)
+- `KlvError` — malformed KLV input (bad local-set key, truncated bytes,
+  checksum mismatch)
 
 Property tests (via Hypothesis) verify panic-freedom on arbitrary byte
 inputs — no input can cause the binding to crash the interpreter.
@@ -161,10 +184,11 @@ function, and constant has a `.pyi` stub. Downstream projects that run
 
 ## Rust crates
 
-The Python bindings wrap three Rust crates:
+The Python bindings wrap four Rust crates:
 [`marlin-nmea-envelope`](../../crates/marlin-nmea-envelope),
 [`marlin-nmea-0183`](../../crates/marlin-nmea-0183),
-[`marlin-ais`](../../crates/marlin-ais).
+[`marlin-ais`](../../crates/marlin-ais),
+[`marlin-klv`](../../crates/marlin-klv).
 
 ## MSRV / Python version
 

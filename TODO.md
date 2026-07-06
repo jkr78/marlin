@@ -6,6 +6,45 @@ track deliverables (not conversational state).
 
 ---
 
+## New tasks
+
+- [ ] Expand marlin-klv ST 0601 tag coverage beyond the initial 20 scaled tags
+  ST 0601 defines many more tags than the initial release covers. Add
+  one struct field in `st0601.rs` plus one `scaled_tags!` entry in
+  `tags.rs` per tag; verify each formula against the standard, don't
+  pattern-match blind.
+- [ ] Add ST 1201 IMAPB float scaling to marlin-klv
+  `scale.rs` implements only ST 0601 legacy linear scaling today (its
+  module doc says so explicitly: "NOT ST 1201 IMAPB — those are newer
+  tags, out of scope"). Needed once IMAPB-encoded tags show up in real
+  streams.
+- [ ] Support additional MISB local sets (ST 0903 VMTI, ST 0102 security)
+  marlin-klv implements only ST 0601 (UAS Datalink LS) today. VMTI
+  (target tracks) and the 0102 security metadata LS are common
+  companions in real KLV streams.
+- [ ] Dedupe decode/precision_timestamp item-walk in marlin-klv
+  `st0601.rs::decode` and `st0601.rs::precision_timestamp` both walk
+  the TLV item list with near-identical loops. A shared helper is the
+  obvious cleanup, but a walker over borrowed item slices can hit a
+  borrow-checker lifetime trap when a second such method tries to
+  delegate to it. Prototype the extraction before committing to it.
+- [ ] Real-data KLV golden captures (>=5 samples) for marlin-klv
+  Same gap as the NMEA/AIS fixtures: today's KLV test vectors are
+  synthetic. Need >=5 real ST 0601 streams from actual UAS datalink
+  hardware/software, source documented per sample.
+- [ ] Add a bindings/python Rust fmt/clippy CI gate
+  `bindings/python` is workspace-excluded (root `Cargo.toml`:
+  `exclude = ["fuzz", "bindings/python"]`), so `just ci` never runs
+  `cargo fmt --check` / `cargo clippy -D warnings` against its Rust
+  source. Needs its own recipe/CI step.
+- [ ] Investigate pyright errors in test_context_managers.py, test_envelope.py
+  Pre-existing possibly-unbound-local findings under
+  `bindings/python/tests/unit/test_context_managers.py` and
+  `test_envelope.py`. Unrelated to the marlin-klv work; confirm real
+  or false positive, then fix or suppress with a reason.
+
+---
+
 ## Crate status at a glance
 
 | Crate | State | Tests |
