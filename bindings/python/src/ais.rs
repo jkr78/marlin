@@ -1271,17 +1271,11 @@ impl PyAisParser {
 
     #[staticmethod]
     #[pyo3(signature = (timeout_ms = None, clock = None, max_size = DEFAULT_MAX_SIZE))]
-    fn streaming(
-        timeout_ms: Option<u64>,
-        clock: Option<&str>,
-        max_size: usize,
-    ) -> PyResult<Self> {
+    fn streaming(timeout_ms: Option<u64>, clock: Option<&str>, max_size: usize) -> PyResult<Self> {
         let clock_mode = ClockMode::parse(clock)?;
         let reassembler = build_reassembler(timeout_ms);
-        let frag = AisFragmentParser::with_reassembler(
-            Streaming::with_capacity(max_size),
-            reassembler,
-        );
+        let frag =
+            AisFragmentParser::with_reassembler(Streaming::with_capacity(max_size), reassembler);
         Ok(Self {
             inner: AisInner::Streaming(frag),
             clock_mode,
@@ -1335,7 +1329,13 @@ impl PyAisParser {
     fn __iter__(slf: PyRef<'_, Self>) -> PyResult<Py<PyAisIterator>> {
         let py = slf.py();
         let parser: Py<Self> = slf.into();
-        Py::new(py, PyAisIterator { parser, strict: false })
+        Py::new(
+            py,
+            PyAisIterator {
+                parser,
+                strict: false,
+            },
+        )
     }
 
     #[pyo3(signature = (strict = false))]
@@ -1372,10 +1372,7 @@ impl PyAisParser {
             ClockMode::Manual => Ok(self.manual_now_ms),
             ClockMode::Auto => {
                 let time_mod = py.import("time")?;
-                let ns: u64 = time_mod
-                    .getattr("monotonic_ns")?
-                    .call0()?
-                    .extract()?;
+                let ns: u64 = time_mod.getattr("monotonic_ns")?.call0()?.extract()?;
                 Ok(ns / 1_000_000)
             }
         }
