@@ -179,6 +179,27 @@ while chunk := source.read(4096):
 
 Each parser owns its own buffer. Feeding the same bytes to both is fine.
 
+### KLV: single-shot encode/decode
+
+`marlin.klv` has no streaming parser — MISB ST 0601 local sets aren't
+framed inside a byte stream the way NMEA/AIS sentences are, so `decode`
+and `encode` work on one complete datagram at a time:
+
+```python
+from marlin.klv import St0601, decode, encode
+
+s = St0601(timestamp_us=1_700_000_000_000_000)
+s.sensor_latitude_degrees = 60.1768      # engineering-unit property
+s.platform_heading_degrees = 159.97
+wire = encode(s)                          # bytes
+got = decode(wire)
+print(got.sensor_latitude_degrees, got.timestamp_us)
+```
+
+`St0601` fields are properties: set them with plain assignment
+(`s.sensor_latitude_degrees = ...`), never a `set_*` method call — none
+exist. `decode` raises `KlvError` on a malformed local set.
+
 ---
 
 ## 4. Context managers

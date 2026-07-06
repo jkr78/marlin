@@ -23,6 +23,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "marlin-klv"
+version = "0.1.1"
+dependencies = [
+ "bytes",
+ "libm",
+ "thiserror",
+]
+
+[[package]]
 name = "marlin-nmea-0183"
 version = "0.1.1"
 dependencies = [
