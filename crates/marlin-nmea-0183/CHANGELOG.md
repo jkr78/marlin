@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-06
+
+No behavioral changes. The version bump tracks the workspace release that
+adds the new `marlin-klv` crate (MISB ST 0601 KLV encoder/decoder).
+
 ## [0.1.1] - 2026-05-08
 
 ### Added

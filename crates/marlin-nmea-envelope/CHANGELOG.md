@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-06
+
+Released alongside `marlin-nmea-0183 0.1.2`, `marlin-ais 0.1.2`, and the
+new `marlin-klv 0.1.2`. No behavioral changes in this crate; the version
+bump tracks the workspace release that adds `marlin-klv` (a MISB ST 0601
+KLV encoder/decoder).
+
 ## [0.1.1] - 2026-05-08
 
 Released alongside `marlin-nmea-0183 0.1.1` and `marlin-ais 0.1.1`. No

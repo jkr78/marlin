@@ -16,7 +16,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "marlin-ais"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "marlin-nmea-envelope",
  "thiserror",
@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "marlin-klv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "libm",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "marlin-nmea-0183"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "libm",
  "marlin-nmea-envelope",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "marlin-nmea-envelope"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "nom",
