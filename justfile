@@ -125,7 +125,18 @@ py-test: py-dev
 py-type-check:
     cd bindings/python && python -m mypy --strict .
 
+# Check formatting of the bindings crate Rust. The crate is workspace-
+# excluded, so `just fmt-check` never sees it.
+py-fmt-check:
+    cd bindings/python && cargo fmt --check
+
+# Clippy the bindings crate Rust with warnings as errors. Workspace-
+# excluded, so `just lint` skips it. Compiling the PyO3 extension links
+# libpython, so a Python interpreter must be on PATH.
+py-lint:
+    cd bindings/python && cargo clippy --all-targets -- -D warnings
+
 py-golden-regenerate: py-dev
     cd bindings/python && MARLIN_REGENERATE_GOLDENS=1 python -m pytest tests/golden -v
 
-py-ci: py-dev py-test py-type-check
+py-ci: py-fmt-check py-lint py-dev py-test py-type-check

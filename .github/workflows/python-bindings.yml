@@ -49,7 +49,7 @@ jobs:
           if-no-files-found: error
 
   test:
-    name: Tests + mypy
+    name: Tests + lint + mypy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +57,8 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Create venv at repo root
         run: |
@@ -67,6 +69,14 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
       - name: Install test deps
         run: pip install 'maturin>=1.7,<2.0' pytest hypothesis 'mypy>=1.8'
+      # The bindings crate is excluded from the Cargo workspace, so the main
+      # CI's `just fmt-check` / `just lint` never see its Rust. Gate it here.
+      - name: cargo fmt --check (bindings Rust)
+        working-directory: bindings/python
+        run: cargo fmt --check
+      - name: clippy (bindings Rust)
+        working-directory: bindings/python
+        run: cargo clippy --all-targets -- -D warnings
       - name: Install into venv
         working-directory: bindings/python
         run: maturin develop --release

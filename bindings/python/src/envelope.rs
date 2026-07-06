@@ -4,9 +4,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyModule, PyTuple};
 use pyo3::wrap_pyfunction;
 
-use marlin_nmea_envelope::{
-    parse as rust_parse, OneShot, RawSentence, SentenceSource, Streaming,
-};
+use marlin_nmea_envelope::{parse as rust_parse, OneShot, RawSentence, SentenceSource, Streaming};
 
 use crate::errors::envelope_err;
 

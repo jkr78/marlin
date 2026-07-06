@@ -12,15 +12,14 @@ use pyo3::wrap_pyfunction;
 use marlin_nmea_0183::{
     decode as rust_decode, decode_gga as rust_decode_gga, decode_gll as rust_decode_gll,
     decode_hdt as rust_decode_hdt, decode_prdid as rust_decode_prdid,
-    decode_psxn as rust_decode_psxn, decode_rmc as rust_decode_rmc,
-    decode_vtg as rust_decode_vtg, decode_with as rust_decode_with,
-    DataStatus as RustDataStatus, DecodeOptions as RustDecodeOptions, GgaData,
-    GgaFixQuality as RustGgaFixQuality, GllData, HdtData, Nmea0183Error, Nmea0183Message,
-    Nmea0183Parser as RustNmea0183, PrdidData, PrdidDialect as RustPrdidDialect,
-    PrdidPitchRollHeading as RustPrdidPitchRollHeading,
+    decode_psxn as rust_decode_psxn, decode_rmc as rust_decode_rmc, decode_vtg as rust_decode_vtg,
+    decode_with as rust_decode_with, DataStatus as RustDataStatus,
+    DecodeOptions as RustDecodeOptions, GgaData, GgaFixQuality as RustGgaFixQuality, GllData,
+    HdtData, Nmea0183Error, Nmea0183Message, Nmea0183Parser as RustNmea0183, PrdidData,
+    PrdidDialect as RustPrdidDialect, PrdidPitchRollHeading as RustPrdidPitchRollHeading,
     PrdidRollPitchHeading as RustPrdidRollPitchHeading, PsxnData, PsxnLayout as RustPsxnLayout,
-    PsxnSlot as RustPsxnSlot, RmcData, RmcNavStatus as RustRmcNavStatus,
-    UtcDate as RustUtcDate, UtcTime as RustUtcTime, VtgData, VtgMode as RustVtgMode,
+    PsxnSlot as RustPsxnSlot, RmcData, RmcNavStatus as RustRmcNavStatus, UtcDate as RustUtcDate,
+    UtcTime as RustUtcTime, VtgData, VtgMode as RustVtgMode,
 };
 use marlin_nmea_envelope::{OneShot, Streaming};
 
@@ -958,7 +957,10 @@ impl PyDecodeOptions {
     }
 
     fn __repr__(&self) -> String {
-        let layout_repr = PyPsxnLayout { inner: self.inner.psxn_layout }.__repr__();
+        let layout_repr = PyPsxnLayout {
+            inner: self.inner.psxn_layout,
+        }
+        .__repr__();
         let dialect = match self.inner.prdid_dialect {
             RustPrdidDialect::PitchRollHeading => "PitchRollHeading",
             RustPrdidDialect::RollPitchHeading => "RollPitchHeading",
@@ -1066,11 +1068,7 @@ pub struct PyPrdidPitchRollHeading {
 impl PyPrdidPitchRollHeading {
     #[new]
     #[pyo3(signature = (pitch_deg = None, roll_deg = None, heading_deg = None))]
-    fn new(
-        pitch_deg: Option<f32>,
-        roll_deg: Option<f32>,
-        heading_deg: Option<f32>,
-    ) -> Self {
+    fn new(pitch_deg: Option<f32>, roll_deg: Option<f32>, heading_deg: Option<f32>) -> Self {
         Self {
             pitch_deg,
             roll_deg,
@@ -1119,11 +1117,7 @@ pub struct PyPrdidRollPitchHeading {
 impl PyPrdidRollPitchHeading {
     #[new]
     #[pyo3(signature = (roll_deg = None, pitch_deg = None, heading_deg = None))]
-    fn new(
-        roll_deg: Option<f32>,
-        pitch_deg: Option<f32>,
-        heading_deg: Option<f32>,
-    ) -> Self {
+    fn new(roll_deg: Option<f32>, pitch_deg: Option<f32>, heading_deg: Option<f32>) -> Self {
         Self {
             roll_deg,
             pitch_deg,
@@ -1368,12 +1362,12 @@ impl PyNmea0183Parser {
         // checker flags the subsequent PyO3 construction as overlapping
         // with the `next_message()` borrow.
         let result = match &mut self.inner {
-            Nmea0183Inner::OneShot(p) => p
-                .next_message()
-                .map(|r| r.map(owned_message_from_borrowed)),
-            Nmea0183Inner::Streaming(p) => p
-                .next_message()
-                .map(|r| r.map(owned_message_from_borrowed)),
+            Nmea0183Inner::OneShot(p) => {
+                p.next_message().map(|r| r.map(owned_message_from_borrowed))
+            }
+            Nmea0183Inner::Streaming(p) => {
+                p.next_message().map(|r| r.map(owned_message_from_borrowed))
+            }
         };
         match result {
             None => Ok(None),
