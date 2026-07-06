@@ -12,6 +12,7 @@ mod checksum;
 mod error;
 mod scale;
 mod st0601;
+mod tags;
 
 pub use error::Error;
 pub use st0601::{St0601, UAS_LS_KEY};
