@@ -37,7 +37,7 @@ track deliverables (not conversational state).
   Same gap as the NMEA/AIS fixtures: today's KLV test vectors are
   synthetic. Need >=5 real ST 0601 streams from actual UAS datalink
   hardware/software, source documented per sample.
-- [ ] Add a bindings/python Rust fmt/clippy CI gate
+- [x] Add a bindings/python Rust fmt/clippy CI gate **DONE 2026-07-06**
   `bindings/python` is workspace-excluded (root `Cargo.toml`:
   `exclude = ["fuzz", "bindings/python"]`), so `just ci` never runs
   `cargo fmt --check` / `cargo clippy -D warnings` against its Rust
