@@ -1,0 +1,28 @@
+[package]
+name = "marlin-klv"
+description = "Sans-I/O MISB ST 0601 (UAS Datalink Local Set) KLV encoder/decoder."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["klv", "misb", "st0601", "uas", "metadata"]
+categories = ["parser-implementations", "encoding"]
+
+[dependencies]
+thiserror = { workspace = true }
+# Pure-Rust round-half-away-from-zero for no_std builds; used by scale.rs.
+libm = "0.2"
+bytes = { workspace = true, optional = true }
+
+[features]
+bytes = ["dep:bytes"]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
