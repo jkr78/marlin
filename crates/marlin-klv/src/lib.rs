@@ -15,4 +15,6 @@ mod st0601;
 mod tags;
 
 pub use error::Error;
-pub use st0601::{St0601, UAS_LS_KEY};
+#[cfg(feature = "bytes")]
+pub use st0601::encode_to_bytes;
+pub use st0601::{decode, encode, precision_timestamp, St0601, UAS_LS_KEY};
