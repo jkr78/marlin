@@ -11,6 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 marlin-nmea-envelope = { path = "../crates/marlin-nmea-envelope" }
 marlin-ais = { path = "../crates/marlin-ais" }
+marlin-klv = { path = "../crates/marlin-klv" }
 
 # Fuzz targets must be opt-out of the usual noise.
 [[bin]]
@@ -37,6 +38,13 @@ bench = false
 [[bin]]
 name = "ais_parser"
 path = "fuzz_targets/ais_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "klv_decode"
+path = "fuzz_targets/klv_decode.rs"
 test = false
 doc = false
 bench = false
