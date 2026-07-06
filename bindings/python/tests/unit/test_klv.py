@@ -45,11 +45,32 @@ def test_signed_sentinel_reads_none() -> None:
     assert decode(encode(s)).sensor_latitude_degrees is None
 
 
-def test_unknown_tags_round_trip() -> None:
-    # A tag this crate does not type must survive encode→decode verbatim.
+def test_known_tag_does_not_leak_into_unknown() -> None:
+    # A typed tag decodes into its field, never into `unknown`.
     s = St0601(timestamp_us=7)
     s.raw_platform_heading = 0x1234
-    wire = encode(s)
-    got = decode(wire)
+    got = decode(encode(s))
     assert got.raw_platform_heading == 0x1234
     assert got.unknown == []
+
+
+def test_unknown_tag_round_trips() -> None:
+    # Golden packet: ts=7 plus unknown tags 0x70=[DE AD] and 0x71=[01],
+    # with a correct BCC-16 (0x1D14). A tag this crate does not type surfaces
+    # in `unknown` and re-encodes verbatim. (Python cannot construct unknown
+    # tags — the `unknown` getter is read-only — so this drives a golden.)
+    packet = bytes(
+        [
+            0x06, 0x0E, 0x2B, 0x34, 0x02, 0x0B, 0x01, 0x01,
+            0x0E, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00,
+            0x15,  # outer BER length
+            0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07,  # Tag 2, ts=7
+            0x70, 0x02, 0xDE, 0xAD,  # unknown tag 0x70
+            0x71, 0x01, 0x01,  # unknown tag 0x71
+            0x01, 0x02, 0x1D, 0x14,  # Tag 1 checksum
+        ]
+    )
+    got = decode(packet)
+    assert got.timestamp_us == 7
+    assert got.unknown == [(0x70, b"\xde\xad"), (0x71, b"\x01")]
+    assert encode(got) == packet  # unknown tags preserved byte-exact

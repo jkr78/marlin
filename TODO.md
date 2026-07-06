@@ -8,6 +8,11 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Let Python callers construct marlin-klv unknown tags
+  The `St0601.unknown` PyO3 getter is read-only, so Python can decode and
+  round-trip unknown tags but cannot build a set with unknown tags from
+  scratch. Add a setter (or an `add_unknown(tag, value)` method) if a
+  Python encode-side use case needs it.
 - [ ] Expand marlin-klv ST 0601 tag coverage beyond the initial 20 scaled tags
   ST 0601 defines many more tags than the initial release covers. Add
   one struct field in `st0601.rs` plus one `scaled_tags!` entry in
