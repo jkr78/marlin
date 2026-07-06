@@ -13,6 +13,8 @@ mod error;
 mod scale;
 mod st0601;
 mod tags;
+#[cfg(test)]
+pub(crate) mod testing;
 
 pub use error::Error;
 #[cfg(feature = "bytes")]

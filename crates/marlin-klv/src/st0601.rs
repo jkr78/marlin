@@ -349,17 +349,10 @@ mod decode_tests {
         // Tag 65 (UAS LS version) is a 1-byte tag; a wire length of 2 is malformed for
         // the typed field, so it must land in `unknown` (tolerant decode) rather than
         // truncating the extra byte or erroring.
-        let mut packet = UAS_LS_KEY.to_vec();
-        let mut items = vec![2u8, 0x08]; // Tag 2, len 8
-        items.extend_from_slice(&7u64.to_be_bytes());
-        items.extend_from_slice(&[0x41, 0x02, 0x0B, 0x00]); // Tag 65, len 2 (wrong)
-        let value_len = items.len() + 4; // + Tag 1 checksum item
-        packet.push(value_len as u8);
-        packet.append(&mut items);
-        packet.push(1);
-        packet.push(2);
-        let checksum = bcc(&packet);
-        packet.extend_from_slice(&checksum.to_be_bytes());
+        let packet = crate::testing::KlvBuilder::new()
+            .timestamp(7)
+            .tag(65, &[0x0B, 0x00]) // Tag 65, len 2 (wrong for the typed field)
+            .build();
 
         let decoded = decode(&packet).expect("decode");
         assert_eq!(decoded.version, None);
@@ -424,7 +417,7 @@ mod decode_tests {
 )]
 mod precision_timestamp_tests {
     use super::*;
-    use alloc::{vec, vec::Vec};
+    use alloc::vec::Vec;
 
     #[test]
     fn present_timestamp_is_returned_without_full_decode() {
@@ -441,15 +434,7 @@ mod precision_timestamp_tests {
     #[test]
     fn absent_timestamp_returns_none() {
         // A valid-keyed local set whose only item is Tag 65 (no Tag 2).
-        let mut packet = UAS_LS_KEY.to_vec();
-        let mut items = vec![65u8, 0x01, 0x09]; // Tag 65, len 1, version 9
-        let value_len = items.len() + 4; // + Tag 1 checksum item
-        packet.push(value_len as u8);
-        packet.append(&mut items);
-        packet.push(1);
-        packet.push(2);
-        let checksum = bcc(&packet);
-        packet.extend_from_slice(&checksum.to_be_bytes());
+        let packet = crate::testing::KlvBuilder::new().version(9).build();
         assert_eq!(precision_timestamp(&packet), Ok(None));
     }
 
