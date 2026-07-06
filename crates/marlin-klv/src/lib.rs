@@ -6,3 +6,7 @@ extern crate alloc;
 
 #[cfg(test)]
 extern crate std;
+
+mod error;
+
+pub use error::Error;
