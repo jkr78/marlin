@@ -10,5 +10,6 @@ extern crate std;
 mod ber;
 mod checksum;
 mod error;
+mod scale;
 
 pub use error::Error;
