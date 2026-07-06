@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 mod ais;
 mod envelope;
 mod errors;
+mod klv;
 mod nmea;
 
 #[pymodule]
@@ -16,5 +17,6 @@ fn _core(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     ais::register(py, m)?;
     envelope::register(py, m)?;
     nmea::register(py, m)?;
+    klv::register(py, m)?;
     Ok(())
 }

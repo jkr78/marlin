@@ -10,6 +10,7 @@ use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 
 use marlin_ais::AisError as RustAisError;
+use marlin_klv::Error as RustKlvError;
 use marlin_nmea_0183::DecodeError as RustDecodeError;
 use marlin_nmea_envelope::Error as RustEnvelopeError;
 
@@ -18,6 +19,7 @@ create_exception!(_core, EnvelopeError, MarlinError);
 create_exception!(_core, DecodeError, MarlinError);
 create_exception!(_core, AisError, MarlinError);
 create_exception!(_core, ReassemblyError, AisError);
+create_exception!(_core, KlvError, MarlinError);
 
 /// Register all exceptions on the given module. Called from `lib.rs`.
 pub(crate) fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -26,6 +28,7 @@ pub(crate) fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> 
     m.add("DecodeError", py.get_type::<DecodeError>())?;
     m.add("AisError", py.get_type::<AisError>())?;
     m.add("ReassemblyError", py.get_type::<ReassemblyError>())?;
+    m.add("KlvError", py.get_type::<KlvError>())?;
     Ok(())
 }
 
@@ -87,4 +90,9 @@ pub(crate) fn ais_err(py: Python<'_>, err: RustAisError) -> PyErr {
         }
         _ => AisError::new_err(msg),
     }
+}
+
+/// Convert a marlin-klv `Error` into a `KlvError` (Py).
+pub(crate) fn klv_err(err: RustKlvError) -> PyErr {
+    KlvError::new_err(err.to_string())
 }
