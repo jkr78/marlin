@@ -50,8 +50,9 @@ doc:
 doc-open:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --open
 
-# Run everything CI runs, in order. Use before pushing.
-ci: fmt-check build test lint doc
+# Run everything CI runs, in order. Use before pushing. Includes the
+# workspace-excluded fuzz crate's fmt + clippy (stable — see below).
+ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint
 
 # ---------------------------------------------------------------------------
 # Fuzzing (requires nightly + cargo-fuzz)
@@ -61,6 +62,17 @@ ci: fmt-check build test lint doc
 # fuzzing. Useful after API changes.
 fuzz-build:
     cd fuzz && cargo +nightly fuzz build
+
+# Check formatting of the fuzz crate. It's workspace-excluded, so
+# `just fmt-check` never sees it. Runs on stable — fmt needs no nightly.
+fuzz-fmt-check:
+    cd fuzz && cargo fmt --check
+
+# Clippy the fuzz targets with warnings as errors. Workspace-excluded,
+# so `just lint` skips them. Runs on stable: cargo-fuzz's nightly is only
+# needed to *run* the fuzzer (sanitizers), not to check/lint the harnesses.
+fuzz-lint:
+    cd fuzz && cargo clippy --all-targets -- -D warnings
 
 # Bootstrap the libfuzzer working corpus from the persistent regression
 # seeds at fuzz/seeds/<target>/. Idempotent: cp -n preserves any better

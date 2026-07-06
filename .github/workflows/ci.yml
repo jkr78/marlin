@@ -42,6 +42,15 @@ jobs:
       - name: doc
         run: just doc
 
+      # The fuzz crate is excluded from the Cargo workspace, so the steps
+      # above (--workspace/--all) never cover it. Its harnesses check + lint
+      # on stable — nightly is only needed to run the fuzzer itself.
+      - name: fuzz fmt check
+        run: just fuzz-fmt-check
+
+      - name: fuzz lint
+        run: just fuzz-lint
+
   msrv:
     name: MSRV (1.82)
     runs-on: ubuntu-latest
