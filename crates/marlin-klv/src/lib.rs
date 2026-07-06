@@ -8,6 +8,7 @@ extern crate alloc;
 extern crate std;
 
 mod ber;
+mod checksum;
 mod error;
 
 pub use error::Error;
