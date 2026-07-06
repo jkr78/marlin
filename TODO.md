@@ -42,6 +42,11 @@ track deliverables (not conversational state).
   `exclude = ["fuzz", "bindings/python"]`), so `just ci` never runs
   `cargo fmt --check` / `cargo clippy -D warnings` against its Rust
   source. Needs its own recipe/CI step.
+- [x] Gate the fuzz crate Rust with fmt + clippy **DONE 2026-07-06**
+  Same workspace-exclusion gap as the bindings crate. Added
+  `just fuzz-fmt-check` / `fuzz-lint` (wired into `just ci`) plus fmt +
+  clippy steps in the `ci.yml` check job. Runs on stable — nightly is
+  only needed to run the fuzzer, not to lint the harnesses.
 - [ ] Investigate pyright errors in test_context_managers.py, test_envelope.py
   Pre-existing possibly-unbound-local findings under
   `bindings/python/tests/unit/test_context_managers.py` and
