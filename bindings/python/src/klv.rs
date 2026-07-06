@@ -2,8 +2,11 @@
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyModule};
+use pyo3::wrap_pyfunction;
 
 use marlin_klv::St0601 as RustSt0601;
+
+use crate::errors::klv_err;
 
 /// Mutable MISB ST 0601 local set. Construct, set fields, then `klv.encode(...)`;
 /// or obtain one from `klv.decode(...)`. Each tag exposes an engineering-unit
@@ -19,9 +22,11 @@ impl PySt0601 {
     #[new]
     #[pyo3(signature = (timestamp_us = 0, version = None))]
     fn new(timestamp_us: u64, version: Option<u8>) -> Self {
-        let mut inner = RustSt0601::default();
-        inner.timestamp_us = timestamp_us;
-        inner.version = version;
+        let inner = RustSt0601 {
+            timestamp_us,
+            version,
+            ..RustSt0601::default()
+        };
         Self { inner }
     }
 
@@ -421,9 +426,35 @@ impl PySt0601 {
     }
 }
 
+/// Decode a KLV datagram into an `St0601`. Raises `KlvError` on malformed input.
+#[pyfunction]
+fn decode(data: &[u8]) -> PyResult<PySt0601> {
+    marlin_klv::decode(data)
+        .map(|inner| PySt0601 { inner })
+        .map_err(klv_err)
+}
+
+/// Encode an `St0601` into a KLV datagram (`bytes`).
+#[pyfunction]
+fn encode<'py>(py: Python<'py>, set: &PySt0601) -> PyResult<Bound<'py, PyBytes>> {
+    let mut out = Vec::new();
+    marlin_klv::encode(&set.inner, &mut out).map_err(klv_err)?;
+    Ok(PyBytes::new(py, &out))
+}
+
+/// Cheap Tag 2 peek: return the precision timestamp (microseconds) without
+/// verifying the checksum. `None` when Tag 2 is absent.
+#[pyfunction]
+fn precision_timestamp(data: &[u8]) -> PyResult<Option<u64>> {
+    marlin_klv::precision_timestamp(data).map_err(klv_err)
+}
+
 pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     let m = PyModule::new(py, "klv")?;
     m.add_class::<PySt0601>()?;
+    m.add_function(wrap_pyfunction!(decode, &m)?)?;
+    m.add_function(wrap_pyfunction!(encode, &m)?)?;
+    m.add_function(wrap_pyfunction!(precision_timestamp, &m)?)?;
     parent.add_submodule(&m)?;
     Ok(())
 }
