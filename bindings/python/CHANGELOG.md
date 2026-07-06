@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-06
+
+### Added
+
+- `marlin.klv` — Python bindings for the new `marlin-klv` crate (MISB
+  ST 0601 KLV encoder/decoder). `St0601` exposes engineering-unit
+  accessors (e.g. `sensor_latitude_degrees`) plus `raw_*` wire-integer
+  escape hatches, both readable and writable, alongside `timestamp_us`,
+  `version`, and a read-only `unknown` list. Module functions
+  `decode(bytes) -> St0601`, `encode(St0601) -> bytes`, and
+  `precision_timestamp(bytes) -> int | None`. `KlvError` subclasses
+  `MarlinError`. This is the suite's first encoder exposed to Python —
+  KLV round-trips in both directions, unlike the decode-only NMEA/AIS
+  bindings.
+
 ## [0.1.1] - 2026-05-08
 
 ### Added

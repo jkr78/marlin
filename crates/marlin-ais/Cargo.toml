@@ -12,7 +12,7 @@ keywords = ["ais", "aivdm", "parser", "maritime", "vessel"]
 categories = ["parser-implementations"]
 
 [dependencies]
-marlin-nmea-envelope = { path = "../marlin-nmea-envelope", version = "0.1.1" }
+marlin-nmea-envelope = { path = "../marlin-nmea-envelope", version = "0.1.2" }
 thiserror = { workspace = true }
 
 [lints]
