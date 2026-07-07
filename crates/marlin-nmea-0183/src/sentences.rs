@@ -14,6 +14,7 @@ mod prdid;
 mod psxn;
 mod rmc;
 mod status;
+mod ttm;
 mod utc_time;
 mod vtg;
 
