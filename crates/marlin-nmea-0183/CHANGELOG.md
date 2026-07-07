@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-07
+
 ### Added
 
 - Typed decoders for three radar/heading sentences, previously returned
