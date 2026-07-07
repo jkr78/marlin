@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (each with an `UNKNOWN` member for uncoded wire bytes). Standalone
   `decode_hdg` / `decode_ttm` / `decode_tll` helpers alongside the
   existing per-sentence decoders.
+- `marlin.dataclasses.to_dataclass` now maps `Hdg`, `Ttm`, and `Tll`,
+  backed by new frozen mirrors `dataclasses.Hdg`, `dataclasses.Ttm`,
+  `dataclasses.Tll`.
 
 ## [0.1.3] - 2026-07-07
 
