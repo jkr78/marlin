@@ -79,11 +79,17 @@ track deliverables (not conversational state).
   `just fuzz-fmt-check` / `fuzz-lint` (wired into `just ci`) plus fmt +
   clippy steps in the `ci.yml` check job. Runs on stable — nightly is
   only needed to run the fuzzer, not to lint the harnesses.
-- [ ] Investigate pyright errors in test_context_managers.py, test_envelope.py
-  Pre-existing possibly-unbound-local findings under
-  `bindings/python/tests/unit/test_context_managers.py` and
-  `test_envelope.py`. Unrelated to the marlin-klv work; confirm real
-  or false positive, then fix or suppress with a reason.
+- [x] Investigate pyright errors in test_context_managers.py, test_envelope.py **DONE 2026-07-07**
+  Ran project pyright (`standard` mode): found 24 errors across three files.
+  Root cause of the possibly-unbound findings: parser `__exit__` stubs typed
+  `-> bool` (the Rust always returns `false`), so pyright assumed exceptions
+  might be suppressed → with-body vars possibly-unbound. Fixed at the root by
+  typing all 8 `__exit__` stubs `-> Literal[False]`. `test_envelope.py`
+  optional-access narrowed with `assert s is not None`; the intentional
+  frozen-property assignment got a scoped `# pyright: ignore`. Also caught +
+  fixed 11 self-introduced pyright errors in `test_radar.py` (missing
+  `isinstance(msg, Ttm)` narrowing — mypy passed but pyright standard flagged
+  it). Pyright now 0 errors; mypy --strict + 181 pytest still green.
 
 ---
 

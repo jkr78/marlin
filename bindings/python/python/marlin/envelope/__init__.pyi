@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import TracebackType
+from typing import Literal
 
 from .. import MarlinError
 
@@ -45,7 +46,7 @@ class OneShotParser:
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> bool: ...
+    ) -> Literal[False]: ...
 
 class StreamingParser:
     def __init__(self, max_size: int = ...) -> None: ...
@@ -59,7 +60,7 @@ class StreamingParser:
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> bool: ...
+    ) -> Literal[False]: ...
 
 def parse(data: bytes) -> RawSentence: ...
 
