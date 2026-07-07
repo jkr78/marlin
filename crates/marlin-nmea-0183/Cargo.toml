@@ -12,7 +12,7 @@ keywords = ["nmea", "nmea-0183", "parser", "maritime", "gnss"]
 categories = ["parser-implementations"]
 
 [dependencies]
-marlin-nmea-envelope = { path = "../marlin-nmea-envelope", version = "0.1.2" }
+marlin-nmea-envelope = { path = "../marlin-nmea-envelope", version = "0.1.3" }
 thiserror = { workspace = true }
 # Pure-Rust transcendental math (sin/cos/asin) for no_std builds.
 # Used by the PSXN decoder for sine-encoded roll/pitch recovery.

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-07
+
 ### Added
 
 - `marlin.klv` inspection surface for tooling that reverse-engineers a KLV

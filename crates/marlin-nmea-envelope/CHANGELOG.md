@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-07
+
+No behavioral changes. Lockstep version bump with the workspace release that
+extends `marlin-klv` with a tag-registry inspection API. Dropped the stale
+hardcoded `html_root_url` doc attribute (docs.rs sets the root automatically).
+
 ## [0.1.2] - 2026-07-06
 
 Released alongside `marlin-nmea-0183 0.1.2`, `marlin-ais 0.1.2`, and the
