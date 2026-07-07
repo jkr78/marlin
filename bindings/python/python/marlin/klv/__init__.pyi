@@ -122,8 +122,33 @@ class St0601:
     @property
     def unknown(self) -> list[tuple[int, bytes]]: ...
 
+class TagInfo:
+    """Read-only metadata for one typed ST 0601 tag: wire number, field base
+    name (e.g. ``sensor_latitude``), and engineering unit (``None`` if none)."""
+
+    number: int
+    name: str
+    unit: str | None
+
+# The 16-byte UAS Datalink Local Set Universal Label every ST 0601 packet is framed with.
+UAS_LS_KEY: bytes
+
 def decode(data: bytes) -> St0601: ...
 def encode(set: St0601) -> bytes: ...
 def precision_timestamp(data: bytes) -> int | None: ...
+def tags() -> list[TagInfo]: ...
+def tag_number(name: str) -> int | None: ...
+def tag_name(number: int) -> str | None: ...
 
-__all__ = ["KlvError", "St0601", "decode", "encode", "precision_timestamp"]
+__all__ = [
+    "UAS_LS_KEY",
+    "KlvError",
+    "St0601",
+    "TagInfo",
+    "decode",
+    "encode",
+    "precision_timestamp",
+    "tag_name",
+    "tag_number",
+    "tags",
+]

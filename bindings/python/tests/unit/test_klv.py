@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from marlin.klv import KlvError, St0601, decode, encode, precision_timestamp
+from marlin.klv import (
+    UAS_LS_KEY,
+    KlvError,
+    St0601,
+    TagInfo,
+    decode,
+    encode,
+    precision_timestamp,
+    tag_name,
+    tag_number,
+    tags,
+)
 
 
 def test_round_trip_engineering_values() -> None:
@@ -74,3 +85,50 @@ def test_unknown_tag_round_trips() -> None:
     assert got.timestamp_us == 7
     assert got.unknown == [(0x70, b"\xde\xad"), (0x71, b"\x01")]
     assert encode(got) == packet  # unknown tags preserved byte-exact
+
+
+def test_uas_ls_key_frames_encoded_output() -> None:
+    # The exported key is the exact 16-byte prefix of every encoded packet.
+    assert isinstance(UAS_LS_KEY, bytes)
+    assert len(UAS_LS_KEY) == 16
+    wire = encode(St0601(timestamp_us=1))
+    assert wire[:16] == UAS_LS_KEY
+
+
+def test_tag_registry_covers_all_decodable_tags() -> None:
+    registry = tags()
+    numbers = [t.number for t in registry]
+    assert len(registry) == 22  # 20 scaled + Tag 2 + Tag 65
+    assert numbers == sorted(numbers), "ascending tag order"
+    assert numbers[0] == 2 and numbers[-1] == 65
+    assert 1 not in numbers, "Tag 1 checksum is framing, not a field"
+
+
+def test_tag_info_fields_and_units() -> None:
+    by_number = {t.number: t for t in tags()}
+    lat = by_number[13]
+    assert isinstance(lat, TagInfo)
+    assert lat.name == "sensor_latitude"
+    assert lat.unit == "degrees"
+    assert by_number[2].name == "timestamp"
+    assert by_number[2].unit == "microseconds"
+    assert by_number[65].name == "version"
+    assert by_number[65].unit is None
+
+
+def test_tag_name_and_number_are_inverse() -> None:
+    for t in tags():
+        assert tag_number(t.name) == t.number
+        assert tag_name(t.number) == t.name
+
+
+def test_tag_lookups_return_none_for_unknown() -> None:
+    assert tag_number("not_a_tag") is None
+    assert tag_number("sensor_latitude_degrees") is None  # accessor, not field base
+    assert tag_name(1) is None  # checksum tag
+    assert tag_name(200) is None
+
+
+def test_tag_info_is_hashable() -> None:
+    # Frozen + hashable so census code can dedupe into a set.
+    assert len(set(tags())) == len(tags())

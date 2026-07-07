@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `marlin.klv` inspection surface for tooling that reverse-engineers a KLV
+  stream: `UAS_LS_KEY` (the 16-byte local-set label every packet is framed
+  with), `tags()` (all 22 decodable tags as `TagInfo` with `number` / `name` /
+  `unit`), `tag_number(name)`, and `tag_name(number)`. The registry comes
+  straight from the Rust codec, so it stays in step with `decode` across
+  releases instead of being re-derived in Python. `TagInfo` is frozen and
+  hashable.
+
 ## [0.1.2] - 2026-07-06
 
 ### Added

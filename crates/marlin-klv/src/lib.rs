@@ -50,3 +50,4 @@ pub use error::Error;
 #[cfg(feature = "bytes")]
 pub use st0601::encode_to_bytes;
 pub use st0601::{decode, encode, precision_timestamp, St0601, UAS_LS_KEY};
+pub use tags::{tag_name, tag_number, tags, TagInfo};

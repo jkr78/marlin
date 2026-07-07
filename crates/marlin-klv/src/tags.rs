@@ -7,6 +7,22 @@ use crate::st0601::St0601;
 
 use alloc::vec::Vec;
 
+/// Metadata for one ST 0601 tag this crate decodes into a typed field: its wire
+/// number, the [`St0601`] field base name (e.g. `"sensor_latitude"`, the
+/// accessor name minus the `_degrees` / `raw_` affixes), and its engineering
+/// unit. Sourced from the codec's own tag table, so it cannot drift from what
+/// [`decode`](crate::decode) actually does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TagInfo {
+    /// ST 0601 tag number as it appears on the wire.
+    pub number: u8,
+    /// [`St0601`] field base name, e.g. `"sensor_latitude"`.
+    pub name: &'static str,
+    /// Engineering unit (`"degrees"`, `"meters"`, `"mps"`, `"microseconds"`),
+    /// or `None` for unit-less tags such as the LS version.
+    pub unit: Option<&'static str>,
+}
+
 macro_rules! scaled_tags {
     ($({
         tag: $tag:literal,
@@ -17,8 +33,22 @@ macro_rules! scaled_tags {
         setter: $setter:ident,
         to_units: $to_units:expr,
         from_units: $from_units:expr,
+        unit: $unit:literal,
         doc: $doc:literal
     }),+ $(,)?) => {
+        /// Every tag this crate decodes into a typed field, in ascending tag order.
+        /// The scaled entries are generated from the table below (drift-free); the two
+        /// framing tags handled outside the macro — Tag 2 (precision timestamp) and
+        /// Tag 65 (LS version) — bracket them. Adding a scaled tag numbered below 65
+        /// keeps the slice sorted automatically.
+        pub const TAGS: &[TagInfo] = &[
+            TagInfo { number: 2, name: "timestamp", unit: Some("microseconds") },
+            $(
+                TagInfo { number: $tag, name: stringify!($field), unit: Some($unit) },
+            )+
+            TagInfo { number: 65, name: "version", unit: None },
+        ];
+
         /// Append every present scaled tag to `items`, in table (ascending tag) order.
         pub(crate) fn encode_scaled(set: &St0601, items: &mut Vec<u8>) {
             $(
@@ -71,6 +101,7 @@ scaled_tags! {
         getter: platform_heading_degrees, setter: set_platform_heading_degrees,
         to_units: |c: u16| Some(crate::scale::u16_to_units(c, 360.0)),
         from_units: |v: f64| crate::scale::units_to_u16(v, 360.0),
+        unit: "degrees",
         doc: "platform heading in degrees (0..360)"
     },
     {
@@ -78,6 +109,7 @@ scaled_tags! {
         getter: platform_pitch_degrees, setter: set_platform_pitch_degrees,
         to_units: |c: i16| crate::scale::i16_to_units(c, 20.0),
         from_units: |v: f64| crate::scale::units_to_i16(v, 20.0),
+        unit: "degrees",
         doc: "platform pitch in degrees (-20..20)"
     },
     {
@@ -85,6 +117,7 @@ scaled_tags! {
         getter: platform_roll_degrees, setter: set_platform_roll_degrees,
         to_units: |c: i16| crate::scale::i16_to_units(c, 50.0),
         from_units: |v: f64| crate::scale::units_to_i16(v, 50.0),
+        unit: "degrees",
         doc: "platform roll in degrees (-50..50)"
     },
     {
@@ -92,6 +125,7 @@ scaled_tags! {
         getter: platform_true_airspeed_mps, setter: set_platform_true_airspeed_mps,
         to_units: |c: u8| Some(f64::from(c)),
         from_units: |v: f64| crate::scale::units_to_u8(v),
+        unit: "mps",
         doc: "platform true airspeed in m/s (0..255)"
     },
     {
@@ -99,6 +133,7 @@ scaled_tags! {
         getter: sensor_latitude_degrees, setter: set_sensor_latitude_degrees,
         to_units: |c: i32| crate::scale::i32_to_units(c, 90.0),
         from_units: |v: f64| crate::scale::units_to_i32(v, 90.0),
+        unit: "degrees",
         doc: "sensor latitude in degrees WGS84 (-90..90)"
     },
     {
@@ -106,6 +141,7 @@ scaled_tags! {
         getter: sensor_longitude_degrees, setter: set_sensor_longitude_degrees,
         to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
         from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        unit: "degrees",
         doc: "sensor longitude in degrees WGS84 (-180..180)"
     },
     {
@@ -113,6 +149,7 @@ scaled_tags! {
         getter: sensor_true_altitude_meters, setter: set_sensor_true_altitude_meters,
         to_units: |c: u16| Some(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
         from_units: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
+        unit: "meters",
         doc: "sensor true altitude in meters MSL (-900..19000)"
     },
     {
@@ -120,6 +157,7 @@ scaled_tags! {
         getter: sensor_horizontal_fov_degrees, setter: set_sensor_horizontal_fov_degrees,
         to_units: |c: u16| Some(crate::scale::u16_to_units(c, 180.0)),
         from_units: |v: f64| crate::scale::units_to_u16(v, 180.0),
+        unit: "degrees",
         doc: "sensor horizontal field of view in degrees (0..180)"
     },
     {
@@ -127,6 +165,7 @@ scaled_tags! {
         getter: sensor_vertical_fov_degrees, setter: set_sensor_vertical_fov_degrees,
         to_units: |c: u16| Some(crate::scale::u16_to_units(c, 180.0)),
         from_units: |v: f64| crate::scale::units_to_u16(v, 180.0),
+        unit: "degrees",
         doc: "sensor vertical field of view in degrees (0..180)"
     },
     {
@@ -134,6 +173,7 @@ scaled_tags! {
         getter: sensor_relative_azimuth_degrees, setter: set_sensor_relative_azimuth_degrees,
         to_units: |c: u32| Some(crate::scale::u32_to_units(c, 360.0)),
         from_units: |v: f64| crate::scale::units_to_u32(v, 360.0),
+        unit: "degrees",
         doc: "sensor relative azimuth in degrees (0..360)"
     },
     {
@@ -141,6 +181,7 @@ scaled_tags! {
         getter: sensor_relative_elevation_degrees, setter: set_sensor_relative_elevation_degrees,
         to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
         from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        unit: "degrees",
         doc: "sensor relative elevation in degrees (-180..180, negative = below horizon)"
     },
     {
@@ -148,6 +189,7 @@ scaled_tags! {
         getter: sensor_relative_roll_degrees, setter: set_sensor_relative_roll_degrees,
         to_units: |c: u32| Some(crate::scale::u32_to_units(c, 360.0)),
         from_units: |v: f64| crate::scale::units_to_u32(v, 360.0),
+        unit: "degrees",
         doc: "sensor relative roll in degrees (0..360, clockwise from behind camera)"
     },
     {
@@ -155,6 +197,7 @@ scaled_tags! {
         getter: slant_range_meters, setter: set_slant_range_meters,
         to_units: |c: u32| Some(crate::scale::u32_to_units(c, 5_000_000.0)),
         from_units: |v: f64| crate::scale::units_to_u32(v, 5_000_000.0),
+        unit: "meters",
         doc: "slant range in meters (0..5000000)"
     },
     {
@@ -162,6 +205,7 @@ scaled_tags! {
         getter: target_width_meters, setter: set_target_width_meters,
         to_units: |c: u16| Some(crate::scale::u16_to_units(c, 10_000.0)),
         from_units: |v: f64| crate::scale::units_to_u16(v, 10_000.0),
+        unit: "meters",
         doc: "target width in meters (0..10000)"
     },
     {
@@ -169,6 +213,7 @@ scaled_tags! {
         getter: frame_center_latitude_degrees, setter: set_frame_center_latitude_degrees,
         to_units: |c: i32| crate::scale::i32_to_units(c, 90.0),
         from_units: |v: f64| crate::scale::units_to_i32(v, 90.0),
+        unit: "degrees",
         doc: "frame center latitude in degrees WGS84 (-90..90)"
     },
     {
@@ -176,6 +221,7 @@ scaled_tags! {
         getter: frame_center_longitude_degrees, setter: set_frame_center_longitude_degrees,
         to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
         from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        unit: "degrees",
         doc: "frame center longitude in degrees WGS84 (-180..180)"
     },
     {
@@ -183,6 +229,7 @@ scaled_tags! {
         getter: frame_center_elevation_meters, setter: set_frame_center_elevation_meters,
         to_units: |c: u16| Some(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
         from_units: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
+        unit: "meters",
         doc: "frame center elevation in meters MSL (-900..19000)"
     },
     {
@@ -190,6 +237,7 @@ scaled_tags! {
         getter: target_location_latitude_degrees, setter: set_target_location_latitude_degrees,
         to_units: |c: i32| crate::scale::i32_to_units(c, 90.0),
         from_units: |v: f64| crate::scale::units_to_i32(v, 90.0),
+        unit: "degrees",
         doc: "target location latitude in degrees WGS84 (-90..90)"
     },
     {
@@ -197,6 +245,7 @@ scaled_tags! {
         getter: target_location_longitude_degrees, setter: set_target_location_longitude_degrees,
         to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
         from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        unit: "degrees",
         doc: "target location longitude in degrees WGS84 (-180..180)"
     },
     {
@@ -204,8 +253,33 @@ scaled_tags! {
         getter: target_location_elevation_meters, setter: set_target_location_elevation_meters,
         to_units: |c: u16| Some(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
         from_units: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
+        unit: "meters",
         doc: "target location elevation in meters MSL (-900..19000)"
     },
+}
+
+/// Every ST 0601 tag this crate decodes into a typed field, in ascending tag
+/// order: the framing Tag 2 (timestamp) and Tag 65 (version) plus the scaled
+/// tags. The table is the codec's own, so it stays in step with
+/// [`decode`](crate::decode) across releases. Does not include Tag 1 (the
+/// checksum is structural framing, never surfaced as a field) or unknown tags.
+#[must_use]
+pub fn tags() -> &'static [TagInfo] {
+    TAGS
+}
+
+/// Wire tag number for a field base name (e.g. `"sensor_latitude"`), or `None`
+/// if no typed tag carries that name.
+#[must_use]
+pub fn tag_number(name: &str) -> Option<u8> {
+    TAGS.iter().find(|t| t.name == name).map(|t| t.number)
+}
+
+/// Field base name for a wire tag number, or `None` if the tag is not one this
+/// crate types.
+#[must_use]
+pub fn tag_name(number: u8) -> Option<&'static str> {
+    TAGS.iter().find(|t| t.number == number).map(|t| t.name)
 }
 
 #[cfg(test)]
@@ -480,5 +554,77 @@ mod tests {
         assert_eq!(wild.slant_range, Some(u32::MAX));
         assert_eq!(wild.target_width, Some(0));
         assert_eq!(wild.frame_center_elevation, Some(65535));
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod registry_tests {
+    use super::{tag_name, tag_number, tags};
+
+    #[test]
+    fn covers_all_22_decodable_tags_in_ascending_order() {
+        // 20 scaled tags + Tag 2 (timestamp) + Tag 65 (version), no Tag 1.
+        let all = tags();
+        assert_eq!(all.len(), 22, "20 scaled + Tag 2 + Tag 65");
+        assert_eq!(all.first().map(|t| t.number), Some(2), "Tag 2 leads");
+        assert_eq!(all.last().map(|t| t.number), Some(65), "Tag 65 trails");
+        assert!(
+            all.windows(2).all(|w| w[0].number < w[1].number),
+            "strictly ascending tag numbers"
+        );
+        assert!(
+            all.iter().all(|t| t.number != 1),
+            "Tag 1 (checksum) is framing, never a field"
+        );
+    }
+
+    #[test]
+    fn framing_tags_carry_expected_names_and_units() {
+        assert_eq!(tag_name(2), Some("timestamp"));
+        assert_eq!(tag_name(65), Some("version"));
+        let version = tags().iter().find(|t| t.number == 65).expect("tag 65");
+        assert_eq!(version.unit, None, "version is unit-less");
+        let timestamp = tags().iter().find(|t| t.number == 2).expect("tag 2");
+        assert_eq!(timestamp.unit, Some("microseconds"));
+    }
+
+    #[test]
+    fn scaled_tags_all_carry_a_unit() {
+        for t in tags().iter().filter(|t| t.number != 65) {
+            assert!(t.unit.is_some(), "tag {} has a unit", t.number);
+        }
+    }
+
+    #[test]
+    fn name_and_number_lookups_are_inverse() {
+        for t in tags() {
+            assert_eq!(tag_number(t.name), Some(t.number), "name -> number");
+            assert_eq!(tag_name(t.number), Some(t.name), "number -> name");
+        }
+    }
+
+    #[test]
+    fn sample_scaled_tag_is_named_from_the_field() {
+        // Field base name, not the accessor: `sensor_latitude`, not `sensor_latitude_degrees`.
+        assert_eq!(tag_number("sensor_latitude"), Some(13));
+        assert_eq!(tag_name(13), Some("sensor_latitude"));
+    }
+
+    #[test]
+    fn absent_names_and_numbers_return_none() {
+        assert_eq!(tag_number("not_a_tag"), None);
+        assert_eq!(
+            tag_number("sensor_latitude_degrees"),
+            None,
+            "accessor, not field"
+        );
+        assert_eq!(tag_name(1), None, "checksum tag is not a field");
+        assert_eq!(tag_name(99), None);
     }
 }
