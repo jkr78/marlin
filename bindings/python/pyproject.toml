@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "marlin-py"
-version = "0.1.3"
+version = "0.1.4"
 description = "Sans-I/O NMEA 0183 + AIS (AIVDM/AIVDO) parser, Rust-backed"
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }

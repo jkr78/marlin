@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-07
+
+No behavioral changes. Lockstep version bump with the workspace release that
+adds HDG/TTM/TLL sentence decoders to `marlin-nmea-0183`.
+
 ## [0.1.3] - 2026-07-07
 
 No behavioral changes. Lockstep version bump with the workspace release that
