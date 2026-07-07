@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Union
+from typing import Literal, Union
 
 from typing_extensions import TypeAlias
 
@@ -453,7 +453,7 @@ class Nmea0183Parser:
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> bool: ...
+    ) -> Literal[False]: ...
 
 def decode(raw: RawSentence) -> Nmea0183Message: ...
 def decode_with(raw: RawSentence, options: DecodeOptions) -> Nmea0183Message: ...

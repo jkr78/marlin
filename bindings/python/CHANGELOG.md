@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Parser `__exit__` type stubs now return `Literal[False]` (they never suppress
+  exceptions), so type checkers no longer report variables assigned inside a
+  `with parser as p:` block as possibly-unbound after the block.
+
 ## [0.1.4] - 2026-07-07
 
 ### Added

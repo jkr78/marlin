@@ -62,4 +62,5 @@ def test_tll_position_and_status() -> None:
 
 def test_ttm_unknown_code_collapses_to_unknown() -> None:
     msg = _decode_one(_frame(b"RATTM,1,1.0,2.0,X,3.0,4.0,T,5.0,6.0,N,n,T,"))
+    assert isinstance(msg, nmea.Ttm)
     assert msg.bearing_reference == AngleReference.UNKNOWN

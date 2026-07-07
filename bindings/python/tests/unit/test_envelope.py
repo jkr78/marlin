@@ -66,6 +66,7 @@ def test_proprietary_talker_none():
     p = OneShotParser()
     p.feed(PSXN)
     s = p.next_sentence()
+    assert s is not None
     assert s.talker is None
     assert s.sentence_type == "PSXN"
 
@@ -74,8 +75,11 @@ def test_rawsentence_frozen():
     p = OneShotParser()
     p.feed(GGA)
     s = p.next_sentence()
+    assert s is not None
     with pytest.raises((AttributeError, TypeError)):
-        s.sentence_type = "FAKE"
+        # Intentionally assign to a read-only property to prove immutability;
+        # pyright correctly flags the assignment, which is the point of the test.
+        s.sentence_type = "FAKE"  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_strict_iteration_raises():

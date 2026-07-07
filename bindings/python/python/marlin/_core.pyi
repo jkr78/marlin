@@ -7,6 +7,7 @@ also adds the matching signatures here. Task 15 will do a full pass/audit.
 from __future__ import annotations
 
 from types import TracebackType
+from typing import Literal
 
 __version__: str
 
@@ -60,7 +61,7 @@ class _EnvelopeModule:
             exc_type: type[BaseException] | None,
             exc_val: BaseException | None,
             exc_tb: TracebackType | None,
-        ) -> bool: ...
+        ) -> Literal[False]: ...
 
     class StreamingParser:
         def __init__(self, max_size: int = 65_536) -> None: ...
@@ -76,7 +77,7 @@ class _EnvelopeModule:
             exc_type: type[BaseException] | None,
             exc_val: BaseException | None,
             exc_tb: TracebackType | None,
-        ) -> bool: ...
+        ) -> Literal[False]: ...
 
     @staticmethod
     def parse(data: bytes) -> "_EnvelopeModule.RawSentence": ...
@@ -523,7 +524,7 @@ class _NmeaModule:
             exc_type: type[BaseException] | None,
             exc_val: BaseException | None,
             exc_tb: TracebackType | None,
-        ) -> bool: ...
+        ) -> Literal[False]: ...
 
     # Per-sentence decode extension points (Task 9).
     @staticmethod
@@ -906,7 +907,7 @@ class _AisModule:
             exc_type: type[BaseException] | None,
             exc_val: BaseException | None,
             exc_tb: TracebackType | None,
-        ) -> bool: ...
+        ) -> Literal[False]: ...
 
     class _AisIterator:
         def __iter__(self) -> "_AisModule._AisIterator": ...
