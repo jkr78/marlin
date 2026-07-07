@@ -8,7 +8,7 @@ track deliverables (not conversational state).
 
 ## New tasks
 
-- [ ] Fix pre-existing marlin-py stub/export gaps (found during radar-sentence review)
+- [x] Fix pre-existing marlin-py stub/export gaps (found during radar-sentence review) **DONE 2026-07-07**
   Two unrelated pre-existing drifts surfaced while adding HDG/TTM/TLL:
   (1) `bindings/python/python/marlin/_core.pyi` `Nmea0183Parser.next_message`
   return-type union omits `Gll` and `Rmc` (present on `__next__` and the public
