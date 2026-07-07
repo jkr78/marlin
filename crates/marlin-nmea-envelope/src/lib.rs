@@ -102,7 +102,6 @@
 //! - Zero-copy borrows; no allocation on the sentence hot path.
 //! - TAG block checksum mismatches are advisory, not fatal (decision 7).
 
-#![doc(html_root_url = "https://docs.rs/marlin-nmea-envelope/0.1.0")]
 #![no_std]
 
 extern crate alloc;

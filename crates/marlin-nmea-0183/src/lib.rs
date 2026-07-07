@@ -63,7 +63,6 @@
 //! are **not** silently dropped and **not** returned as errors — the
 //! caller decides what to do with them.
 
-#![doc(html_root_url = "https://docs.rs/marlin-nmea-0183/0.1.0")]
 #![no_std]
 
 extern crate alloc;

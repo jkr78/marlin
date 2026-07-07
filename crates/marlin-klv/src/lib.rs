@@ -29,7 +29,6 @@
 //! let decoded = marlin_klv::decode(&wire).unwrap();
 //! assert!((decoded.sensor_latitude_degrees().unwrap() - 60.1768).abs() < 1e-6);
 //! ```
-#![doc(html_root_url = "https://docs.rs/marlin-klv/0.1.2")]
 #![no_std]
 
 extern crate alloc;
