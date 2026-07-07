@@ -30,8 +30,8 @@ def test_hdg_signed_corrections() -> None:
     msg = _decode_one(b"$HCHDG,98.3,0.0,E,12.6,W*57")
     assert isinstance(msg, nmea.Hdg)
     assert msg.talker == b"HC"
-    assert abs(msg.heading_magnetic_deg - 98.3) < 0.01
-    assert abs(msg.variation_deg - -12.6) < 0.01  # W is negative
+    assert msg.heading_magnetic_deg is not None and abs(msg.heading_magnetic_deg - 98.3) < 0.01
+    assert msg.variation_deg is not None and abs(msg.variation_deg - -12.6) < 0.01  # W is negative
 
 
 def test_ttm_full_rattm() -> None:
@@ -48,14 +48,14 @@ def test_ttm_full_rattm() -> None:
     assert msg.acquisition == AcquisitionType.REPORTED
     assert msg.reference_target is True
     assert msg.name == "TGT1"
-    assert abs(msg.tcpa - -11.0) < 0.001
+    assert msg.tcpa is not None and abs(msg.tcpa - -11.0) < 0.001
 
 
 def test_tll_position_and_status() -> None:
     msg = _decode_one(_frame(b"RATLL,7,4807.038,N,01131.000,E,TGT7,123519,T,R"))
     assert isinstance(msg, nmea.Tll)
     assert msg.target_number == 7
-    assert abs(msg.latitude_deg - 48.1173) < 0.0001
+    assert msg.latitude_deg is not None and abs(msg.latitude_deg - 48.1173) < 0.0001
     assert msg.status == TargetStatus.TRACKING
     assert msg.reference_target is True
 
