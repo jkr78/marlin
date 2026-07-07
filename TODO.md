@@ -8,6 +8,31 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Add a present-field enumeration view to marlin-klv St0601 (klv-inspect G2)
+  Ergonomic convenience only, no wire semantics: a `present()` / `items()`
+  view yielding the tags a decoded set actually carries, so consumers stop
+  reflecting over `raw_*` attribute names. Deferred — not codec territory and
+  the suite has no precedent for enumerating a decoded value's fields (you read
+  named fields, as with `AisMessage`). Do it for ergonomics if/when wanted,
+  the same way the AIS parser helpers exist for ergonomics. Once the G1 tag
+  registry landed, consumers can already enumerate against the authoritative
+  table instead of a naming convention.
+- [ ] Add a checksum-free KLV structural reader if faulty senders appear (klv-inspect G3)
+  Only if real streams arrive with absent/bad BCC or foreign framing that
+  strict `decode` rejects: a clearly-named, separate reader (Rust first, then
+  a Python binding) that walks UL + BER-TLV and yields raw `(tag, value)`
+  items WITHOUT verifying the checksum — never a mode of `decode`. Tension:
+  this relaxes the crate's strict-by-default contract, and every other
+  iterator in the suite surfaces validation errors as `Err` and recovers
+  rather than surrendering the guarantee. If built, first extract the shared
+  TLV walk (see the decode/precision_timestamp dedup task) so this is not a
+  fourth copy, and have it report the checksum outcome rather than silently
+  dropping it. Hopefully unnecessary; bosun keeps a local fallback meanwhile.
+- [x] Export marlin.klv tag registry + UAS_LS_KEY (klv-inspect G1 + G4) **DONE 2026-07-07**
+  Codec-owned metadata, exposed so consumers stop re-deriving it. Rust:
+  `tags()` / `tag_number()` / `tag_name()` + `TagInfo`, macro-generated from
+  the `scaled_tags!` table (drift-free) plus Tag 2 and Tag 65. Python:
+  same three functions + `TagInfo`, and the `UAS_LS_KEY` module constant.
 - [ ] Let Python callers construct marlin-klv unknown tags
   The `St0601.unknown` PyO3 getter is read-only, so Python can decode and
   round-trip unknown tags but cannot build a set with unknown tags from

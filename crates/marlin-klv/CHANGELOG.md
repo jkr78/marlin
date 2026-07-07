@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Tag-registry inspection API, sourced from the codec's own table so it cannot
+  drift from `decode`: `tags() -> &[TagInfo]` (all 22 decodable tags — the 20
+  scaled tags plus Tag 2 timestamp and Tag 65 version, in ascending order),
+  `tag_number(name) -> Option<u8>`, and `tag_name(number) -> Option<&str>`.
+  `TagInfo` carries the wire number, the `St0601` field base name (e.g.
+  `sensor_latitude`), and the engineering unit (`degrees` / `meters` / `mps` /
+  `microseconds`, or `None`). Tag 1 (checksum) is framing and never listed.
+
 ## [0.1.2] - 2026-07-06
 
 ### Added

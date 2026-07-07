@@ -426,6 +426,63 @@ impl PySt0601 {
     }
 }
 
+/// Read-only metadata for one ST 0601 tag: its wire `number`, the `St0601`
+/// field base `name` (e.g. `"sensor_latitude"`), and its engineering `unit`
+/// (`"degrees"` / `"meters"` / `"mps"` / `"microseconds"`, or `None`).
+#[pyclass(name = "TagInfo", frozen, eq, hash, module = "marlin.klv")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PyTagInfo {
+    #[pyo3(get)]
+    number: u8,
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    unit: Option<String>,
+}
+
+#[pymethods]
+impl PyTagInfo {
+    fn __repr__(&self) -> String {
+        let unit = match &self.unit {
+            Some(u) => format!("'{u}'"),
+            None => "None".into(),
+        };
+        format!(
+            "TagInfo(number={}, name='{}', unit={unit})",
+            self.number, self.name
+        )
+    }
+}
+
+impl From<marlin_klv::TagInfo> for PyTagInfo {
+    fn from(t: marlin_klv::TagInfo) -> Self {
+        Self {
+            number: t.number,
+            name: t.name.into(),
+            unit: t.unit.map(Into::into),
+        }
+    }
+}
+
+/// Every ST 0601 tag the codec decodes into a typed field, in ascending tag
+/// order (Tag 2 timestamp and Tag 65 version included; Tag 1 checksum is not).
+#[pyfunction]
+fn tags() -> Vec<PyTagInfo> {
+    marlin_klv::tags().iter().copied().map(Into::into).collect()
+}
+
+/// Wire tag number for a field base name (e.g. `"sensor_latitude"`), or `None`.
+#[pyfunction]
+fn tag_number(name: &str) -> Option<u8> {
+    marlin_klv::tag_number(name)
+}
+
+/// Field base name for a wire tag number, or `None` if untyped by this codec.
+#[pyfunction]
+fn tag_name(number: u8) -> Option<String> {
+    marlin_klv::tag_name(number).map(Into::into)
+}
+
 /// Decode a KLV datagram into an `St0601`. Raises `KlvError` on malformed input.
 #[pyfunction]
 fn decode(data: &[u8]) -> PyResult<PySt0601> {
@@ -452,9 +509,14 @@ fn precision_timestamp(data: &[u8]) -> PyResult<Option<u64>> {
 pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     let m = PyModule::new(py, "klv")?;
     m.add_class::<PySt0601>()?;
+    m.add_class::<PyTagInfo>()?;
+    m.add("UAS_LS_KEY", PyBytes::new(py, &marlin_klv::UAS_LS_KEY))?;
     m.add_function(wrap_pyfunction!(decode, &m)?)?;
     m.add_function(wrap_pyfunction!(encode, &m)?)?;
     m.add_function(wrap_pyfunction!(precision_timestamp, &m)?)?;
+    m.add_function(wrap_pyfunction!(tags, &m)?)?;
+    m.add_function(wrap_pyfunction!(tag_number, &m)?)?;
+    m.add_function(wrap_pyfunction!(tag_name, &m)?)?;
     parent.add_submodule(&m)?;
     Ok(())
 }

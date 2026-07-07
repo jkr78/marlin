@@ -33,7 +33,6 @@
 //! this crate doesn't support) use [`armor::decode`] and [`BitReader`]
 //! directly.
 
-#![doc(html_root_url = "https://docs.rs/marlin-ais/0.1.0")]
 #![no_std]
 
 extern crate alloc;
