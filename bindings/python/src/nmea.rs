@@ -11,8 +11,9 @@ use pyo3::wrap_pyfunction;
 
 use marlin_nmea_0183::{
     decode as rust_decode, decode_gga as rust_decode_gga, decode_gll as rust_decode_gll,
-    decode_hdt as rust_decode_hdt, decode_prdid as rust_decode_prdid,
-    decode_psxn as rust_decode_psxn, decode_rmc as rust_decode_rmc, decode_vtg as rust_decode_vtg,
+    decode_hdg as rust_decode_hdg, decode_hdt as rust_decode_hdt, decode_prdid as rust_decode_prdid,
+    decode_psxn as rust_decode_psxn, decode_rmc as rust_decode_rmc,
+    decode_tll as rust_decode_tll, decode_ttm as rust_decode_ttm, decode_vtg as rust_decode_vtg,
     decode_with as rust_decode_with, AcquisitionType as RustAcquisitionType,
     AngleReference as RustAngleReference, DataStatus as RustDataStatus,
     DecodeOptions as RustDecodeOptions, DistanceUnits as RustDistanceUnits, GgaData,
@@ -630,6 +631,276 @@ impl From<HdtData> for PyHdt {
         Self {
             talker: d.talker,
             heading_true_deg: d.heading_true_deg,
+        }
+    }
+}
+
+// ---------- Hdg ----------
+
+/// Frozen `$__HDG` message (mirrors `HdgData`).
+#[pyclass(name = "Hdg", frozen, module = "marlin.nmea")]
+#[derive(Clone, Debug)]
+pub struct PyHdg {
+    talker: Option<[u8; 2]>,
+    heading_magnetic_deg: Option<f32>,
+    deviation_deg: Option<f32>,
+    variation_deg: Option<f32>,
+}
+
+#[pymethods]
+impl PyHdg {
+    #[new]
+    fn new(
+        talker: Option<&[u8]>,
+        heading_magnetic_deg: Option<f32>,
+        deviation_deg: Option<f32>,
+        variation_deg: Option<f32>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            talker: normalize_talker(talker)?,
+            heading_magnetic_deg,
+            deviation_deg,
+            variation_deg,
+        })
+    }
+
+    #[getter]
+    fn talker<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.talker.map(|t| PyBytes::new(py, &t))
+    }
+    #[getter]
+    fn heading_magnetic_deg(&self) -> Option<f32> {
+        self.heading_magnetic_deg
+    }
+    #[getter]
+    fn deviation_deg(&self) -> Option<f32> {
+        self.deviation_deg
+    }
+    #[getter]
+    fn variation_deg(&self) -> Option<f32> {
+        self.variation_deg
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Hdg(talker={}, heading_magnetic={:?}, deviation={:?}, variation={:?})",
+            repr_talker(self.talker),
+            self.heading_magnetic_deg,
+            self.deviation_deg,
+            self.variation_deg,
+        )
+    }
+}
+
+impl From<HdgData> for PyHdg {
+    fn from(d: HdgData) -> Self {
+        Self {
+            talker: d.talker,
+            heading_magnetic_deg: d.heading_magnetic_deg,
+            deviation_deg: d.deviation_deg,
+            variation_deg: d.variation_deg,
+        }
+    }
+}
+
+// ---------- Ttm ----------
+
+/// Frozen `$__TTM` message (mirrors `TtmData`).
+#[pyclass(name = "Ttm", frozen, module = "marlin.nmea")]
+#[derive(Clone, Debug)]
+pub struct PyTtm {
+    talker: Option<[u8; 2]>,
+    target_number: Option<u16>,
+    distance: Option<f32>,
+    bearing_deg: Option<f32>,
+    bearing_reference: Option<PyAngleReference>,
+    speed: Option<f32>,
+    course_deg: Option<f32>,
+    course_reference: Option<PyAngleReference>,
+    cpa: Option<f32>,
+    tcpa: Option<f32>,
+    units: Option<PyDistanceUnits>,
+    name: Option<String>,
+    status: Option<PyTargetStatus>,
+    reference_target: bool,
+    utc_time: Option<PyUtcTime>,
+    acquisition: Option<PyAcquisitionType>,
+}
+
+#[pymethods]
+impl PyTtm {
+    #[getter]
+    fn talker<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.talker.map(|t| PyBytes::new(py, &t))
+    }
+    #[getter]
+    fn target_number(&self) -> Option<u16> {
+        self.target_number
+    }
+    #[getter]
+    fn distance(&self) -> Option<f32> {
+        self.distance
+    }
+    #[getter]
+    fn bearing_deg(&self) -> Option<f32> {
+        self.bearing_deg
+    }
+    #[getter]
+    fn bearing_reference(&self) -> Option<PyAngleReference> {
+        self.bearing_reference
+    }
+    #[getter]
+    fn speed(&self) -> Option<f32> {
+        self.speed
+    }
+    #[getter]
+    fn course_deg(&self) -> Option<f32> {
+        self.course_deg
+    }
+    #[getter]
+    fn course_reference(&self) -> Option<PyAngleReference> {
+        self.course_reference
+    }
+    #[getter]
+    fn cpa(&self) -> Option<f32> {
+        self.cpa
+    }
+    #[getter]
+    fn tcpa(&self) -> Option<f32> {
+        self.tcpa
+    }
+    #[getter]
+    fn units(&self) -> Option<PyDistanceUnits> {
+        self.units
+    }
+    #[getter]
+    fn name(&self) -> Option<String> {
+        self.name.clone()
+    }
+    #[getter]
+    fn status(&self) -> Option<PyTargetStatus> {
+        self.status
+    }
+    #[getter]
+    fn reference_target(&self) -> bool {
+        self.reference_target
+    }
+    #[getter]
+    fn utc_time(&self) -> Option<PyUtcTime> {
+        self.utc_time.clone()
+    }
+    #[getter]
+    fn acquisition(&self) -> Option<PyAcquisitionType> {
+        self.acquisition
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Ttm(talker={}, target_number={:?}, name={:?}, status={:?})",
+            repr_talker(self.talker),
+            self.target_number,
+            self.name,
+            self.status,
+        )
+    }
+}
+
+impl From<TtmData> for PyTtm {
+    fn from(d: TtmData) -> Self {
+        Self {
+            talker: d.talker,
+            target_number: d.target_number,
+            distance: d.distance,
+            bearing_deg: d.bearing_deg,
+            bearing_reference: d.bearing_reference.map(PyAngleReference::from),
+            speed: d.speed,
+            course_deg: d.course_deg,
+            course_reference: d.course_reference.map(PyAngleReference::from),
+            cpa: d.cpa,
+            tcpa: d.tcpa,
+            units: d.units.map(PyDistanceUnits::from),
+            name: d.name,
+            status: d.status.map(PyTargetStatus::from),
+            reference_target: d.reference_target,
+            utc_time: d.utc_time.map(PyUtcTime::from),
+            acquisition: d.acquisition.map(PyAcquisitionType::from),
+        }
+    }
+}
+
+// ---------- Tll ----------
+
+/// Frozen `$__TLL` message (mirrors `TllData`).
+#[pyclass(name = "Tll", frozen, module = "marlin.nmea")]
+#[derive(Clone, Debug)]
+pub struct PyTll {
+    talker: Option<[u8; 2]>,
+    target_number: Option<u16>,
+    latitude_deg: Option<f64>,
+    longitude_deg: Option<f64>,
+    name: Option<String>,
+    utc_time: Option<PyUtcTime>,
+    status: Option<PyTargetStatus>,
+    reference_target: bool,
+}
+
+#[pymethods]
+impl PyTll {
+    #[getter]
+    fn talker<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.talker.map(|t| PyBytes::new(py, &t))
+    }
+    #[getter]
+    fn target_number(&self) -> Option<u16> {
+        self.target_number
+    }
+    #[getter]
+    fn latitude_deg(&self) -> Option<f64> {
+        self.latitude_deg
+    }
+    #[getter]
+    fn longitude_deg(&self) -> Option<f64> {
+        self.longitude_deg
+    }
+    #[getter]
+    fn name(&self) -> Option<String> {
+        self.name.clone()
+    }
+    #[getter]
+    fn utc_time(&self) -> Option<PyUtcTime> {
+        self.utc_time.clone()
+    }
+    #[getter]
+    fn status(&self) -> Option<PyTargetStatus> {
+        self.status
+    }
+    #[getter]
+    fn reference_target(&self) -> bool {
+        self.reference_target
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Tll(talker={}, target_number={:?}, lat={:?}, lon={:?})",
+            repr_talker(self.talker),
+            self.target_number,
+            self.latitude_deg,
+            self.longitude_deg,
+        )
+    }
+}
+
+impl From<TllData> for PyTll {
+    fn from(d: TllData) -> Self {
+        Self {
+            talker: d.talker,
+            target_number: d.target_number,
+            latitude_deg: d.latitude_deg,
+            longitude_deg: d.longitude_deg,
+            name: d.name,
+            utc_time: d.utc_time.map(PyUtcTime::from),
+            status: d.status.map(PyTargetStatus::from),
+            reference_target: d.reference_target,
         }
     }
 }
@@ -1530,6 +1801,9 @@ enum OwnedMessage {
     Hdt(HdtData),
     Rmc(RmcData),
     Vtg(VtgData),
+    Hdg(HdgData),
+    Ttm(TtmData),
+    Tll(TllData),
     Psxn(PsxnData),
     Prdid(PrdidData),
     Unknown {
@@ -1549,6 +1823,9 @@ fn owned_message_from_borrowed(msg: Nmea0183Message<'_>) -> OwnedMessage {
         Nmea0183Message::Hdt(d) => OwnedMessage::Hdt(d),
         Nmea0183Message::Rmc(d) => OwnedMessage::Rmc(d),
         Nmea0183Message::Vtg(d) => OwnedMessage::Vtg(d),
+        Nmea0183Message::Hdg(d) => OwnedMessage::Hdg(d),
+        Nmea0183Message::Ttm(d) => OwnedMessage::Ttm(d),
+        Nmea0183Message::Tll(d) => OwnedMessage::Tll(d),
         Nmea0183Message::Psxn(d) => OwnedMessage::Psxn(d),
         Nmea0183Message::Prdid(d) => OwnedMessage::Prdid(d),
         Nmea0183Message::Unknown(raw) => OwnedMessage::Unknown {
@@ -1567,6 +1844,9 @@ impl OwnedMessage {
             Self::Hdt(d) => Py::new(py, PyHdt::from(d))?.into_any(),
             Self::Rmc(d) => Py::new(py, PyRmc::from(d))?.into_any(),
             Self::Vtg(d) => Py::new(py, PyVtg::from(d))?.into_any(),
+            Self::Hdg(d) => Py::new(py, PyHdg::from(d))?.into_any(),
+            Self::Ttm(d) => Py::new(py, PyTtm::from(d))?.into_any(),
+            Self::Tll(d) => Py::new(py, PyTll::from(d))?.into_any(),
             Self::Psxn(d) => Py::new(py, PyPsxn::from(d))?.into_any(),
             Self::Prdid(d) => Py::new(py, PyPrdid::from(d))?.into_any(),
             Self::Unknown {
@@ -1691,6 +1971,33 @@ fn py_decode_hdt(raw: &PyRawSentence) -> PyResult<PyHdt> {
 }
 
 #[pyfunction]
+#[pyo3(name = "decode_hdg")]
+fn py_decode_hdg(raw: &PyRawSentence) -> PyResult<PyHdg> {
+    let rust_raw = raw.to_rust();
+    rust_decode_hdg(&rust_raw)
+        .map(PyHdg::from)
+        .map_err(decode_err)
+}
+
+#[pyfunction]
+#[pyo3(name = "decode_ttm")]
+fn py_decode_ttm(raw: &PyRawSentence) -> PyResult<PyTtm> {
+    let rust_raw = raw.to_rust();
+    rust_decode_ttm(&rust_raw)
+        .map(PyTtm::from)
+        .map_err(decode_err)
+}
+
+#[pyfunction]
+#[pyo3(name = "decode_tll")]
+fn py_decode_tll(raw: &PyRawSentence) -> PyResult<PyTll> {
+    let rust_raw = raw.to_rust();
+    rust_decode_tll(&rust_raw)
+        .map(PyTll::from)
+        .map_err(decode_err)
+}
+
+#[pyfunction]
 #[pyo3(name = "decode_rmc")]
 fn py_decode_rmc(raw: &PyRawSentence) -> PyResult<PyRmc> {
     let rust_raw = raw.to_rust();
@@ -1744,6 +2051,13 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     m.add_class::<PyGll>()?;
     m.add_class::<PyVtg>()?;
     m.add_class::<PyHdt>()?;
+    m.add_class::<PyHdg>()?;
+    m.add_class::<PyTtm>()?;
+    m.add_class::<PyTll>()?;
+    m.add_class::<PyTargetStatus>()?;
+    m.add_class::<PyAngleReference>()?;
+    m.add_class::<PyDistanceUnits>()?;
+    m.add_class::<PyAcquisitionType>()?;
     m.add_class::<PyRmc>()?;
     m.add_class::<PyPsxn>()?;
     m.add_class::<PyPrdidPitchRollHeading>()?;
@@ -1759,6 +2073,9 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     m.add_function(wrap_pyfunction!(py_decode_gll, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_vtg, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_hdt, &m)?)?;
+    m.add_function(wrap_pyfunction!(py_decode_hdg, &m)?)?;
+    m.add_function(wrap_pyfunction!(py_decode_ttm, &m)?)?;
+    m.add_function(wrap_pyfunction!(py_decode_tll, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_rmc, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_psxn, &m)?)?;
     m.add_function(wrap_pyfunction!(py_decode_prdid, &m)?)?;
