@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Typed decoders for three radar/heading sentences, previously returned
+  as `Unknown`: **HDG** (heading, deviation & variation — signed E/W
+  corrections), **TTM** (tracked target message — the `$RATTM` radar
+  form is standard TTM with the talker preserved), and **TLL** (target
+  latitude/longitude). New coded-field enums `TargetStatus` (L/Q/T),
+  `AngleReference` (T/R), `DistanceUnits` (K/N/S), and `AcquisitionType`
+  (A/M/R), each with an `Other(u8)` fallback. TTM's NMEA-3.0 trailing
+  fields (UTC time, acquisition type) are optional.
+
 ## [0.1.3] - 2026-07-07
 
 No behavioral changes. Lockstep version bump with the workspace release that

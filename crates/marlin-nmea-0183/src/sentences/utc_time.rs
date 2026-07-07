@@ -74,6 +74,19 @@ impl UtcTime {
             millisecond,
         })
     }
+
+    /// Optional variant of [`parse`](Self::parse): an empty field is
+    /// `Ok(None)`; a non-empty field must parse.
+    pub(crate) fn parse_optional(
+        bytes: &[u8],
+        field_index: usize,
+    ) -> Result<Option<Self>, DecodeError> {
+        if bytes.is_empty() {
+            Ok(None)
+        } else {
+            Self::parse(bytes, field_index).map(Some)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -137,5 +150,23 @@ mod tests {
         // 23:59:60 is valid for a positive leap second.
         let t = UtcTime::parse(b"235960", 0).unwrap();
         assert_eq!(t.second, 60);
+    }
+
+    #[test]
+    fn parse_optional_empty_is_none() {
+        assert_eq!(UtcTime::parse_optional(b"", 6).unwrap(), None);
+    }
+
+    #[test]
+    fn parse_optional_present_parses() {
+        assert_eq!(
+            UtcTime::parse_optional(b"123519", 6).unwrap(),
+            Some(UtcTime {
+                hour: 12,
+                minute: 35,
+                second: 19,
+                millisecond: 0
+            })
+        );
     }
 }

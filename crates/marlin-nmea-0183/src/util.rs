@@ -3,6 +3,8 @@
 //! Public module — downstream crates building their own proprietary
 //! decoders can call these.
 
+use alloc::string::{String, ToString};
+
 use crate::DecodeError;
 
 /// Return `None` for an empty byte slice (NMEA's "no data available"
@@ -48,6 +50,58 @@ pub(crate) fn optional_u16(bytes: &[u8], field_index: usize) -> Result<Option<u1
     s.parse::<u16>()
         .map(Some)
         .map_err(|_| DecodeError::InvalidNumber { field_index })
+}
+
+/// Parse an optional ASCII text field into an owned `String`. Empty →
+/// `None`. Non-empty must be valid UTF-8 (real NMEA text is ASCII).
+pub(crate) fn optional_string(
+    bytes: &[u8],
+    field_index: usize,
+) -> Result<Option<String>, DecodeError> {
+    let Some(bytes) = non_empty(bytes) else {
+        return Ok(None);
+    };
+    core::str::from_utf8(bytes)
+        .map(|s| Some(s.to_string()))
+        .map_err(|_| DecodeError::InvalidUtf8 { field_index })
+}
+
+/// Parse a magnitude field paired with an `E`/`W` direction byte into a
+/// signed `f32` (`E` → positive, `W` → negative). Both empty → `None`;
+/// exactly one empty → [`DecodeError::InvalidHemisphere`]; a non-`E`/`W`
+/// direction → the same error. Mirrors [`optional_coordinate`]'s
+/// both-or-neither rule for the HDG deviation/variation fields.
+pub(crate) fn optional_signed_ew(
+    magnitude_bytes: &[u8],
+    dir_bytes: &[u8],
+    magnitude_field_index: usize,
+    dir_field_index: usize,
+) -> Result<Option<f32>, DecodeError> {
+    match (magnitude_bytes.is_empty(), dir_bytes.is_empty()) {
+        (true, true) => return Ok(None),
+        (true, false) | (false, true) => {
+            return Err(DecodeError::InvalidHemisphere {
+                field_index: dir_field_index,
+            })
+        }
+        _ => {}
+    }
+    let s = core::str::from_utf8(magnitude_bytes).map_err(|_| DecodeError::InvalidUtf8 {
+        field_index: magnitude_field_index,
+    })?;
+    let magnitude: f32 = s.parse().map_err(|_| DecodeError::InvalidNumber {
+        field_index: magnitude_field_index,
+    })?;
+    let signed = match dir_bytes.first().copied().unwrap_or(0) {
+        b'E' | b'e' => magnitude,
+        b'W' | b'w' => -magnitude,
+        _ => {
+            return Err(DecodeError::InvalidHemisphere {
+                field_index: dir_field_index,
+            })
+        }
+    };
+    Ok(Some(signed))
 }
 
 /// Parse a NMEA coordinate pair (value field + hemisphere field) into a
@@ -202,5 +256,37 @@ mod tests {
             Err(DecodeError::OutOfRange { .. }) => {}
             other => panic!("expected OutOfRange, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn signed_ew_signs_and_handles_empty() {
+        assert_eq!(optional_signed_ew(b"", b"", 1, 2).unwrap(), None);
+        assert_eq!(optional_signed_ew(b"12.6", b"E", 1, 2).unwrap(), Some(12.6));
+        assert_eq!(
+            optional_signed_ew(b"12.6", b"W", 1, 2).unwrap(),
+            Some(-12.6)
+        );
+    }
+
+    #[test]
+    fn signed_ew_rejects_half_empty_and_bad_dir() {
+        match optional_signed_ew(b"12.6", b"", 1, 2) {
+            Err(DecodeError::InvalidHemisphere { field_index: 2 }) => {}
+            other => panic!("expected InvalidHemisphere 2, got {other:?}"),
+        }
+        match optional_signed_ew(b"12.6", b"X", 1, 2) {
+            Err(DecodeError::InvalidHemisphere { field_index: 2 }) => {}
+            other => panic!("expected InvalidHemisphere 2, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn optional_string_parses_and_handles_empty() {
+        assert_eq!(optional_string(b"", 10).unwrap(), None);
+        assert_eq!(
+            optional_string(b"TGT1", 10).unwrap(),
+            Some("TGT1".to_string())
+        );
+        assert!(optional_string(&[0xFF, 0xFE], 10).is_err());
     }
 }

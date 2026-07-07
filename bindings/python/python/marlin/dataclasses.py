@@ -175,6 +175,60 @@ class Gll:
 
 
 @dataclass(frozen=True)
+class Hdg:
+    """Mirror of marlin.nmea.Hdg."""
+
+    talker: Optional[bytes]
+    heading_magnetic_deg: Optional[float]
+    deviation_deg: Optional[float]
+    variation_deg: Optional[float]
+
+
+@dataclass(frozen=True)
+class Ttm:
+    """Mirror of marlin.nmea.Ttm.
+
+    `bearing_reference`, `course_reference`, `units`, `status`, and
+    `acquisition` are stored as Optional[int] (wire values) for JSON
+    compatibility.
+    """
+
+    talker: Optional[bytes]
+    target_number: Optional[int]
+    distance: Optional[float]
+    bearing_deg: Optional[float]
+    bearing_reference: Optional[int]
+    speed: Optional[float]
+    course_deg: Optional[float]
+    course_reference: Optional[int]
+    cpa: Optional[float]
+    tcpa: Optional[float]
+    units: Optional[int]
+    name: Optional[str]
+    status: Optional[int]
+    reference_target: bool
+    utc_time: Optional[UtcTime]
+    acquisition: Optional[int]
+
+
+@dataclass(frozen=True)
+class Tll:
+    """Mirror of marlin.nmea.Tll.
+
+    `status` is stored as Optional[int] (wire value) for JSON compatibility.
+    """
+
+    talker: Optional[bytes]
+    target_number: Optional[int]
+    latitude_deg: Optional[float]
+    longitude_deg: Optional[float]
+    name: Optional[str]
+    utc_time: Optional[UtcTime]
+    status: Optional[int]
+    reference_target: bool
+
+
+@dataclass(frozen=True)
 class Unknown:
     """Mirror of marlin.nmea.Unknown."""
 
@@ -379,7 +433,7 @@ class AisMessage:
 
 # ---------- type aliases ----------
 
-NmeaMessage = Union[Gga, Gll, Hdt, Rmc, Vtg, Psxn, Prdid, Unknown]
+NmeaMessage = Union[Gga, Gll, Hdg, Hdt, Rmc, Tll, Ttm, Vtg, Psxn, Prdid, Unknown]
 
 
 # ---------- dispatcher ----------
@@ -462,6 +516,47 @@ def to_dataclass(msg: object) -> object:
             utc=_convert_utc(msg.utc),
             status=int(msg.status),
             mode=int(msg.mode) if msg.mode is not None else None,
+        )
+    if isinstance(msg, _nmea.Hdg):
+        return Hdg(
+            talker=msg.talker,
+            heading_magnetic_deg=msg.heading_magnetic_deg,
+            deviation_deg=msg.deviation_deg,
+            variation_deg=msg.variation_deg,
+        )
+    if isinstance(msg, _nmea.Ttm):
+        return Ttm(
+            talker=msg.talker,
+            target_number=msg.target_number,
+            distance=msg.distance,
+            bearing_deg=msg.bearing_deg,
+            bearing_reference=(
+                int(msg.bearing_reference) if msg.bearing_reference is not None else None
+            ),
+            speed=msg.speed,
+            course_deg=msg.course_deg,
+            course_reference=(
+                int(msg.course_reference) if msg.course_reference is not None else None
+            ),
+            cpa=msg.cpa,
+            tcpa=msg.tcpa,
+            units=int(msg.units) if msg.units is not None else None,
+            name=msg.name,
+            status=int(msg.status) if msg.status is not None else None,
+            reference_target=msg.reference_target,
+            utc_time=_convert_utc(msg.utc_time),
+            acquisition=int(msg.acquisition) if msg.acquisition is not None else None,
+        )
+    if isinstance(msg, _nmea.Tll):
+        return Tll(
+            talker=msg.talker,
+            target_number=msg.target_number,
+            latitude_deg=msg.latitude_deg,
+            longitude_deg=msg.longitude_deg,
+            name=msg.name,
+            utc_time=_convert_utc(msg.utc_time),
+            status=int(msg.status) if msg.status is not None else None,
+            reference_target=msg.reference_target,
         )
     if isinstance(msg, _nmea.Unknown):
         return Unknown(
@@ -732,6 +827,7 @@ __all__ = [
     "Eta",
     "ExtendedPositionReportB",
     "Gga",
+    "Hdg",
     "Hdt",
     "NmeaMessage",
     "Other",
@@ -746,6 +842,8 @@ __all__ = [
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
+    "Tll",
+    "Ttm",
     "Unknown",
     "UtcTime",
     "Vtg",

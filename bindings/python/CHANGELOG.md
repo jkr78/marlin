@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `marlin.nmea` typed classes `Hdg`, `Ttm`, `Tll` for the radar/heading
+  sentences now decoded by `marlin-nmea-0183`, plus the enums
+  `TargetStatus`, `AngleReference`, `DistanceUnits`, `AcquisitionType`
+  (each with an `UNKNOWN` member for uncoded wire bytes). Standalone
+  `decode_hdg` / `decode_ttm` / `decode_tll` helpers alongside the
+  existing per-sentence decoders.
+- `marlin.dataclasses.to_dataclass` now maps `Hdg`, `Ttm`, and `Tll`,
+  backed by new frozen mirrors `dataclasses.Hdg`, `dataclasses.Ttm`,
+  `dataclasses.Tll`.
+
 ## [0.1.3] - 2026-07-07
 
 ### Added

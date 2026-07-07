@@ -8,6 +8,9 @@ Gga = _core.nmea.Gga
 Gll = _core.nmea.Gll
 Vtg = _core.nmea.Vtg
 Hdt = _core.nmea.Hdt
+Hdg = _core.nmea.Hdg
+Ttm = _core.nmea.Ttm
+Tll = _core.nmea.Tll
 Rmc = _core.nmea.Rmc
 Psxn = _core.nmea.Psxn
 Prdid = _core.nmea.Prdid
@@ -22,6 +25,10 @@ RmcNavStatus = _core.nmea.RmcNavStatus
 PsxnLayout = _core.nmea.PsxnLayout
 PsxnSlot = _core.nmea.PsxnSlot
 PrdidDialect = _core.nmea.PrdidDialect
+TargetStatus = _core.nmea.TargetStatus
+AngleReference = _core.nmea.AngleReference
+DistanceUnits = _core.nmea.DistanceUnits
+AcquisitionType = _core.nmea.AcquisitionType
 UtcTime = _core.nmea.UtcTime
 UtcDate = _core.nmea.UtcDate
 Nmea0183Parser = _core.nmea.Nmea0183Parser
@@ -31,17 +38,24 @@ decode_gga = _core.nmea.decode_gga
 decode_gll = _core.nmea.decode_gll
 decode_vtg = _core.nmea.decode_vtg
 decode_hdt = _core.nmea.decode_hdt
+decode_hdg = _core.nmea.decode_hdg
+decode_ttm = _core.nmea.decode_ttm
+decode_tll = _core.nmea.decode_tll
 decode_rmc = _core.nmea.decode_rmc
 decode_psxn = _core.nmea.decode_psxn
 decode_prdid = _core.nmea.decode_prdid
 
 __all__ = [
+    "AcquisitionType",
+    "AngleReference",
     "DataStatus",
     "DecodeError",
     "DecodeOptions",
+    "DistanceUnits",
     "Gga",
     "GgaFixQuality",
     "Gll",
+    "Hdg",
     "Hdt",
     "Nmea0183Parser",
     "Prdid",
@@ -54,6 +68,9 @@ __all__ = [
     "PsxnSlot",
     "Rmc",
     "RmcNavStatus",
+    "TargetStatus",
+    "Tll",
+    "Ttm",
     "Unknown",
     "UtcDate",
     "UtcTime",
@@ -62,10 +79,13 @@ __all__ = [
     "decode",
     "decode_gga",
     "decode_gll",
+    "decode_hdg",
     "decode_hdt",
     "decode_prdid",
     "decode_psxn",
     "decode_rmc",
+    "decode_tll",
+    "decode_ttm",
     "decode_vtg",
     "decode_with",
 ]

@@ -113,6 +113,84 @@ def test_hdt_round_trip() -> None:
     assert d["heading_true_deg"] is not None
 
 
+def _frame(body: bytes) -> bytes:
+    """Prefix `$` and append `*<checksum>` (XOR of body bytes)."""
+    checksum = 0
+    for b in body:
+        checksum ^= b
+    return b"$" + body + b"*" + f"{checksum:02X}".encode("ascii")
+
+
+def test_hdg_round_trip() -> None:
+    from marlin.dataclasses import Hdg as DCHdg
+    from marlin.dataclasses import to_dataclass
+    from marlin.nmea import Nmea0183Parser
+
+    p = Nmea0183Parser.streaming()
+    p.feed(_frame(b"HCHDG,98.3,0.0,E,12.6,W") + b"\r\n")
+    hdg = p.next_message()
+
+    dc = to_dataclass(hdg)
+    assert isinstance(dc, DCHdg)
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+
+    assert dc.talker == b"HC"
+    assert d["heading_magnetic_deg"] is not None
+    assert d["variation_deg"] is not None
+
+
+def test_ttm_round_trip() -> None:
+    from marlin.dataclasses import Ttm as DCTtm
+    from marlin.dataclasses import to_dataclass
+    from marlin.nmea import Nmea0183Parser
+
+    raw = b"RATTM,12,1.23,45.6,T,7.8,90.1,R,2.5,-11.0,S,TGT1,T,R,123519.00,R"
+    p = Nmea0183Parser.streaming()
+    p.feed(_frame(raw) + b"\r\n")
+    ttm = p.next_message()
+
+    dc = to_dataclass(ttm)
+    assert isinstance(dc, DCTtm)
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+
+    assert dc.talker == b"RA"
+    assert dc.target_number == 12
+    assert dc.name == "TGT1"
+    assert dc.reference_target is True
+    assert isinstance(d["bearing_reference"], int)
+    assert isinstance(d["course_reference"], int)
+    assert isinstance(d["units"], int)
+    assert isinstance(d["status"], int)
+    assert isinstance(d["acquisition"], int)
+    assert d["utc_time"] is not None
+
+
+def test_tll_round_trip() -> None:
+    from marlin.dataclasses import Tll as DCTll
+    from marlin.dataclasses import to_dataclass
+    from marlin.nmea import Nmea0183Parser
+
+    raw = b"RATLL,7,4807.038,N,01131.000,E,TGT7,123519,T,R"
+    p = Nmea0183Parser.streaming()
+    p.feed(_frame(raw) + b"\r\n")
+    tll = p.next_message()
+
+    dc = to_dataclass(tll)
+    assert isinstance(dc, DCTll)
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+
+    assert dc.target_number == 7
+    assert dc.name == "TGT7"
+    assert dc.reference_target is True
+    assert isinstance(d["status"], int)
+
+
 def test_unknown_round_trip() -> None:
     from marlin.dataclasses import Unknown as DCUnknown
     from marlin.dataclasses import to_dataclass
