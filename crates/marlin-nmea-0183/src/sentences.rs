@@ -7,6 +7,7 @@
 //! type and this module decodes the fields.
 
 mod gga;
+mod hdg;
 mod gll;
 mod hdt;
 mod prdid;
