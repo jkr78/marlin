@@ -15,6 +15,7 @@ mod psxn;
 mod rmc;
 mod status;
 mod ttm;
+mod tll;
 mod utc_time;
 mod vtg;
 
