@@ -136,6 +136,7 @@ py-test: py-dev
 
 py-type-check:
     cd bindings/python && python -m mypy --strict .
+    cd bindings/python && pyright
 
 # Check formatting of the bindings crate Rust. The crate is workspace-
 # excluded, so `just fmt-check` never sees it.

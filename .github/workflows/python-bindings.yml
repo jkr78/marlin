@@ -49,7 +49,7 @@ jobs:
           if-no-files-found: error
 
   test:
-    name: Tests + lint + mypy
+    name: Tests + lint + mypy + pyright
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -68,7 +68,7 @@ jobs:
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
       - name: Install test deps
-        run: pip install 'maturin>=1.7,<2.0' pytest hypothesis 'mypy>=1.8'
+        run: pip install 'maturin>=1.7,<2.0' pytest hypothesis 'mypy>=1.8' 'pyright>=1.1'
       # The bindings crate is excluded from the Cargo workspace, so the main
       # CI's `just fmt-check` / `just lint` never see its Rust. Gate it here.
       - name: cargo fmt --check (bindings Rust)
@@ -86,6 +86,12 @@ jobs:
       - name: Run mypy --strict
         working-directory: bindings/python
         run: python -m mypy --strict .
+      # Runs pyright (its own pyrightconfig.json, `standard` mode). Catches
+      # union/optional-narrowing issues mypy --strict does not; needs the
+      # extension installed (maturin develop above) to resolve `marlin.*`.
+      - name: Run pyright
+        working-directory: bindings/python
+        run: pyright
 
   sdist:
     name: Source distribution
