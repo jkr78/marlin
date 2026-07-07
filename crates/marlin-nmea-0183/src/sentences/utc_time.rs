@@ -161,7 +161,12 @@ mod tests {
     fn parse_optional_present_parses() {
         assert_eq!(
             UtcTime::parse_optional(b"123519", 6).unwrap(),
-            Some(UtcTime { hour: 12, minute: 35, second: 19, millisecond: 0 })
+            Some(UtcTime {
+                hour: 12,
+                minute: 35,
+                second: 19,
+                millisecond: 0
+            })
         );
     }
 }

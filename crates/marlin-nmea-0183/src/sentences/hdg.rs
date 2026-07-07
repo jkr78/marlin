@@ -82,7 +82,10 @@ mod tests {
         assert_eq!(hdg.talker, Some(*b"HC"));
         assert!((hdg.heading_magnetic_deg.unwrap() - 98.3).abs() < 0.01);
         assert!((hdg.deviation_deg.unwrap() - 0.0).abs() < 0.01);
-        assert!((hdg.variation_deg.unwrap() - -12.6).abs() < 0.01, "W is negative");
+        assert!(
+            (hdg.variation_deg.unwrap() - -12.6).abs() < 0.01,
+            "W is negative"
+        );
     }
 
     #[test]
@@ -119,7 +122,10 @@ mod tests {
         let bytes = build(b"HCHDG,98.3,1.0");
         let raw = parse_raw(&bytes);
         match decode_hdg(&raw) {
-            Err(DecodeError::NotEnoughFields { expected: 5, got: 2 }) => {}
+            Err(DecodeError::NotEnoughFields {
+                expected: 5,
+                got: 2,
+            }) => {}
             other => panic!("expected NotEnoughFields, got {other:?}"),
         }
     }

@@ -226,7 +226,12 @@ mod tests {
         assert!(ttm.reference_target);
         assert_eq!(
             ttm.utc_time,
-            Some(UtcTime { hour: 12, minute: 35, second: 19, millisecond: 0 })
+            Some(UtcTime {
+                hour: 12,
+                minute: 35,
+                second: 19,
+                millisecond: 0
+            })
         );
         assert_eq!(ttm.acquisition, Some(AcquisitionType::Reported));
     }
@@ -263,7 +268,10 @@ mod tests {
         let bytes = build(b"RATTM,1,1.0,2.0,T,3.0,4.0,T,5.0,6.0,N,name");
         let raw = parse_raw(&bytes);
         match decode_ttm(&raw) {
-            Err(DecodeError::NotEnoughFields { expected: 12, got: 11 }) => {}
+            Err(DecodeError::NotEnoughFields {
+                expected: 12,
+                got: 11,
+            }) => {}
             other => panic!("expected NotEnoughFields, got {other:?}"),
         }
     }

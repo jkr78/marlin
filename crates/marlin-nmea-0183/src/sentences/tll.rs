@@ -73,10 +73,7 @@ pub fn decode_tll(raw: &RawSentence<'_>) -> Result<TllData, DecodeError> {
         .get(7)
         .and_then(|b| b.first().copied())
         .map(TargetStatus::from_byte);
-    let reference_target = matches!(
-        f.get(8).and_then(|b| b.first().copied()),
-        Some(b'R' | b'r')
-    );
+    let reference_target = matches!(f.get(8).and_then(|b| b.first().copied()), Some(b'R' | b'r'));
 
     Ok(TllData {
         talker: raw.talker,
@@ -113,7 +110,12 @@ mod tests {
         assert_eq!(tll.name.as_deref(), Some("TGT7"));
         assert_eq!(
             tll.utc_time,
-            Some(UtcTime { hour: 12, minute: 35, second: 19, millisecond: 0 })
+            Some(UtcTime {
+                hour: 12,
+                minute: 35,
+                second: 19,
+                millisecond: 0
+            })
         );
         assert_eq!(tll.status, Some(TargetStatus::Tracking));
         assert!(tll.reference_target);
@@ -149,7 +151,10 @@ mod tests {
         let bytes = build(b"RATLL,2,5000.00,N");
         let raw = parse_raw(&bytes);
         match decode_tll(&raw) {
-            Err(DecodeError::NotEnoughFields { expected: 5, got: 3 }) => {}
+            Err(DecodeError::NotEnoughFields {
+                expected: 5,
+                got: 3,
+            }) => {}
             other => panic!("expected NotEnoughFields, got {other:?}"),
         }
     }

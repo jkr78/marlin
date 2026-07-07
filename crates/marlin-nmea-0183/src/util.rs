@@ -262,7 +262,10 @@ mod tests {
     fn signed_ew_signs_and_handles_empty() {
         assert_eq!(optional_signed_ew(b"", b"", 1, 2).unwrap(), None);
         assert_eq!(optional_signed_ew(b"12.6", b"E", 1, 2).unwrap(), Some(12.6));
-        assert_eq!(optional_signed_ew(b"12.6", b"W", 1, 2).unwrap(), Some(-12.6));
+        assert_eq!(
+            optional_signed_ew(b"12.6", b"W", 1, 2).unwrap(),
+            Some(-12.6)
+        );
     }
 
     #[test]
@@ -280,7 +283,10 @@ mod tests {
     #[test]
     fn optional_string_parses_and_handles_empty() {
         assert_eq!(optional_string(b"", 10).unwrap(), None);
-        assert_eq!(optional_string(b"TGT1", 10).unwrap(), Some("TGT1".to_string()));
+        assert_eq!(
+            optional_string(b"TGT1", 10).unwrap(),
+            Some("TGT1".to_string())
+        );
         assert!(optional_string(&[0xFF, 0xFE], 10).is_err());
     }
 }

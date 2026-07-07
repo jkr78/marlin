@@ -80,11 +80,12 @@ pub use error::DecodeError;
 pub use message::Nmea0183Message;
 pub use parser::{Nmea0183Error, Nmea0183Parser, Parser};
 pub use sentences::{
-    decode_gga, decode_gll, decode_hdt, decode_prdid, decode_prdid_pitch_roll_heading,
-    decode_prdid_roll_pitch_heading, decode_psxn, decode_rmc, decode_vtg, DataStatus, GgaData,
-    GgaFixQuality, GllData, HdtData, PrdidData, PrdidDialect, PrdidPitchRollHeading,
-    PrdidRollPitchHeading, PsxnData, PsxnLayout, PsxnLayoutParseError, PsxnSlot, RmcData,
-    RmcNavStatus, UtcDate, UtcTime, VtgData, VtgMode,
+    decode_gga, decode_gll, decode_hdg, decode_hdt, decode_prdid, decode_prdid_pitch_roll_heading,
+    decode_prdid_roll_pitch_heading, decode_psxn, decode_rmc, decode_tll, decode_ttm, decode_vtg,
+    AcquisitionType, AngleReference, DataStatus, DistanceUnits, GgaData, GgaFixQuality, GllData,
+    HdgData, HdtData, PrdidData, PrdidDialect, PrdidPitchRollHeading, PrdidRollPitchHeading,
+    PsxnData, PsxnLayout, PsxnLayoutParseError, PsxnSlot, RmcData, RmcNavStatus, TargetStatus,
+    TllData, TtmData, UtcDate, UtcTime, VtgData, VtgMode,
 };
 
 // Re-export the envelope's `RawSentence` for convenience — most callers
@@ -139,6 +140,9 @@ pub fn decode_with<'a>(
         "HDT" => Ok(Nmea0183Message::Hdt(decode_hdt(raw)?)),
         "RMC" => Ok(Nmea0183Message::Rmc(decode_rmc(raw)?)),
         "VTG" => Ok(Nmea0183Message::Vtg(decode_vtg(raw)?)),
+        "HDG" => Ok(Nmea0183Message::Hdg(decode_hdg(raw)?)),
+        "TTM" => Ok(Nmea0183Message::Ttm(decode_ttm(raw)?)),
+        "TLL" => Ok(Nmea0183Message::Tll(decode_tll(raw)?)),
         "PSXN" => Ok(Nmea0183Message::Psxn(decode_psxn(
             raw,
             &options.psxn_layout,

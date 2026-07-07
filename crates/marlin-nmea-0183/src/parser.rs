@@ -505,4 +505,24 @@ mod tests {
         let parser: Nmea0183Parser<OneShot> = Nmea0183Parser::new(OneShot::new());
         let _one_shot: OneShot = parser.into_inner();
     }
+
+    #[test]
+    fn decode_with_routes_radar_sentences() {
+        use crate::{decode, Nmea0183Message};
+        let hdg = crate::testing::build(b"HCHDG,98.3,0.0,E,12.6,W");
+        assert!(matches!(
+            decode(&crate::testing::parse_raw(&hdg)).unwrap(),
+            Nmea0183Message::Hdg(_)
+        ));
+        let ttm = crate::testing::build(b"RATTM,1,1.0,2.0,T,3.0,4.0,T,5.0,6.0,N,x,T,");
+        assert!(matches!(
+            decode(&crate::testing::parse_raw(&ttm)).unwrap(),
+            Nmea0183Message::Ttm(_)
+        ));
+        let tll = crate::testing::build(b"RATLL,1,5000.00,N,00500.00,E");
+        assert!(matches!(
+            decode(&crate::testing::parse_raw(&tll)).unwrap(),
+            Nmea0183Message::Tll(_)
+        ));
+    }
 }

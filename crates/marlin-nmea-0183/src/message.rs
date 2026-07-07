@@ -2,7 +2,9 @@
 
 use marlin_nmea_envelope::RawSentence;
 
-use crate::sentences::{GgaData, GllData, HdtData, PrdidData, PsxnData, RmcData, VtgData};
+use crate::sentences::{
+    GgaData, GllData, HdgData, HdtData, PrdidData, PsxnData, RmcData, TllData, TtmData, VtgData,
+};
 
 /// A typed NMEA 0183 message.
 ///
@@ -27,6 +29,12 @@ pub enum Nmea0183Message<'a> {
     Rmc(RmcData),
     /// VTG — Course Over Ground and Ground Speed.
     Vtg(VtgData),
+    /// HDG — Heading, Deviation & Variation.
+    Hdg(HdgData),
+    /// TTM — Tracked Target Message (radar/ARPA).
+    Ttm(TtmData),
+    /// TLL — Target Latitude/Longitude (radar/ARPA).
+    Tll(TllData),
     /// PSXN — Kongsberg-family proprietary motion sentence. The
     /// interpretation of the 6 data slots depends on the
     /// [`PsxnLayout`](crate::PsxnLayout) configured via
