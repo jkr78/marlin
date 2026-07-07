@@ -13,12 +13,15 @@ use marlin_nmea_0183::{
     decode as rust_decode, decode_gga as rust_decode_gga, decode_gll as rust_decode_gll,
     decode_hdt as rust_decode_hdt, decode_prdid as rust_decode_prdid,
     decode_psxn as rust_decode_psxn, decode_rmc as rust_decode_rmc, decode_vtg as rust_decode_vtg,
-    decode_with as rust_decode_with, DataStatus as RustDataStatus,
-    DecodeOptions as RustDecodeOptions, GgaData, GgaFixQuality as RustGgaFixQuality, GllData,
-    HdtData, Nmea0183Error, Nmea0183Message, Nmea0183Parser as RustNmea0183, PrdidData,
-    PrdidDialect as RustPrdidDialect, PrdidPitchRollHeading as RustPrdidPitchRollHeading,
+    decode_with as rust_decode_with, AcquisitionType as RustAcquisitionType,
+    AngleReference as RustAngleReference, DataStatus as RustDataStatus,
+    DecodeOptions as RustDecodeOptions, DistanceUnits as RustDistanceUnits, GgaData,
+    GgaFixQuality as RustGgaFixQuality, GllData, HdgData, HdtData, Nmea0183Error, Nmea0183Message,
+    Nmea0183Parser as RustNmea0183, PrdidData, PrdidDialect as RustPrdidDialect,
+    PrdidPitchRollHeading as RustPrdidPitchRollHeading,
     PrdidRollPitchHeading as RustPrdidRollPitchHeading, PsxnData, PsxnLayout as RustPsxnLayout,
-    PsxnSlot as RustPsxnSlot, RmcData, RmcNavStatus as RustRmcNavStatus, UtcDate as RustUtcDate,
+    PsxnSlot as RustPsxnSlot, RmcData, RmcNavStatus as RustRmcNavStatus,
+    TargetStatus as RustTargetStatus, TllData, TtmData, UtcDate as RustUtcDate,
     UtcTime as RustUtcTime, VtgData, VtgMode as RustVtgMode,
 };
 use marlin_nmea_envelope::{OneShot, Streaming};
@@ -168,6 +171,112 @@ impl From<RustRmcNavStatus> for PyRmcNavStatus {
             RustRmcNavStatus::Unsafe => Self::Unsafe,
             RustRmcNavStatus::NotValid => Self::NotValid,
             _ => Self::NotValid,
+        }
+    }
+}
+
+/// Radar target tracking state (mirrors `TargetStatus`). `Other(u8)`
+/// collapses to `UNKNOWN` — a fieldless Python enum cannot carry the
+/// raw byte (same trade-off as `PyVtgMode`).
+#[pyclass(name = "TargetStatus", eq, eq_int, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyTargetStatus {
+    #[pyo3(name = "LOST")]
+    Lost = 0,
+    #[pyo3(name = "QUERY")]
+    Query = 1,
+    #[pyo3(name = "TRACKING")]
+    Tracking = 2,
+    #[pyo3(name = "UNKNOWN")]
+    Unknown = 3,
+}
+
+impl From<RustTargetStatus> for PyTargetStatus {
+    #[allow(clippy::match_same_arms)]
+    fn from(v: RustTargetStatus) -> Self {
+        match v {
+            RustTargetStatus::Lost => Self::Lost,
+            RustTargetStatus::Query => Self::Query,
+            RustTargetStatus::Tracking => Self::Tracking,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Bearing/course reference (mirrors `AngleReference`). `Other(u8)` →
+/// `UNKNOWN`.
+#[pyclass(name = "AngleReference", eq, eq_int, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyAngleReference {
+    #[pyo3(name = "TRUE")]
+    True = 0,
+    #[pyo3(name = "RELATIVE")]
+    Relative = 1,
+    #[pyo3(name = "UNKNOWN")]
+    Unknown = 2,
+}
+
+impl From<RustAngleReference> for PyAngleReference {
+    #[allow(clippy::match_same_arms)]
+    fn from(v: RustAngleReference) -> Self {
+        match v {
+            RustAngleReference::True => Self::True,
+            RustAngleReference::Relative => Self::Relative,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Speed/distance units (mirrors `DistanceUnits`). `Other(u8)` →
+/// `UNKNOWN`.
+#[pyclass(name = "DistanceUnits", eq, eq_int, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyDistanceUnits {
+    #[pyo3(name = "NAUTICAL")]
+    Nautical = 0,
+    #[pyo3(name = "KILOMETERS")]
+    Kilometers = 1,
+    #[pyo3(name = "STATUTE")]
+    Statute = 2,
+    #[pyo3(name = "UNKNOWN")]
+    Unknown = 3,
+}
+
+impl From<RustDistanceUnits> for PyDistanceUnits {
+    #[allow(clippy::match_same_arms)]
+    fn from(v: RustDistanceUnits) -> Self {
+        match v {
+            RustDistanceUnits::Nautical => Self::Nautical,
+            RustDistanceUnits::Kilometers => Self::Kilometers,
+            RustDistanceUnits::Statute => Self::Statute,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Target acquisition type (mirrors `AcquisitionType`). `Other(u8)` →
+/// `UNKNOWN`.
+#[pyclass(name = "AcquisitionType", eq, eq_int, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyAcquisitionType {
+    #[pyo3(name = "AUTOMATIC")]
+    Automatic = 0,
+    #[pyo3(name = "MANUAL")]
+    Manual = 1,
+    #[pyo3(name = "REPORTED")]
+    Reported = 2,
+    #[pyo3(name = "UNKNOWN")]
+    Unknown = 3,
+}
+
+impl From<RustAcquisitionType> for PyAcquisitionType {
+    #[allow(clippy::match_same_arms)]
+    fn from(v: RustAcquisitionType) -> Self {
+        match v {
+            RustAcquisitionType::Automatic => Self::Automatic,
+            RustAcquisitionType::Manual => Self::Manual,
+            RustAcquisitionType::Reported => Self::Reported,
+            _ => Self::Unknown,
         }
     }
 }
