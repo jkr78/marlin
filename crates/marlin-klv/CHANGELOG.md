@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-07
+
 ### Added
 
 - Tag-registry inspection API, sourced from the codec's own table so it cannot
@@ -16,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `TagInfo` carries the wire number, the `St0601` field base name (e.g.
   `sensor_latitude`), and the engineering unit (`degrees` / `meters` / `mps` /
   `microseconds`, or `None`). Tag 1 (checksum) is framing and never listed.
+
+### Changed
+
+- Dropped the stale hardcoded `html_root_url` doc attribute (docs.rs sets the
+  root automatically). No API impact.
 
 ## [0.1.2] - 2026-07-06
 
