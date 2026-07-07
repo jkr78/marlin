@@ -213,6 +213,10 @@ mod tests {
         assert_eq!(ttm.talker, Some(*b"RA"));
         assert_eq!(ttm.target_number, Some(12));
         assert!((ttm.distance.unwrap() - 1.23).abs() < 0.001);
+        assert!((ttm.bearing_deg.unwrap() - 45.6).abs() < 0.01);
+        assert!((ttm.speed.unwrap() - 7.8).abs() < 0.01);
+        assert!((ttm.course_deg.unwrap() - 90.1).abs() < 0.01);
+        assert!((ttm.cpa.unwrap() - 2.5).abs() < 0.01);
         assert_eq!(ttm.bearing_reference, Some(AngleReference::True));
         assert_eq!(ttm.course_reference, Some(AngleReference::Relative));
         assert!((ttm.tcpa.unwrap() - -11.0).abs() < 0.001, "negative TCPA");
