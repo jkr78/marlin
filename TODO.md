@@ -8,6 +8,13 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Fix pre-existing marlin-py stub/export gaps (found during radar-sentence review)
+  Two unrelated pre-existing drifts surfaced while adding HDG/TTM/TLL:
+  (1) `bindings/python/python/marlin/_core.pyi` `Nmea0183Parser.next_message`
+  return-type union omits `Gll` and `Rmc` (present on `__next__` and the public
+  alias, missing only here). (2) `bindings/python/python/marlin/dataclasses.py`
+  `__all__` omits `Gll`, `Rmc`, and `UtcDate` (classes exist and are used but
+  aren't exported). Both are latent-only (no runtime break today). Small fix.
 - [ ] Add a present-field enumeration view to marlin-klv St0601 (klv-inspect G2)
   Ergonomic convenience only, no wire semantics: a `present()` / `items()`
   view yielding the tags a decoded set actually carries, so consumers stop
