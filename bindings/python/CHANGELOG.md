@@ -9,9 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Two multi-sentence AIS messages sharing a sequential id on channels A
+  and B both decode. Previously the second channel's continuation
+  fragment raised `ReassemblyError` and both messages were lost
+  (`marlin-ais` reassembly fix).
 - Parser `__exit__` type stubs now return `Literal[False]` (they never suppress
   exceptions), so type checkers no longer report variables assigned inside a
   `with parser as p:` block as possibly-unbound after the block.
+
+### Changed (BREAKING)
+
+- `ReassemblyError` no longer carries a "channel mismatch" message; the
+  underlying `marlin-ais` variant is removed. The out-of-order and
+  timeout messages are unchanged.
 
 ## [0.1.4] - 2026-07-07
 

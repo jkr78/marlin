@@ -21,10 +21,6 @@
 //!   1, 2, 3, ... . Any out-of-order arrival yields
 //!   [`AisError::ReassemblyOutOfOrder`] and discards the partial.
 //!
-//! - **Channel mismatch detection**: if a fragment arrives with a
-//!   different channel than the partial's first fragment, yields
-//!   [`AisError::ReassemblyChannelMismatch`] and discards.
-//!
 //! - **Bounded-slots eviction for memory safety**: rather than a
 //!   wall-clock timeout (this crate is sans-I/O and `#![no_std]`),
 //!   the reassembler caps the number of concurrent partials. When the
@@ -80,9 +76,8 @@ pub const DEFAULT_MAX_PARTIALS: usize = 16;
 ///   `sequential_id`, or `fragment_number == 0`, or
 ///   `fragment_number > fragment_count`.
 /// - [`AisError::ReassemblyOutOfOrder`] — fragment arrived with a
-///   number other than the next expected one for its key.
-/// - [`AisError::ReassemblyChannelMismatch`] — fragment arrived on a
-///   different channel than the partial's first fragment.
+///   number other than the next expected one for its key, or no
+///   partial is open on its `(channel, sequential_id)` key.
 ///
 /// Evictions caused by exceeding
 /// [`max_partials`](Self::max_partials) surface
@@ -336,12 +331,15 @@ impl AisReassembler {
         seq_id: u8,
         now_ms: Option<u64>,
     ) -> Result<Option<ReassembledPayload>, AisError> {
-        // Find an existing partial on the same sequential_id. We look
-        // up by seq_id alone so we can report ChannelMismatch
-        // distinctly from OutOfOrder: if a partial exists on this
-        // seq_id but with a different channel, that's a diagnostic
-        // signal worth surfacing.
-        let Some(idx) = self.partials.iter().position(|p| p.sequential_id == seq_id) else {
+        // Find the partial on the same `(channel, sequential_id)` key.
+        // Channels A and B carry independent sequential-id spaces, so
+        // a partial on the other channel is simply not ours; a
+        // fragment with no partial on its own key is out of order.
+        let Some(idx) = self
+            .partials
+            .iter()
+            .position(|p| p.channel == header.channel && p.sequential_id == seq_id)
+        else {
             return Err(AisError::ReassemblyOutOfOrder);
         };
 
@@ -350,10 +348,6 @@ impl AisReassembler {
         let Some(partial) = self.partials.get(idx) else {
             return Err(AisError::ReassemblyOutOfOrder);
         };
-        if partial.channel != header.channel {
-            let _ = self.partials.remove(idx);
-            return Err(AisError::ReassemblyChannelMismatch);
-        }
         if partial.fragment_count != header.fragment_count
             || partial.next_expected != header.fragment_number
         {
@@ -521,18 +515,26 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Channel mismatch
+    // Same sequential id on the other channel is a different key
     // -----------------------------------------------------------------
 
     #[test]
-    fn channel_mismatch_between_fragments_yields_dedicated_error() {
+    fn fragment_on_other_channel_is_out_of_order_and_keeps_partial() {
         let mut r = AisReassembler::new();
         r.feed_fragment(&header(2, 1, Some(4), Some(b'A'), b"A", 0))
             .unwrap();
+        // Fragment 2 on B has no partial on (B, 4) — it is stray.
         match r.feed_fragment(&header(2, 2, Some(4), Some(b'B'), b"B", 0)) {
-            Err(AisError::ReassemblyChannelMismatch) => {}
-            other => panic!("expected ReassemblyChannelMismatch, got {other:?}"),
+            Err(AisError::ReassemblyOutOfOrder) => {}
+            other => panic!("expected ReassemblyOutOfOrder, got {other:?}"),
         }
+        // The partial on (A, 4) is untouched and still completes.
+        assert_eq!(r.in_flight(), 1);
+        let out = r
+            .feed_fragment(&header(2, 2, Some(4), Some(b'A'), b"a", 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(out.payload, b"Aa");
         assert_eq!(r.in_flight(), 0);
     }
 
@@ -592,6 +594,37 @@ mod tests {
             .unwrap();
         assert_eq!(from_a.payload, b"AaAb");
         assert_eq!(from_b.payload, b"BaBb");
+    }
+
+    #[test]
+    fn same_sequence_id_on_both_channels_completes_both() {
+        // Regression: the second fragments arrive in the opposite order
+        // to the first ones — (1,A), (1,B), (2,B), (2,A). A seq-id-only
+        // lookup matched B's second fragment against A's partial, raised
+        // a channel mismatch, and dropped both messages.
+        let mut r = AisReassembler::new();
+        assert!(r
+            .feed_fragment(&header(2, 1, Some(7), Some(b'A'), b"Aa", 0))
+            .unwrap()
+            .is_none());
+        assert!(r
+            .feed_fragment(&header(2, 1, Some(7), Some(b'B'), b"Ba", 0))
+            .unwrap()
+            .is_none());
+        assert_eq!(r.in_flight(), 2);
+        let from_b = r
+            .feed_fragment(&header(2, 2, Some(7), Some(b'B'), b"Bb", 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(r.in_flight(), 1);
+        let from_a = r
+            .feed_fragment(&header(2, 2, Some(7), Some(b'A'), b"Ab", 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(from_b.payload, b"BaBb");
+        assert_eq!(from_a.payload, b"AaAb");
+        assert_eq!(r.in_flight(), 0);
+        assert!(r.take_pending_error().is_none());
     }
 
     // -----------------------------------------------------------------

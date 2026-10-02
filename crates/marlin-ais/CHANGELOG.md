@@ -18,6 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   wire code the variant was decoded from.
 - `Dimensions` implements `Default` (all fields `None`).
 
+### Fixed
+
+- `AisReassembler` now looks up continuation fragments by
+  `(channel, sequential_id)`, as the first fragment already was. Two
+  multi-sentence messages sharing a sequential id on channels A and B
+  used to collide: the second channel's continuation matched the first
+  channel's partial, raised a channel mismatch, and both messages were
+  lost. Both now reassemble. A continuation fragment with no partial on
+  its own key is still `ReassemblyOutOfOrder`.
+
+### Changed (BREAKING)
+
+- `AisError::ReassemblyChannelMismatch` removed: with channel-keyed
+  lookups the branch is unreachable. Match on `ReassemblyOutOfOrder`
+  instead.
+- `AisError::UnknownMessageType` removed: it was never emitted; unrouted
+  message types surface as `AisMessageBody::Other`.
+
 ## [0.1.4] - 2026-07-07
 
 No behavioral changes. Lockstep version bump with the workspace release that

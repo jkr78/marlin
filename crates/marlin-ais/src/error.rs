@@ -44,23 +44,15 @@ pub enum AisError {
     PayloadTooLong,
 
     // -----------------------------------------------------------------
-    // Reserved for upcoming milestones — variants are present so
-    // callers can match against them already, but nothing emits them
-    // yet.
+    // Multi-sentence reassembly — emitted by `AisReassembler` and
+    // surfaced through `AisFragmentParser::next_message`.
     // -----------------------------------------------------------------
-    /// Message type field did not match any decoder known to this crate.
-    #[error("unknown AIS message type {0}")]
-    UnknownMessageType(u8),
-
     /// Multi-sentence reassembly received a fragment out of the
-    /// expected order (e.g. fragment 3 before fragment 2).
+    /// expected order (e.g. fragment 3 before fragment 2), or a
+    /// continuation fragment with no partial open on its
+    /// `(channel, sequential_id)` key.
     #[error("multi-sentence reassembly received fragments out of order")]
     ReassemblyOutOfOrder,
-
-    /// Multi-sentence reassembly saw fragments with mismatched channels
-    /// (A vs B) for the same sequential-message-id.
-    #[error("multi-sentence reassembly channel mismatch")]
-    ReassemblyChannelMismatch,
 
     /// A partial multi-sentence reassembly exceeded the configured age
     /// limit and was dropped before completing.

@@ -199,7 +199,7 @@ track deliverables (not conversational state).
 
 ### Done
 
-- [x] `AisError` (non_exhaustive, thiserror) — variants for all upcoming milestones; only envelope/armor/wrapper variants actively emitted
+- [x] `AisError` (non_exhaustive, thiserror) — envelope/armor/wrapper/payload variants plus the two reassembly variants `ReassemblyOutOfOrder` and `ReassemblyTimeout`, all emitted. `UnknownMessageType` (never emitted; unrouted types go to `Other`) and `ReassemblyChannelMismatch` (unreachable once partials are keyed on channel) removed in 0.2.0
 - [x] `armor::decode` + `armor::decode_char` — ASCII-to-6-bit alphabet per ITU-R M.1371-5 §8.2.4
 - [x] `BitReader<'a>` — `u(n)`, `i(n)` (two's-complement at field width), `b()`, `string(chars)` (AIS Table 47), `remaining()`
 - [x] Past-end reads yield saturating zeros (panic-free contract, PRD §T5)
@@ -211,7 +211,7 @@ track deliverables (not conversational state).
 - [x] **Type 24A / 24B** — `StaticDataB24A` + `StaticDataB24B` + `decode_static_data_b` dispatcher (routes on part-number field)
 - [x] Shared `Dimensions` + `EpfdType` + `trim_ais_string` helpers
 - [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/18/19/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
-- [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — per-channel per-sequential-id fragment buffers; in-order enforcement; channel-mismatch detection; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`feed_fragment_at`/`tick(now_ms)` (caller owns the clock — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
+- [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — fragment buffers keyed on `(channel, sequential_id)` for every lookup (0.2.0 fix: continuation fragments used to match on sequential id alone, so the same id live on A and B lost both messages); in-order enforcement; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`feed_fragment_at`/`tick(now_ms)` (caller owns the clock — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
 - [x] **`AisFragmentParser<P>` generic wrapper + `Parser` enum** — mirrors `Nmea0183Parser` pattern; composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `next_message_at(now_ms)` variant drives the reassembler clock for time-based expiry
 - [x] **cargo-fuzz targets** (PRD §F1) — `ais_armor`, `ais_bit_reader`, `ais_parser`. 15 s smoke runs each: 9 M / 1.5 M / 1.25 M executions, zero panics. `just fuzz-smoke-all` and `just fuzz-release` wrap up the set
 

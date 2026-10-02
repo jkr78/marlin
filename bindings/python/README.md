@@ -155,8 +155,8 @@ Every exception is a `MarlinError` subclass (importable from `marlin`):
 - `EnvelopeError` — framing or checksum failure
 - `DecodeError` — field-level decode failure in a typed NMEA sentence
 - `AisError` — AIS armor or bit-level decode failure
-- `ReassemblyError` — fragment reassembly violation (out-of-order, channel
-  mismatch, or timeout eviction)
+- `ReassemblyError` — fragment reassembly violation (out-of-order or
+  timeout eviction)
 - `KlvError` — malformed KLV input (bad local-set key, truncated bytes,
   checksum mismatch)
 
