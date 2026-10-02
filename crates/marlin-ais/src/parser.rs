@@ -476,6 +476,37 @@ mod tests {
         assert!(p.next_message().is_none());
     }
 
+    #[test]
+    fn streaming_same_sequence_id_on_both_channels_completes_both() {
+        // Spec §6.5 reproduction, end to end: (1,A), (1,B), (2,B), (2,A)
+        // with the same sequential id yield two Type 5 messages and no
+        // errors.
+        let mut p = Parser::streaming();
+        let frags = [
+            build_aivdm(2, 1, Some(7), Some(b'A'), TYPE5_FRAG_A, 0),
+            build_aivdm(2, 1, Some(7), Some(b'B'), TYPE5_FRAG_A, 0),
+            build_aivdm(2, 2, Some(7), Some(b'B'), TYPE5_FRAG_B, 2),
+            build_aivdm(2, 2, Some(7), Some(b'A'), TYPE5_FRAG_B, 2),
+        ];
+        let mut combined = Vec::new();
+        for frag in &frags {
+            combined.extend_from_slice(frag);
+            combined.extend_from_slice(b"\r\n");
+        }
+        p.feed(&combined);
+
+        for _ in 0..2 {
+            match p.next_message().unwrap() {
+                Ok(AisMessage {
+                    body: AisMessageBody::Type5(_),
+                    ..
+                }) => {}
+                other => panic!("expected Type5, got {other:?}"),
+            }
+        }
+        assert!(p.next_message().is_none());
+    }
+
     // -----------------------------------------------------------------
     // Envelope-level error is forwarded through the wrapper
     // -----------------------------------------------------------------

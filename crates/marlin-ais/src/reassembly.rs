@@ -121,6 +121,15 @@ struct PartialMessage {
     last_touched_ms: Option<u64>,
 }
 
+impl PartialMessage {
+    /// Whether this partial belongs to the `(channel, sequential_id)`
+    /// reassembly key. Every lookup goes through here so the two
+    /// channels can never alias each other's sequential-id space.
+    fn has_key(&self, channel: Option<u8>, sequential_id: u8) -> bool {
+        self.channel == channel && self.sequential_id == sequential_id
+    }
+}
+
 impl Default for AisReassembler {
     fn default() -> Self {
         Self::new()
@@ -300,8 +309,7 @@ impl AisReassembler {
         // This matches real-world behavior when a multi-sentence
         // message is truncated and the transmitter immediately starts
         // a new one.
-        self.partials
-            .retain(|p| !(p.channel == header.channel && p.sequential_id == seq_id));
+        self.partials.retain(|p| !p.has_key(header.channel, seq_id));
 
         // Evict if full.
         if self.partials.len() >= self.max_partials {
@@ -338,7 +346,7 @@ impl AisReassembler {
         let Some(idx) = self
             .partials
             .iter()
-            .position(|p| p.channel == header.channel && p.sequential_id == seq_id)
+            .position(|p| p.has_key(header.channel, seq_id))
         else {
             return Err(AisError::ReassemblyOutOfOrder);
         };
