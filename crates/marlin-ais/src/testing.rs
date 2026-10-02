@@ -129,3 +129,15 @@ impl BitWriter {
         (self.bits, self.total_bits)
     }
 }
+
+/// Append `chars` six-bit characters of `text` to the writer, padding
+/// with `@` (value 0) when `text` is shorter. Inverse of
+/// [`crate::BitReader::string`]: ASCII 64..=95 map to 0..=31, ASCII
+/// 32..=63 map to themselves.
+pub(crate) fn write_ais_str(w: &mut BitWriter, text: &[u8], chars: usize) {
+    for i in 0..chars {
+        let c = text.get(i).copied().unwrap_or(b'@');
+        let v = if c >= 64 { c - 64 } else { c };
+        w.u(6, u64::from(v));
+    }
+}

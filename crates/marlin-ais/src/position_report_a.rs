@@ -33,6 +33,7 @@
 //! positioning-system-status information that some callers want to
 //! inspect directly.
 
+use crate::shared_types::{cog_deg, heading_deg, lat_deg, lon_deg, sentinel, sog_tenths_kn};
 use crate::{AisError, BitReader};
 
 /// Decoded Class A position report (AIS Type 1, 2, or 3).
@@ -120,6 +121,25 @@ pub enum NavStatus {
 }
 
 impl NavStatus {
+    /// The 4-bit wire code this variant was decoded from.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::UnderwayUsingEngine => 0,
+            Self::AtAnchor => 1,
+            Self::NotUnderCommand => 2,
+            Self::RestrictedManeuverability => 3,
+            Self::ConstrainedByDraft => 4,
+            Self::Moored => 5,
+            Self::Aground => 6,
+            Self::EngagedInFishing => 7,
+            Self::UnderwaySailing => 8,
+            Self::AisSartActive => 14,
+            Self::NotDefined => 15,
+            Self::Reserved(c) => c,
+        }
+    }
+
     fn from_u4(v: u8) -> Self {
         match v {
             0 => Self::UnderwayUsingEngine,
@@ -153,6 +173,17 @@ pub enum ManeuverIndicator {
 }
 
 impl ManeuverIndicator {
+    /// The 2-bit wire code this variant was decoded from.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::NotAvailable => 0,
+            Self::NoSpecial => 1,
+            Self::Special => 2,
+            Self::Reserved => 3,
+        }
+    }
+
     fn from_u2(v: u8) -> Self {
         match v {
             1 => Self::NoSpecial,
@@ -162,18 +193,6 @@ impl ManeuverIndicator {
         }
     }
 }
-
-/// Sentinel constants per ITU-R M.1371-5 §5.3.1.
-const ROT_NOT_AVAILABLE: i8 = -128;
-const SOG_NOT_AVAILABLE: u64 = 1023;
-const LON_NOT_AVAILABLE: i64 = 181 * 600_000; // 108_600_000
-const LAT_NOT_AVAILABLE: i64 = 91 * 600_000; // 54_600_000
-const COG_NOT_AVAILABLE: u64 = 3600;
-const HEADING_NOT_AVAILABLE: u64 = 511;
-
-/// Conversion factor from the on-wire ten-thousandths-of-a-minute to
-/// decimal degrees (60 minutes × 10 000 = 600 000).
-const MINUTES_FRAC_PER_DEGREE: f64 = 600_000.0;
 
 /// Minimum valid payload size for Types 1/2/3 (ITU-R M.1371-5 §5.3.1).
 pub const POSITION_REPORT_A_BITS: usize = 168;
@@ -194,11 +213,7 @@ pub const POSITION_REPORT_A_BITS: usize = 168;
 /// partial payload produces a [`PositionReportA`] with some fields
 /// defaulted — use the bit-count check to reject short messages
 /// before calling if you want strict validation.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_possible_wrap
-)]
+#[allow(clippy::cast_possible_truncation)] // every narrowing is masked to its field width
 pub fn decode_position_report_a(
     bits: &[u8],
     total_bits: usize,
@@ -221,46 +236,12 @@ pub fn decode_position_report_a(
     let rot_raw = r.i(8);
     let rate_of_turn = decode_rate_of_turn(rot_raw);
 
-    let sog_raw = r.u(10);
-    let speed_over_ground = if sog_raw == SOG_NOT_AVAILABLE {
-        None
-    } else {
-        // Up to 102.2 knots; comfortably fits in f32.
-        Some((sog_raw as f32) / 10.0)
-    };
-
+    let speed_over_ground = sog_tenths_kn(r.u(10));
     let position_accuracy = r.b();
-
-    // Longitude: 28 bits two's-complement in 1/10_000 minute units.
-    let lon_raw = r.i(28);
-    let longitude_deg = if lon_raw == LON_NOT_AVAILABLE {
-        None
-    } else {
-        Some((lon_raw as f64) / MINUTES_FRAC_PER_DEGREE)
-    };
-
-    // Latitude: 27 bits two's-complement.
-    let lat_raw = r.i(27);
-    let latitude_deg = if lat_raw == LAT_NOT_AVAILABLE {
-        None
-    } else {
-        Some((lat_raw as f64) / MINUTES_FRAC_PER_DEGREE)
-    };
-
-    let cog_raw = r.u(12);
-    let course_over_ground = if cog_raw == COG_NOT_AVAILABLE {
-        None
-    } else {
-        Some((cog_raw as f32) / 10.0)
-    };
-
-    let heading_raw = r.u(9);
-    let true_heading = if heading_raw == HEADING_NOT_AVAILABLE {
-        None
-    } else {
-        // heading_raw ≤ 359 in normal data; u16 is ample.
-        Some((heading_raw & 0x1FF) as u16)
-    };
+    let longitude_deg = lon_deg(r.i(28));
+    let latitude_deg = lat_deg(r.i(27));
+    let course_over_ground = cog_deg(r.u(12));
+    let true_heading = heading_deg(r.u(9));
 
     let timestamp = (r.u(6) & 0x3F) as u8;
     let special_maneuver = ManeuverIndicator::from_u2((r.u(2) & 0x03) as u8);
@@ -299,7 +280,7 @@ pub fn decode_position_report_a(
 fn decode_rate_of_turn(raw: i64) -> Option<f32> {
     // r.i(8) always produces a value in the i8 range; narrow it.
     let raw = raw as i8;
-    if raw == ROT_NOT_AVAILABLE {
+    if raw == sentinel::ROT_NOT_AVAILABLE {
         return None;
     }
     let sign = if raw < 0 { -1.0_f32 } else { 1.0 };
@@ -323,6 +304,7 @@ fn decode_rate_of_turn(raw: i64) -> Option<f32> {
 )]
 mod tests {
     use super::*;
+    use crate::shared_types::MINUTES_FRAC_PER_DEGREE;
     use crate::testing::BitWriter;
 
     /// Build a 168-bit position-report payload with every field
@@ -390,13 +372,13 @@ mod tests {
             0,
             123_456_789,
             15, // NotDefined
-            ROT_NOT_AVAILABLE,
-            SOG_NOT_AVAILABLE as u16,
+            sentinel::ROT_NOT_AVAILABLE,
+            sentinel::SOG_NOT_AVAILABLE,
             false,
-            LON_NOT_AVAILABLE as i32,
-            LAT_NOT_AVAILABLE as i32,
-            COG_NOT_AVAILABLE as u16,
-            HEADING_NOT_AVAILABLE as u16,
+            sentinel::LON_NOT_AVAILABLE as i32,
+            sentinel::LAT_NOT_AVAILABLE as i32,
+            sentinel::COG_NOT_AVAILABLE,
+            sentinel::HEADING_NOT_AVAILABLE,
             60, // timestamp N/A
             0,  // maneuver NotAvailable
             false,
@@ -490,6 +472,13 @@ mod tests {
         }
     }
 
+    #[test]
+    fn nav_status_code_round_trips_every_value() {
+        for code in 0u8..16 {
+            assert_eq!(NavStatus::from_u4(code).code(), code);
+        }
+    }
+
     // -----------------------------------------------------------------
     // Maneuver indicator
     // -----------------------------------------------------------------
@@ -505,6 +494,13 @@ mod tests {
         assert_eq!(ManeuverIndicator::from_u2(3), ManeuverIndicator::Reserved);
     }
 
+    #[test]
+    fn maneuver_indicator_code_round_trips_every_value() {
+        for code in 0u8..4 {
+            assert_eq!(ManeuverIndicator::from_u2(code).code(), code);
+        }
+    }
+
     // -----------------------------------------------------------------
     // Rate of turn — PRD §A2 (signed decoding is the single most
     // error-prone area)
@@ -517,7 +513,7 @@ mod tests {
             0,
             1,
             0,
-            ROT_NOT_AVAILABLE,
+            sentinel::ROT_NOT_AVAILABLE,
             0,
             false,
             0,

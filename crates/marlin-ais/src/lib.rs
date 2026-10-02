@@ -67,7 +67,7 @@ pub use position_report_a::{
 };
 pub use position_report_b::{decode_position_report_b, PositionReportB, POSITION_REPORT_B_BITS};
 pub use reassembly::{AisReassembler, ReassembledPayload, DEFAULT_MAX_PARTIALS};
-pub use shared_types::{Dimensions, EpfdType};
+pub use shared_types::{is_auxiliary_craft_mmsi, sentinel, Dimensions, EpfdType};
 pub use static_data_b::{
     decode_static_data_b, decode_static_data_b_24a, decode_static_data_b_24b, StaticDataB,
     StaticDataB24A, StaticDataB24B, Type24Part, STATIC_DATA_B_24A_BITS, STATIC_DATA_B_24B_BITS,

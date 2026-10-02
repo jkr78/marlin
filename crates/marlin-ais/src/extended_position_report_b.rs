@@ -8,19 +8,14 @@
 
 use alloc::string::String;
 
-use crate::shared_types::{dim_u6, dim_u9, trim_ais_string, Dimensions, EpfdType};
+use crate::shared_types::{
+    cog_deg, heading_deg, lat_deg, lon_deg, read_dimensions, sog_tenths_kn, trim_ais_string,
+    Dimensions, EpfdType,
+};
 use crate::{AisError, BitReader};
 
 /// Minimum valid payload size for Type 19 (ITU-R M.1371-5 §5.3.19).
 pub const EXTENDED_POSITION_REPORT_B_BITS: usize = 312;
-
-/// Sentinels match the Class A position report (§5.3.1).
-const SOG_NOT_AVAILABLE: u64 = 1023;
-const LON_NOT_AVAILABLE: i64 = 181 * 600_000;
-const LAT_NOT_AVAILABLE: i64 = 91 * 600_000;
-const COG_NOT_AVAILABLE: u64 = 3600;
-const HEADING_NOT_AVAILABLE: u64 = 511;
-const MINUTES_FRAC_PER_DEGREE: f64 = 600_000.0;
 
 /// Decoded Class B extended position report.
 ///
@@ -70,11 +65,7 @@ pub struct ExtendedPositionReportB {
 /// # Errors
 ///
 /// [`AisError::PayloadTooShort`] if `total_bits < 312`.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_possible_wrap
-)]
+#[allow(clippy::cast_possible_truncation)] // every narrowing is masked to its field width
 pub fn decode_extended_position_report_b(
     bits: &[u8],
     total_bits: usize,
@@ -88,53 +79,18 @@ pub fn decode_extended_position_report_b(
     let mmsi = (r.u(30) & 0xFFFF_FFFF) as u32;
     let _ = r.u(8); // reserved
 
-    let sog_raw = r.u(10);
-    let speed_over_ground = if sog_raw == SOG_NOT_AVAILABLE {
-        None
-    } else {
-        Some((sog_raw as f32) / 10.0)
-    };
-
+    let speed_over_ground = sog_tenths_kn(r.u(10));
     let position_accuracy = r.b();
-
-    let lon_raw = r.i(28);
-    let longitude_deg = if lon_raw == LON_NOT_AVAILABLE {
-        None
-    } else {
-        Some((lon_raw as f64) / MINUTES_FRAC_PER_DEGREE)
-    };
-    let lat_raw = r.i(27);
-    let latitude_deg = if lat_raw == LAT_NOT_AVAILABLE {
-        None
-    } else {
-        Some((lat_raw as f64) / MINUTES_FRAC_PER_DEGREE)
-    };
-
-    let cog_raw = r.u(12);
-    let course_over_ground = if cog_raw == COG_NOT_AVAILABLE {
-        None
-    } else {
-        Some((cog_raw as f32) / 10.0)
-    };
-
-    let heading_raw = r.u(9);
-    let true_heading = if heading_raw == HEADING_NOT_AVAILABLE {
-        None
-    } else {
-        Some((heading_raw & 0x1FF) as u16)
-    };
-
+    let longitude_deg = lon_deg(r.i(28));
+    let latitude_deg = lat_deg(r.i(27));
+    let course_over_ground = cog_deg(r.u(12));
+    let true_heading = heading_deg(r.u(9));
     let timestamp = (r.u(6) & 0x3F) as u8;
     let _ = r.u(4); // regional reserved
 
     let vessel_name = trim_ais_string(r.string(20));
     let ship_type = (r.u(8) & 0xFF) as u8;
-    let dimensions = Dimensions {
-        to_bow_m: dim_u9(r.u(9)),
-        to_stern_m: dim_u9(r.u(9)),
-        to_port_m: dim_u6(r.u(6)),
-        to_starboard_m: dim_u6(r.u(6)),
-    };
+    let dimensions = read_dimensions(&mut r);
     let epfd = EpfdType::from_u4((r.u(4) & 0x0F) as u8);
     let raim = r.b();
     let dte = r.b();
@@ -167,23 +123,15 @@ pub fn decode_extended_position_report_b(
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
 )]
 mod tests {
     use super::*;
-    use crate::testing::BitWriter;
-
-    fn write_ais_str(w: &mut BitWriter, s: &[u8], chars: usize) {
-        for i in 0..chars {
-            let c = s.get(i).copied().unwrap_or(b'@');
-            let v = if c >= 64 { c - 64 } else { c };
-            w.u(6, u64::from(v));
-        }
-    }
+    use crate::shared_types::sentinel;
+    use crate::testing::{write_ais_str, BitWriter};
 
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn build_t19(
@@ -280,12 +228,12 @@ mod tests {
     fn sentinels_decode_to_none() {
         let (bits, total) = build_t19(
             1,
-            SOG_NOT_AVAILABLE as u16,
+            sentinel::SOG_NOT_AVAILABLE,
             false,
-            LON_NOT_AVAILABLE as i32,
-            LAT_NOT_AVAILABLE as i32,
-            COG_NOT_AVAILABLE as u16,
-            HEADING_NOT_AVAILABLE as u16,
+            sentinel::LON_NOT_AVAILABLE as i32,
+            sentinel::LAT_NOT_AVAILABLE as i32,
+            sentinel::COG_NOT_AVAILABLE,
+            sentinel::HEADING_NOT_AVAILABLE,
             60,
             b"",
             0,

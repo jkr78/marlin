@@ -11,7 +11,7 @@
 
 use alloc::string::String;
 
-use crate::shared_types::{dim_u6, dim_u9, trim_ais_string, Dimensions};
+use crate::shared_types::{read_dimensions, trim_ais_string, Dimensions};
 use crate::{AisError, BitReader};
 
 /// Spec-canonical bit count for Type 24 Part A (ITU-R M.1371-5 §5.3.24.1):
@@ -166,12 +166,7 @@ pub fn decode_static_data_b_24b(
     let ship_type = (r.u(8) & 0xFF) as u8;
     let vendor_id = trim_ais_string(r.string(7));
     let call_sign = trim_ais_string(r.string(7));
-    let dimensions = Dimensions {
-        to_bow_m: dim_u9(r.u(9)),
-        to_stern_m: dim_u9(r.u(9)),
-        to_port_m: dim_u6(r.u(6)),
-        to_starboard_m: dim_u6(r.u(6)),
-    };
+    let dimensions = read_dimensions(&mut r);
     // Remaining bits (spare + possibly EPFD) ignored — not normative
     // for the common-case Part B layout.
     Ok(StaticDataB24B {
@@ -192,19 +187,11 @@ pub fn decode_static_data_b_24b(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::cast_possible_truncation
+    clippy::indexing_slicing
 )]
 mod tests {
     use super::*;
-    use crate::testing::BitWriter;
-
-    fn write_ais_str(w: &mut BitWriter, s: &[u8], chars: usize) {
-        for i in 0..chars {
-            let c = s.get(i).copied().unwrap_or(b'@');
-            let v = if c >= 64 { c - 64 } else { c };
-            w.u(6, u64::from(v));
-        }
-    }
+    use crate::testing::{write_ais_str, BitWriter};
 
     fn build_part_a(mmsi: u32, name: &[u8]) -> (alloc::vec::Vec<u8>, usize) {
         let mut w = BitWriter::new();

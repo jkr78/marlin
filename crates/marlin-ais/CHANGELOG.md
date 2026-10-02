@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `marlin_ais::sentinel` — public wire codes for "not available" and
+  "this value or higher" (position, SOG, COG, heading, ROT, altitude,
+  dimensions, timestamp) so consumers stop hardcoding them.
+- `is_auxiliary_craft_mmsi` — whether an MMSI is a `98MIDxxxx` auxiliary
+  craft (gpsd / USCG convention, ADR-0002).
+- `code()` on `NavStatus`, `ManeuverIndicator` and `EpfdType` returns the
+  wire code the variant was decoded from.
+- `Dimensions` implements `Default` (all fields `None`).
+
 ## [0.1.4] - 2026-07-07
 
 No behavioral changes. Lockstep version bump with the workspace release that
