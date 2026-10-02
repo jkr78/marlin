@@ -121,6 +121,23 @@ pub enum NavStatus {
 }
 
 impl NavStatus {
+    fn from_u4(v: u8) -> Self {
+        match v {
+            0 => Self::UnderwayUsingEngine,
+            1 => Self::AtAnchor,
+            2 => Self::NotUnderCommand,
+            3 => Self::RestrictedManeuverability,
+            4 => Self::ConstrainedByDraft,
+            5 => Self::Moored,
+            6 => Self::Aground,
+            7 => Self::EngagedInFishing,
+            8 => Self::UnderwaySailing,
+            14 => Self::AisSartActive,
+            15 => Self::NotDefined,
+            other => Self::Reserved(other),
+        }
+    }
+
     /// The 4-bit wire code this variant was decoded from.
     #[must_use]
     pub const fn code(self) -> u8 {
@@ -137,23 +154,6 @@ impl NavStatus {
             Self::AisSartActive => 14,
             Self::NotDefined => 15,
             Self::Reserved(c) => c,
-        }
-    }
-
-    fn from_u4(v: u8) -> Self {
-        match v {
-            0 => Self::UnderwayUsingEngine,
-            1 => Self::AtAnchor,
-            2 => Self::NotUnderCommand,
-            3 => Self::RestrictedManeuverability,
-            4 => Self::ConstrainedByDraft,
-            5 => Self::Moored,
-            6 => Self::Aground,
-            7 => Self::EngagedInFishing,
-            8 => Self::UnderwaySailing,
-            14 => Self::AisSartActive,
-            15 => Self::NotDefined,
-            other => Self::Reserved(other),
         }
     }
 }
@@ -173,6 +173,15 @@ pub enum ManeuverIndicator {
 }
 
 impl ManeuverIndicator {
+    fn from_u2(v: u8) -> Self {
+        match v {
+            1 => Self::NoSpecial,
+            2 => Self::Special,
+            3 => Self::Reserved,
+            _ => Self::NotAvailable,
+        }
+    }
+
     /// The 2-bit wire code this variant was decoded from.
     #[must_use]
     pub const fn code(self) -> u8 {
@@ -181,15 +190,6 @@ impl ManeuverIndicator {
             Self::NoSpecial => 1,
             Self::Special => 2,
             Self::Reserved => 3,
-        }
-    }
-
-    fn from_u2(v: u8) -> Self {
-        match v {
-            1 => Self::NoSpecial,
-            2 => Self::Special,
-            3 => Self::Reserved,
-            _ => Self::NotAvailable,
         }
     }
 }
@@ -298,9 +298,7 @@ fn decode_rate_of_turn(raw: i64) -> Option<f32> {
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss
+    clippy::cast_possible_truncation
 )]
 mod tests {
     use super::*;
