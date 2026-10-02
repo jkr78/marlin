@@ -8,6 +8,36 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Add a three-way sentinel reading across all AIS types (PRD §A3 revision)
+  value / not available / invalid on every numeric field, with a typed timestamp
+  (codes 60–63) folded in. Requested by nexus; deferred from the Type 9/21 feature
+  because it changes every field type (breaking) and revises PRD §A3, which today
+  says the raw code is not exposed. ADR-0001 records the current policy. Needs its
+  own grill before any code.
+- [ ] Parse NMEA 4.10 TAG blocks in marlin-nmea-envelope
+  `RawSentence.tag_block` is raw bytes; consumers parse `c:` (Unix seconds)
+  themselves. A typed TAG block (`c:`, `s:`, `d:`, `g:`, `n:`, `r:`, `t:`) removes
+  that code. Independent of AIS; own feature.
+- [ ] Decode AIS Types 4 and 27, and binary Types 6 and 8
+  Still routed to `Other`. Types 4 and 27 did not appear in the 2026-09-22
+  Kystverket capture; Types 6 and 8 (78 messages there) have no consumer use yet.
+- [ ] Decode radar sentences OSD, RSD, TTD, TLB in marlin-nmea-0183
+  OSD would let an ARPA consumer take own-ship data from the radar instead of
+  configuration. Follow-up to the HDG/TTM/TLL decoders.
+- [ ] Track ITU-R M.1371-6 changes: Message 28, Message 9 rename, Table 72
+  M.1371-6 (02/2026) adds the single-slot AtoN report (Message 28), renames
+  Message 9 to "Standard aircraft station in the maritime mobile service position
+  report", and renumbers the AtoN type table to Table 72 (code 2 "RACON or
+  MatoN"). The crate targets M.1371-5; revisit when a consumer needs -6 semantics.
+- [ ] Run the ais_parser fuzz target in the CI fuzz-smoke job
+  `.github/workflows/ci.yml` runs only `just fuzz envelope 30`; `just
+  fuzz-smoke-all` covers the AIS targets locally only. Add `just fuzz ais_parser
+  30` (nightly job already set up).
+- [ ] Remove the never-constructed Type24Part enum
+  `Type24Part` is defined in `static_data_b.rs` and re-exported from `lib.rs` but
+  never constructed: dispatch uses `StaticDataB::{PartA, PartB, Reserved}`.
+  Removal is breaking; the 0.2.0 window (Type 9/21 release) was declined on
+  2026-10-02 in favour of this card, so it waits for the next breaking release.
 - [x] Fix pre-existing marlin-py stub/export gaps (found during radar-sentence review) **DONE 2026-07-07**
   Two unrelated pre-existing drifts surfaced while adding HDG/TTM/TLL:
   (1) `bindings/python/python/marlin/_core.pyi` `Nmea0183Parser.next_message`
@@ -128,6 +158,9 @@ track deliverables (not conversational state).
 - [ ] `criterion` benchmark suite (PRD §P4; nice-to-have)
 - [ ] Dedicated `no_std` compile-test CI job
 - [ ] Optional `serde` feature behind a flag (PRD §D3; post-v1.0)
+  Covers the wire types of every crate, including the `marlin-ais` structs (not
+  only the envelope). nexus maps into its own model by hand and does not need it
+  (noted 2026-10-02).
 - [ ] `arbitrary` derive for `RawSentence` (helps structure-aware fuzzing of higher crates)
 
 ---
@@ -185,6 +218,10 @@ track deliverables (not conversational state).
 ### Remaining (non-blocking)
 
 - [ ] Golden-file fixtures from real AIS feeds (aishub / marinetraffic public samples)
+  Source material kept outside the repo: `~/devel/j/captures/kystverket-2026-10-02.nmea`
+  (Kystverket open feed, 203 s, 9 047 lines, 174 single-sentence Type 21, 0 Type 9;
+  NLOD licence, attribution required). The 2026-09-22 capture (465 Type 21) is
+  gone. The Type 9/21 feature ships gpsd BSD vectors only (2026-10-02).
 - [ ] Example program decoding an AIVDM log
 
 ---
