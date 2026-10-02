@@ -8,6 +8,21 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Make `just py-ci` self-sufficient: add maturin and pyright to the venv
+  `py-dev` runs `maturin develop` and `py-type-check` runs `pyright` from PATH;
+  `bindings/python/.venv` (uv) has neither, so the recipe fails at `py-dev` on a
+  fresh checkout. `pyproject.toml` `dev` extras list pyright but not maturin, and
+  the venv was created without the extras. Add `maturin` to `dev`, document
+  `uv sync --extra dev` (or have the recipe use `uv run`), so the recipe runs as
+  written. Workaround used 2026-10-02: `uvx maturin develop --release` and
+  `uvx pyright` with `VIRTUAL_ENV` pointed at the venv.
+- [ ] Simplify the three-step lookup in `AisReassembler::append_to_partial`
+  `position` → `get(idx)` → `get_mut(idx)` with three identical
+  `else { return Err(ReassemblyOutOfOrder) }` fallbacks exists only to dodge
+  `clippy::indexing_slicing`. Review of 7ba309f suggested one `iter_mut()`
+  `position`-plus-`remove` reshaping. Judgement call: the current form is clippy
+  clean and the fallbacks are unreachable, so re-check whether the ceremony
+  still bothers anyone before doing the work.
 - [ ] Add a three-way sentinel reading across all AIS types (PRD §A3 revision)
   value / not available / invalid on every numeric field, with a typed timestamp
   (codes 60–63) folded in. Requested by nexus; deferred from the Type 9/21 feature
