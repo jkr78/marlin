@@ -28,9 +28,10 @@
 //! | Course over ground | `3600` (× 10⁻¹ degrees) | Not available |
 //! | True heading | `511` | Not available |
 //!
-//! Rate of turn `±127` is not a sentinel but a status ("turning
-//! right/left at more than 5° per 30 s, no turn indicator") and decodes
-//! to [`RateOfTurn::NoIndicator`] rather than a fabricated rate.
+//! Rate of turn `±127` is a sentinel that carries a status ("turning
+//! right/left at more than 5° per 30 s, no turn indicator") rather than
+//! "not available", so it decodes to [`RateOfTurn::NoIndicator`] instead
+//! of `None` or a fabricated rate.
 //!
 //! The `timestamp` field keeps its raw `u8` because the values
 //! 0..=59 are seconds, 60 means "not available", and 61..=63 carry
@@ -376,6 +377,20 @@ mod tests {
         w.finish()
     }
 
+    /// Type 1 payload with the given MMSI and raw rate of turn; every
+    /// other field zero. The rate-of-turn tests vary only these two.
+    fn build_pra_rot(mmsi: u32, rot: i8) -> (alloc::vec::Vec<u8>, usize) {
+        build_pra(1, 0, mmsi, 0, rot, 0, false, 0, 0, 0, 0, 0, 0, false, 0)
+    }
+
+    /// Unwrap a measured rate; panics on a status or `None`.
+    fn deg_per_min(rot: Option<RateOfTurn>) -> f32 {
+        match rot {
+            Some(RateOfTurn::DegPerMin(v)) => v,
+            other => panic!("expected DegPerMin, got {other:?}"),
+        }
+    }
+
     // -----------------------------------------------------------------
     // Happy path: classic ITU-R Annex 5 fixture (MMSI 244 708 736)
     // -----------------------------------------------------------------
@@ -536,49 +551,25 @@ mod tests {
 
     #[test]
     fn rate_of_turn_sentinel_maps_to_none() {
-        let (bits, total) = build_pra(
-            1,
-            0,
-            1,
-            0,
-            sentinel::ROT_NOT_AVAILABLE,
-            0,
-            false,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            false,
-            0,
-        );
+        let (bits, total) = build_pra_rot(1, sentinel::ROT_NOT_AVAILABLE);
         let pra = decode_position_report_a(&bits, total).unwrap();
         assert_eq!(pra.rate_of_turn, None);
     }
 
     #[test]
     fn rate_of_turn_zero_means_not_turning() {
-        let (bits, total) = build_pra(1, 0, 1, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
+        let (bits, total) = build_pra_rot(1, 0);
         let pra = decode_position_report_a(&bits, total).unwrap();
         assert_eq!(pra.rate_of_turn, Some(RateOfTurn::DegPerMin(0.0)));
-    }
-
-    /// Unwrap a measured rate; panics on a status or `None`.
-    fn deg_per_min(rot: Option<RateOfTurn>) -> f32 {
-        match rot {
-            Some(RateOfTurn::DegPerMin(v)) => v,
-            other => panic!("expected DegPerMin, got {other:?}"),
-        }
     }
 
     #[test]
     fn rate_of_turn_preserves_sign() {
         // Known encoding: R = 20°/min gives X ≈ 21 (floor of 4.733·sqrt(20)).
         // Decode X = 21 → (21 / 4.733)² ≈ 19.7.
-        let (bits, total) = build_pra(1, 0, 1, 0, 21, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
+        let (bits, total) = build_pra_rot(1, 21);
         let pos = decode_position_report_a(&bits, total).unwrap();
-        let (bits, total) = build_pra(1, 0, 1, 0, -21, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
+        let (bits, total) = build_pra_rot(1, -21);
         let neg = decode_position_report_a(&bits, total).unwrap();
         let p = deg_per_min(pos.rate_of_turn);
         let n = deg_per_min(neg.rate_of_turn);
@@ -589,9 +580,9 @@ mod tests {
     #[test]
     fn rate_of_turn_126_is_the_largest_measured_rate() {
         // ±126 is the last code the square law applies to: (126 / 4.733)² ≈ 708.7.
-        let (bits, total) = build_pra(1, 0, 1, 0, 126, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
+        let (bits, total) = build_pra_rot(1, 126);
         let pos = decode_position_report_a(&bits, total).unwrap();
-        let (bits, total) = build_pra(1, 0, 1, 0, -126, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
+        let (bits, total) = build_pra_rot(1, -126);
         let neg = decode_position_report_a(&bits, total).unwrap();
         assert!((deg_per_min(pos.rate_of_turn) - 708.7).abs() < 1e-1);
         assert!((deg_per_min(neg.rate_of_turn) + 708.7).abs() < 1e-1);
@@ -599,23 +590,7 @@ mod tests {
 
     #[test]
     fn rate_of_turn_127_is_no_indicator_right() {
-        let (bits, total) = build_pra(
-            1,
-            0,
-            1,
-            0,
-            sentinel::ROT_NO_INDICATOR_RIGHT,
-            0,
-            false,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            false,
-            0,
-        );
+        let (bits, total) = build_pra_rot(1, sentinel::ROT_NO_INDICATOR_RIGHT);
         let pra = decode_position_report_a(&bits, total).unwrap();
         assert_eq!(
             pra.rate_of_turn,
@@ -625,23 +600,7 @@ mod tests {
 
     #[test]
     fn rate_of_turn_minus_127_is_no_indicator_left() {
-        let (bits, total) = build_pra(
-            1,
-            0,
-            1,
-            0,
-            sentinel::ROT_NO_INDICATOR_LEFT,
-            0,
-            false,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            false,
-            0,
-        );
+        let (bits, total) = build_pra_rot(1, sentinel::ROT_NO_INDICATOR_LEFT);
         let pra = decode_position_report_a(&bits, total).unwrap();
         assert_eq!(
             pra.rate_of_turn,
@@ -655,44 +614,12 @@ mod tests {
     /// armor to exactly 28 characters with zero fill bits.
     #[test]
     fn rate_of_turn_no_indicator_payloads_armor_to_known_strings() {
-        let (bits, total) = build_pra(
-            1,
-            0,
-            123_456_789,
-            0,
-            sentinel::ROT_NO_INDICATOR_RIGHT,
-            0,
-            false,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            false,
-            0,
-        );
+        let (bits, total) = build_pra_rot(123_456_789, sentinel::ROT_NO_INDICATOR_RIGHT);
         let armored = b"11mg=5@Oh0000000000000000000";
         assert_eq!(armor_encode(&bits, total), (armored.to_vec(), 0));
         assert_eq!(crate::armor::decode(armored, 0).unwrap(), (bits, total));
 
-        let (bits, total) = build_pra(
-            1,
-            0,
-            123_456_789,
-            0,
-            sentinel::ROT_NO_INDICATOR_LEFT,
-            0,
-            false,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            false,
-            0,
-        );
+        let (bits, total) = build_pra_rot(123_456_789, sentinel::ROT_NO_INDICATOR_LEFT);
         let armored = b"11mg=5@P@0000000000000000000";
         assert_eq!(armor_encode(&bits, total), (armored.to_vec(), 0));
         assert_eq!(crate::armor::decode(armored, 0).unwrap(), (bits, total));

@@ -703,7 +703,7 @@ def _convert_position_report_a(msg: object) -> PositionReportA:
         navigation_status=int(msg.navigation_status),
         rate_of_turn=msg.rate_of_turn,
         turn_direction=(
-            None if msg.turn_direction is None else int(msg.turn_direction)
+            int(msg.turn_direction) if msg.turn_direction is not None else None
         ),
         speed_over_ground=msg.speed_over_ground,
         position_accuracy=msg.position_accuracy,

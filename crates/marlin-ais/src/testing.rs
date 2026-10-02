@@ -99,6 +99,7 @@ impl BitWriter {
     }
 
     /// Append `n` bits of `value`, MSB-first.
+    // `byte_idx` is pushed into range just above the index; the cast masks one bit.
     #[allow(clippy::cast_possible_truncation, clippy::indexing_slicing)]
     pub(crate) fn u(&mut self, n: usize, value: u64) {
         for i in 0..n {
@@ -135,6 +136,7 @@ impl BitWriter {
 /// count the wrapper would declare (zero-padded to a 6-bit boundary).
 /// Lets a Rust test pin the armored form of a `BitWriter` payload so the
 /// Python unit tests can reuse the same bits.
+// `pos < total_bits` bounds the index; the fill count is at most 5.
 #[allow(clippy::cast_possible_truncation, clippy::indexing_slicing)]
 pub(crate) fn armor_encode(bits: &[u8], total_bits: usize) -> (Vec<u8>, u8) {
     let chars = total_bits.div_ceil(6);
