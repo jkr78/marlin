@@ -295,11 +295,16 @@ class PositionReportA:
     """Mirror of marlin.ais.PositionReportA (Types 1/2/3).
 
     `navigation_status` and `special_maneuver` are stored as int (wire values).
+    `turn_direction` is stored as int too, but it is the `TurnDirection`
+    enum value (RIGHT = 0, LEFT = 1), not a wire code: on the wire the
+    status is raw ROT ±127. At most one of `rate_of_turn` and
+    `turn_direction` is set; both are None for the −128 sentinel.
     """
 
     mmsi: int
     navigation_status: int
     rate_of_turn: Optional[float]
+    turn_direction: Optional[int]
     speed_over_ground: Optional[float]
     position_accuracy: bool
     longitude_deg: Optional[float]
@@ -697,6 +702,9 @@ def _convert_position_report_a(msg: object) -> PositionReportA:
         mmsi=msg.mmsi,
         navigation_status=int(msg.navigation_status),
         rate_of_turn=msg.rate_of_turn,
+        turn_direction=(
+            None if msg.turn_direction is None else int(msg.turn_direction)
+        ),
         speed_over_ground=msg.speed_over_ground,
         position_accuracy=msg.position_accuracy,
         longitude_deg=msg.longitude_deg,

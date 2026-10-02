@@ -28,6 +28,10 @@
 //! | Course over ground | `3600` (× 10⁻¹ degrees) | Not available |
 //! | True heading | `511` | Not available |
 //!
+//! Rate of turn `±127` is not a sentinel but a status ("turning
+//! right/left at more than 5° per 30 s, no turn indicator") and decodes
+//! to [`RateOfTurn::NoIndicator`] rather than a fabricated rate.
+//!
 //! The `timestamp` field keeps its raw `u8` because the values
 //! 0..=59 are seconds, 60 means "not available", and 61..=63 carry
 //! positioning-system-status information that some callers want to
@@ -48,9 +52,10 @@ pub struct PositionReportA {
     /// Navigation status (one of the 15 defined values, plus
     /// `Reserved` for 9..=13 and future expansion).
     pub navigation_status: NavStatus,
-    /// Rate of turn in degrees per minute (positive = turning to
-    /// starboard). `None` when the sentinel `-128` is emitted.
-    pub rate_of_turn: Option<f32>,
+    /// Rate of turn: a measured rate in degrees per minute, or the
+    /// "turning faster than 5° per 30 s, no turn indicator" status
+    /// for raw ±127. `None` when the sentinel `-128` is emitted.
+    pub rate_of_turn: Option<RateOfTurn>,
     /// Speed over ground in knots. `None` when the sentinel `1023`
     /// is emitted.
     pub speed_over_ground: Option<f32>,
@@ -82,6 +87,30 @@ pub struct PositionReportA {
     /// 19 bits. Layout depends on the underlying SOTDMA/ITDMA slot
     /// negotiation and is typically consumed by lower-layer tooling.
     pub radio_status: u32,
+}
+
+/// Decoded rate-of-turn field — 8 bits (ITU-R M.1371-5 Annex 8 Table 48).
+///
+/// Exhaustive: the wire codes are fully specified and cannot grow.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RateOfTurn {
+    /// Measured rate in degrees per minute, starboard positive:
+    /// `sign · (|raw| / 4.733)²` for raw `0..=±126`.
+    DegPerMin(f32),
+    /// Raw `±127`: turning right/left at more than 5° per 30 s with no
+    /// turn indicator available. A status, not a rate — the square law
+    /// would fabricate ±720 °/min here.
+    NoIndicator(TurnDirection),
+}
+
+/// Which way a vessel is turning when only the direction is known
+/// ([`RateOfTurn::NoIndicator`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnDirection {
+    /// Raw `+127` — turning right (to starboard).
+    Right,
+    /// Raw `−127` — turning left (to port).
+    Left,
 }
 
 /// Navigation status field — 4 bits.
@@ -267,25 +296,26 @@ pub fn decode_position_report_a(
     })
 }
 
-/// Decode the 8-bit `ROT_AIS` indicator into a rate of turn in
-/// degrees per minute.
+/// Decode the 8-bit `ROT_AIS` indicator (Table 48).
 ///
-/// The encoding is sign-preserved with a square-law expansion:
-/// `R = (X / 4.733)² × sign(X)`. The sentinel `-128` maps to `None`.
-/// Values `±127` indicate turning at more than 5°/30s (the sensor
-/// saturation rail) and are decoded via the same formula — callers
-/// who need to distinguish "saturated" from "computed" can check the
-/// magnitude of the returned value.
+/// `0..=±126` is sign-preserved with a square-law expansion,
+/// `R = (X / 4.733)² × sign(X)`. `±127` is the no-turn-indicator
+/// status and carries only a direction. The sentinel `-128` maps to
+/// `None`.
 #[allow(clippy::cast_possible_truncation)]
-fn decode_rate_of_turn(raw: i64) -> Option<f32> {
+fn decode_rate_of_turn(raw: i64) -> Option<RateOfTurn> {
     // r.i(8) always produces a value in the i8 range; narrow it.
     let raw = raw as i8;
-    if raw == sentinel::ROT_NOT_AVAILABLE {
-        return None;
+    match raw {
+        sentinel::ROT_NOT_AVAILABLE => None,
+        sentinel::ROT_NO_INDICATOR_RIGHT => Some(RateOfTurn::NoIndicator(TurnDirection::Right)),
+        sentinel::ROT_NO_INDICATOR_LEFT => Some(RateOfTurn::NoIndicator(TurnDirection::Left)),
+        measured => {
+            let sign = if measured < 0 { -1.0_f32 } else { 1.0 };
+            let magnitude = f32::from(measured).abs() / 4.733;
+            Some(RateOfTurn::DegPerMin(sign * magnitude * magnitude))
+        }
     }
-    let sign = if raw < 0 { -1.0_f32 } else { 1.0 };
-    let magnitude = f32::from(raw).abs() / 4.733;
-    Some(sign * magnitude * magnitude)
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +333,7 @@ fn decode_rate_of_turn(raw: i64) -> Option<f32> {
 mod tests {
     use super::*;
     use crate::shared_types::MINUTES_FRAC_PER_DEGREE;
-    use crate::testing::BitWriter;
+    use crate::testing::{armor_encode, BitWriter};
 
     /// Build a 168-bit position-report payload with every field
     /// caller-specified. Used across tests to verify individual
@@ -531,7 +561,15 @@ mod tests {
     fn rate_of_turn_zero_means_not_turning() {
         let (bits, total) = build_pra(1, 0, 1, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
         let pra = decode_position_report_a(&bits, total).unwrap();
-        assert_eq!(pra.rate_of_turn, Some(0.0));
+        assert_eq!(pra.rate_of_turn, Some(RateOfTurn::DegPerMin(0.0)));
+    }
+
+    /// Unwrap a measured rate; panics on a status or `None`.
+    fn deg_per_min(rot: Option<RateOfTurn>) -> f32 {
+        match rot {
+            Some(RateOfTurn::DegPerMin(v)) => v,
+            other => panic!("expected DegPerMin, got {other:?}"),
+        }
     }
 
     #[test]
@@ -542,10 +580,122 @@ mod tests {
         let pos = decode_position_report_a(&bits, total).unwrap();
         let (bits, total) = build_pra(1, 0, 1, 0, -21, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
         let neg = decode_position_report_a(&bits, total).unwrap();
-        let p = pos.rate_of_turn.unwrap();
-        let n = neg.rate_of_turn.unwrap();
-        assert!(p > 0.0 && n < 0.0);
+        let p = deg_per_min(pos.rate_of_turn);
+        let n = deg_per_min(neg.rate_of_turn);
+        assert!((p - 19.69).abs() < 1e-2);
         assert!((p + n).abs() < 1e-4); // magnitude matches, signs cancel
+    }
+
+    #[test]
+    fn rate_of_turn_126_is_the_largest_measured_rate() {
+        // ±126 is the last code the square law applies to: (126 / 4.733)² ≈ 708.7.
+        let (bits, total) = build_pra(1, 0, 1, 0, 126, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
+        let pos = decode_position_report_a(&bits, total).unwrap();
+        let (bits, total) = build_pra(1, 0, 1, 0, -126, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
+        let neg = decode_position_report_a(&bits, total).unwrap();
+        assert!((deg_per_min(pos.rate_of_turn) - 708.7).abs() < 1e-1);
+        assert!((deg_per_min(neg.rate_of_turn) + 708.7).abs() < 1e-1);
+    }
+
+    #[test]
+    fn rate_of_turn_127_is_no_indicator_right() {
+        let (bits, total) = build_pra(
+            1,
+            0,
+            1,
+            0,
+            sentinel::ROT_NO_INDICATOR_RIGHT,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            false,
+            0,
+        );
+        let pra = decode_position_report_a(&bits, total).unwrap();
+        assert_eq!(
+            pra.rate_of_turn,
+            Some(RateOfTurn::NoIndicator(TurnDirection::Right))
+        );
+    }
+
+    #[test]
+    fn rate_of_turn_minus_127_is_no_indicator_left() {
+        let (bits, total) = build_pra(
+            1,
+            0,
+            1,
+            0,
+            sentinel::ROT_NO_INDICATOR_LEFT,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            false,
+            0,
+        );
+        let pra = decode_position_report_a(&bits, total).unwrap();
+        assert_eq!(
+            pra.rate_of_turn,
+            Some(RateOfTurn::NoIndicator(TurnDirection::Left))
+        );
+    }
+
+    /// Pins the armored form of the ±127 payloads so the Python unit
+    /// test `test_position_report_a_turn_direction` (bindings) can
+    /// decode the same bits without a Python-side bit packer. 168 bits
+    /// armor to exactly 28 characters with zero fill bits.
+    #[test]
+    fn rate_of_turn_no_indicator_payloads_armor_to_known_strings() {
+        let (bits, total) = build_pra(
+            1,
+            0,
+            123_456_789,
+            0,
+            sentinel::ROT_NO_INDICATOR_RIGHT,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            false,
+            0,
+        );
+        let armored = b"11mg=5@Oh0000000000000000000";
+        assert_eq!(armor_encode(&bits, total), (armored.to_vec(), 0));
+        assert_eq!(crate::armor::decode(armored, 0).unwrap(), (bits, total));
+
+        let (bits, total) = build_pra(
+            1,
+            0,
+            123_456_789,
+            0,
+            sentinel::ROT_NO_INDICATOR_LEFT,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            false,
+            0,
+        );
+        let armored = b"11mg=5@P@0000000000000000000";
+        assert_eq!(armor_encode(&bits, total), (armored.to_vec(), 0));
+        assert_eq!(crate::armor::decode(armored, 0).unwrap(), (bits, total));
     }
 
     // -----------------------------------------------------------------

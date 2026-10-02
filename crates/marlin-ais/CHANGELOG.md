@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `code()` on `NavStatus`, `ManeuverIndicator` and `EpfdType` returns the
   wire code the variant was decoded from.
 - `Dimensions` implements `Default` (all fields `None`).
+- `RateOfTurn` and `TurnDirection` (re-exported from the crate root):
+  the decoded Type 1/2/3 rate-of-turn field.
 
 ### Fixed
 
@@ -30,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+- `PositionReportA.rate_of_turn` is `Option<RateOfTurn>` instead of
+  `Option<f32>`. Raw `0..=±126` decode to `RateOfTurn::DegPerMin(f32)` as
+  before; raw `±127` now decode to `RateOfTurn::NoIndicator(TurnDirection)`
+  ("turning right/left at more than 5° per 30 s, no turn indicator",
+  ITU-R M.1371-5 Table 48) instead of a fabricated ±720 °/min. `None`
+  still means the `−128` not-available sentinel (ADR-0001).
 - `AisError::ReassemblyChannelMismatch` removed: with channel-keyed
   lookups the branch is unreachable. Match on `ReassemblyOutOfOrder`
   instead.

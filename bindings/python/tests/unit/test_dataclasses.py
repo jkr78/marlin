@@ -9,6 +9,11 @@ import pytest
 
 GGA = b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
 AIVDM_TYPE1 = b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*23\r\n"
+# Synthetic Type 1 with raw ROT +127; armored string pinned by the Rust
+# test `rate_of_turn_no_indicator_payloads_armor_to_known_strings`
+# (crates/marlin-ais/src/position_report_a.rs). Same payload as the
+# `_AIVDM_TYPE1_ROT_PLUS_127` constant in test_ais.py.
+AIVDM_TYPE1_ROT_PLUS_127 = b"!AIVDM,1,1,,A,11mg=5@Oh0000000000000000000,0*73\r\n"
 
 # Type 5 two-fragment message (same corpus as test_aio.py).
 _TYPE5_FRAG1 = (
@@ -254,6 +259,28 @@ def test_ais_position_report_a_round_trip() -> None:
     json.dumps(d, default=_json_default)
     assert d["body"]["mmsi"] > 0
     assert isinstance(d["body"]["navigation_status"], int)
+    # Classic fixture carries ROT -128: both flattened fields are None.
+    assert d["body"]["rate_of_turn"] is None
+    assert d["body"]["turn_direction"] is None
+
+
+def test_ais_position_report_a_turn_direction_is_enum_int() -> None:
+    from marlin.ais import AisParser, TurnDirection
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import PositionReportA as DCPositionReportA
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE1_ROT_PLUS_127)
+    msgs = list(p)
+    assert len(msgs) == 1
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCPositionReportA)
+    assert dc.body.rate_of_turn is None
+    # The mirror stores the TurnDirection enum value, not the wire code 127.
+    assert dc.body.turn_direction == int(TurnDirection.RIGHT)
 
 
 def test_ais_static_and_voyage_a_round_trip() -> None:

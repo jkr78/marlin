@@ -24,6 +24,7 @@ from marlin.ais import (
     StaticAndVoyageA,
     StaticDataB24A,
     StaticDataB24B,
+    TurnDirection,
 )
 
 
@@ -53,6 +54,14 @@ def _aivdm(
 # tests. Same payload appears at crates/marlin-ais/src/parser.rs:476.
 _AIVDM_TYPE1 = _aivdm(1, 1, None, "A", b"13aGmP0P00PD;88MD5MTDww@2<0L", 0)
 
+# Synthetic Type 1 payloads (MMSI 123456789, every other field zero) with
+# raw rate of turn +127 and -127. There is no Python-side bit packer; the
+# armored strings are pinned by the Rust BitWriter test
+# `rate_of_turn_no_indicator_payloads_armor_to_known_strings` in
+# crates/marlin-ais/src/position_report_a.rs.
+_AIVDM_TYPE1_ROT_PLUS_127 = _aivdm(1, 1, None, "A", b"11mg=5@Oh0000000000000000000", 0)
+_AIVDM_TYPE1_ROT_MINUS_127 = _aivdm(1, 1, None, "A", b"11mg=5@P@0000000000000000000", 0)
+
 
 def test_nav_status_values() -> None:
     # Every variant is pinned to its wire value. The sparse jump from 8 to
@@ -78,6 +87,13 @@ def test_maneuver_indicator_values() -> None:
     assert int(ManeuverIndicator.NO_SPECIAL) == 1
     assert int(ManeuverIndicator.SPECIAL) == 2
     assert int(ManeuverIndicator.RESERVED) == 3
+
+
+def test_turn_direction_values() -> None:
+    # Enum discriminants, not wire codes: the wire carries raw ROT ±127.
+    assert int(TurnDirection.RIGHT) == 0
+    assert int(TurnDirection.LEFT) == 1
+    assert TurnDirection.RIGHT != TurnDirection.LEFT
 
 
 def test_epfd_type_values() -> None:
@@ -171,6 +187,7 @@ def test_position_report_a_shape() -> None:
     assert p.true_heading == 90
     # Defaults fire for unset fields:
     assert p.rate_of_turn is None
+    assert p.turn_direction is None
     assert p.position_accuracy is False
     assert p.special_maneuver == ManeuverIndicator.NOT_AVAILABLE
     assert p.timestamp == 60
@@ -390,6 +407,42 @@ def test_ais_streaming_single_fragment() -> None:
     assert isinstance(messages[0], AisMessage)
     assert isinstance(messages[0].body, PositionReportA)
     assert messages[0].type_tag == "type1"
+
+
+def test_ais_classic_type1_rate_of_turn_is_not_available() -> None:
+    # The classic Annex 5 fixture carries raw ROT -128 (not available):
+    # both flattened attributes are None (ADR-0003).
+    p = AisParser.streaming()
+    p.feed(_AIVDM_TYPE1)
+    body = list(p)[0].body
+    assert isinstance(body, PositionReportA)
+    assert body.rate_of_turn is None
+    assert body.turn_direction is None
+
+
+@pytest.mark.parametrize(
+    ("sentence", "expected"),
+    [
+        (_AIVDM_TYPE1_ROT_PLUS_127, TurnDirection.RIGHT),
+        (_AIVDM_TYPE1_ROT_MINUS_127, TurnDirection.LEFT),
+    ],
+    ids=["plus_127_right", "minus_127_left"],
+)
+def test_position_report_a_turn_direction(
+    sentence: bytes, expected: TurnDirection
+) -> None:
+    # Raw ROT ±127 is the "turning faster than 5°/30 s, no turn indicator"
+    # status: it surfaces as turn_direction and rate_of_turn stays None
+    # rather than becoming a fabricated ±720 °/min.
+    p = AisParser.streaming()
+    p.feed(sentence)
+    msgs = list(p)
+    assert len(msgs) == 1
+    body = msgs[0].body
+    assert isinstance(body, PositionReportA)
+    assert body.mmsi == 123456789
+    assert body.rate_of_turn is None
+    assert body.turn_direction == expected
 
 
 def test_ais_auto_clock_reads_time() -> None:

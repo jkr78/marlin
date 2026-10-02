@@ -37,6 +37,18 @@ class ManeuverIndicator:
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
 
+class TurnDirection:
+    """Direction of a ±127 "no turn indicator" rate-of-turn status.
+
+    The int values are enum discriminants (RIGHT = 0, LEFT = 1), not wire
+    codes; on the wire the statuses are raw ROT +127 and −127.
+    """
+
+    RIGHT: TurnDirection
+    LEFT: TurnDirection
+    def __int__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+
 class EpfdType:
     UNDEFINED: EpfdType
     GPS: EpfdType
@@ -101,6 +113,7 @@ class PositionReportA:
         mmsi: int = ...,
         navigation_status: NavStatus = ...,
         rate_of_turn: float | None = ...,
+        turn_direction: TurnDirection | None = ...,
         speed_over_ground: float | None = ...,
         position_accuracy: bool = ...,
         longitude_deg: float | None = ...,
@@ -118,6 +131,8 @@ class PositionReportA:
     def navigation_status(self) -> NavStatus: ...
     @property
     def rate_of_turn(self) -> float | None: ...
+    @property
+    def turn_direction(self) -> TurnDirection | None: ...
     @property
     def speed_over_ground(self) -> float | None: ...
     @property
@@ -412,4 +427,5 @@ __all__ = [
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
+    "TurnDirection",
 ]

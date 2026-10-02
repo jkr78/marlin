@@ -16,8 +16,9 @@ use marlin_ais::{
     Eta as RustEta, ExtendedPositionReportB as RustExtendedPositionReportB,
     ManeuverIndicator as RustManeuverIndicator, NavStatus as RustNavStatus,
     PositionReportA as RustPositionReportA, PositionReportB as RustPositionReportB,
-    StaticAndVoyageA as RustStaticAndVoyageA, StaticDataB24A as RustStaticDataB24A,
-    StaticDataB24B as RustStaticDataB24B, DEFAULT_MAX_PARTIALS,
+    RateOfTurn as RustRateOfTurn, StaticAndVoyageA as RustStaticAndVoyageA,
+    StaticDataB24A as RustStaticDataB24A, StaticDataB24B as RustStaticDataB24B,
+    TurnDirection as RustTurnDirection, DEFAULT_MAX_PARTIALS,
 };
 use marlin_nmea_envelope::{OneShot, Streaming};
 
@@ -116,6 +117,35 @@ impl From<RustManeuverIndicator> for PyManeuverIndicator {
             RustManeuverIndicator::Special => Self::Special,
             RustManeuverIndicator::Reserved => Self::Reserved,
             _ => Self::NotAvailable,
+        }
+    }
+}
+
+// ---------- TurnDirection ----------
+
+/// Direction of turn when a Type 1/2/3 report carries the "turning
+/// right/left at more than 5° per 30 s, no turn indicator" status
+/// (mirrors `TurnDirection`). Exposed on `PositionReportA.turn_direction`
+/// per ADR-0003; `rate_of_turn` is `None` whenever this is set.
+///
+/// The int values (`RIGHT = 0`, `LEFT = 1`) are enum discriminants, not
+/// wire codes: on the wire the statuses are the raw ROT bytes `+127` and
+/// `−127`. The Rust enum is exhaustive, so the `From` impl needs no
+/// wildcard.
+#[pyclass(name = "TurnDirection", eq, eq_int, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PyTurnDirection {
+    #[pyo3(name = "RIGHT")]
+    Right = 0,
+    #[pyo3(name = "LEFT")]
+    Left = 1,
+}
+
+impl From<RustTurnDirection> for PyTurnDirection {
+    fn from(v: RustTurnDirection) -> Self {
+        match v {
+            RustTurnDirection::Right => Self::Right,
+            RustTurnDirection::Left => Self::Left,
         }
     }
 }
@@ -320,6 +350,12 @@ impl From<RustEta> for PyEta {
 /// Class A position report payload. Used by Types 1, 2, and 3; the
 /// AIS message-type distinction (1 vs 2 vs 3) is preserved at the
 /// `AisMessage` wrapper level, not here.
+///
+/// The Rust `rate_of_turn: Option<RateOfTurn>` sum type is flattened
+/// into two sibling optionals (ADR-0003): `rate_of_turn` holds a
+/// measured rate in °/min, `turn_direction` holds the ±127
+/// no-turn-indicator status. Parser output sets at most one; both are
+/// `None` for the −128 not-available sentinel.
 #[pyclass(name = "PositionReportA", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyPositionReportA {
@@ -329,6 +365,8 @@ pub struct PyPositionReportA {
     navigation_status: PyNavStatus,
     #[pyo3(get)]
     rate_of_turn: Option<f32>,
+    #[pyo3(get)]
+    turn_direction: Option<PyTurnDirection>,
     #[pyo3(get)]
     speed_over_ground: Option<f32>,
     #[pyo3(get)]
@@ -359,6 +397,7 @@ impl PyPositionReportA {
         mmsi = 0,
         navigation_status = PyNavStatus::NotDefined,
         rate_of_turn = None,
+        turn_direction = None,
         speed_over_ground = None,
         position_accuracy = false,
         longitude_deg = None,
@@ -374,6 +413,7 @@ impl PyPositionReportA {
         mmsi: u32,
         navigation_status: PyNavStatus,
         rate_of_turn: Option<f32>,
+        turn_direction: Option<PyTurnDirection>,
         speed_over_ground: Option<f32>,
         position_accuracy: bool,
         longitude_deg: Option<f64>,
@@ -389,6 +429,7 @@ impl PyPositionReportA {
             mmsi,
             navigation_status,
             rate_of_turn,
+            turn_direction,
             speed_over_ground,
             position_accuracy,
             longitude_deg,
@@ -412,10 +453,16 @@ impl PyPositionReportA {
 
 impl From<RustPositionReportA> for PyPositionReportA {
     fn from(d: RustPositionReportA) -> Self {
+        let (rate_of_turn, turn_direction) = match d.rate_of_turn {
+            Some(RustRateOfTurn::DegPerMin(v)) => (Some(v), None),
+            Some(RustRateOfTurn::NoIndicator(dir)) => (None, Some(dir.into())),
+            None => (None, None),
+        };
         Self {
             mmsi: d.mmsi,
             navigation_status: d.navigation_status.into(),
-            rate_of_turn: d.rate_of_turn,
+            rate_of_turn,
+            turn_direction,
             speed_over_ground: d.speed_over_ground,
             position_accuracy: d.position_accuracy,
             longitude_deg: d.longitude_deg,
@@ -1418,6 +1465,7 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     // Task 10 enums + value types:
     m.add_class::<PyNavStatus>()?;
     m.add_class::<PyManeuverIndicator>()?;
+    m.add_class::<PyTurnDirection>()?;
     m.add_class::<PyEpfdType>()?;
     m.add_class::<PyAisVersion>()?;
     m.add_class::<PyDimensions>()?;

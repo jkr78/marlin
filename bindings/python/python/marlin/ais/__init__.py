@@ -10,6 +10,7 @@ AisVersion = _core.ais.AisVersion
 EpfdType = _core.ais.EpfdType
 ManeuverIndicator = _core.ais.ManeuverIndicator
 NavStatus = _core.ais.NavStatus
+TurnDirection = _core.ais.TurnDirection
 
 # Value types
 Dimensions = _core.ais.Dimensions
@@ -52,4 +53,5 @@ __all__ = [
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
+    "TurnDirection",
 ]

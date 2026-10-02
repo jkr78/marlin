@@ -130,6 +130,32 @@ impl BitWriter {
     }
 }
 
+/// Armor a dense bit buffer into AIVDM payload characters — the inverse
+/// of [`crate::armor::decode`]. Returns the payload and the fill-bit
+/// count the wrapper would declare (zero-padded to a 6-bit boundary).
+/// Lets a Rust test pin the armored form of a `BitWriter` payload so the
+/// Python unit tests can reuse the same bits.
+#[allow(clippy::cast_possible_truncation, clippy::indexing_slicing)]
+pub(crate) fn armor_encode(bits: &[u8], total_bits: usize) -> (Vec<u8>, u8) {
+    let chars = total_bits.div_ceil(6);
+    let fill_bits = (chars * 6 - total_bits) as u8;
+    let mut out = Vec::with_capacity(chars);
+    for c in 0..chars {
+        let mut v = 0u8;
+        for k in 0..6 {
+            let pos = c * 6 + k;
+            let bit = if pos < total_bits {
+                (bits[pos / 8] >> (7 - pos % 8)) & 1
+            } else {
+                0
+            };
+            v = (v << 1) | bit;
+        }
+        out.push(if v < 40 { v + 0x30 } else { v + 0x38 });
+    }
+    (out, fill_bits)
+}
+
 /// Append `chars` six-bit characters of `text` to the writer, padding
 /// with `@` (value 0) when `text` is shorter. Inverse of
 /// [`crate::BitReader::string`]: ASCII 64..=95 map to 0..=31, ASCII

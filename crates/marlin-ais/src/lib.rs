@@ -63,7 +63,8 @@ pub use extended_position_report_b::{
 pub use message::{decode, decode_message, AisMessage, AisMessageBody};
 pub use parser::{AisFragmentParser, Parser};
 pub use position_report_a::{
-    decode_position_report_a, ManeuverIndicator, NavStatus, PositionReportA, POSITION_REPORT_A_BITS,
+    decode_position_report_a, ManeuverIndicator, NavStatus, PositionReportA, RateOfTurn,
+    TurnDirection, POSITION_REPORT_A_BITS,
 };
 pub use position_report_b::{decode_position_report_b, PositionReportB, POSITION_REPORT_B_BITS};
 pub use reassembly::{AisReassembler, ReassembledPayload, DEFAULT_MAX_PARTIALS};

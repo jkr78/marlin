@@ -591,6 +591,12 @@ class _AisModule:
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
 
+    class TurnDirection:
+        RIGHT: "_AisModule.TurnDirection"
+        LEFT: "_AisModule.TurnDirection"
+        def __int__(self) -> int: ...
+        def __eq__(self, other: object) -> bool: ...
+
     class EpfdType:
         UNDEFINED: "_AisModule.EpfdType"
         GPS: "_AisModule.EpfdType"
@@ -655,6 +661,7 @@ class _AisModule:
             mmsi: int = ...,
             navigation_status: "_AisModule.NavStatus" = ...,
             rate_of_turn: float | None = ...,
+            turn_direction: "_AisModule.TurnDirection | None" = ...,
             speed_over_ground: float | None = ...,
             position_accuracy: bool = ...,
             longitude_deg: float | None = ...,
@@ -672,6 +679,8 @@ class _AisModule:
         def navigation_status(self) -> "_AisModule.NavStatus": ...
         @property
         def rate_of_turn(self) -> float | None: ...
+        @property
+        def turn_direction(self) -> "_AisModule.TurnDirection | None": ...
         @property
         def speed_over_ground(self) -> float | None: ...
         @property

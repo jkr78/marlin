@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `marlin.ais.TurnDirection` enum (`RIGHT`, `LEFT`) and
+  `PositionReportA.turn_direction`: set when a Type 1/2/3 report carries
+  raw rate of turn ±127, "turning right/left at more than 5° per 30 s,
+  no turn indicator" (ITU-R M.1371-5 Table 48). The enum's int values
+  are discriminants, not wire codes. `marlin.dataclasses.PositionReportA`
+  mirrors it as `turn_direction: Optional[int]`.
+
 ### Fixed
 
 - Two multi-sentence AIS messages sharing a sequential id on channels A
@@ -19,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+- `PositionReportA.rate_of_turn` is `None` for raw rate of turn ±127, which
+  used to decode to a fabricated ±720.0 °/min; the status now lives in
+  `turn_direction`. Measured rates (raw 0..=±126) and the −128
+  not-available sentinel are unchanged. Consumers that treated
+  `abs(rate_of_turn) > 708.7` as the no-turn-indicator case should test
+  `turn_direction is not None` instead.
 - `ReassemblyError` no longer carries a "channel mismatch" message; the
   underlying `marlin-ais` variant is removed. The out-of-order and
   timeout messages are unchanged.
