@@ -19,25 +19,33 @@ track deliverables (not conversational state).
   objects and never name them, so nothing breaks today. A fix picks the
   Python-visible name in `#[pyclass(name = ...)]`, matches the stubs to it, and
   rebuilds the extension. Found by the py-field-once ticket 01 review. [py][draft]
-- [ ] Write each Python message field once per layer
-  A field of a Python message is written in three layers: 5 times in the
-  binding class (`bindings/python/src/ais.rs`, `src/nmea.rs`), twice in the
-  public stub, once in the dataclass mirror, plus tests. Candidate 1 of the
-  2026-10-03 architecture review; spec and tickets in
-  `.scratch/py-field-once/`. Landed: the stubs are checked against the
-  runtime by `mypy.stubtest` (ticket 01, card below), and
-  `marlin.dataclasses` converts with one generic converter that pairs a
-  binding class with the dataclass mirror of the same name, guarded by
-  `bindings/python/tests/unit/test_dataclass_agreement.py` (ticket 02); adding a message
-  there is now one dataclass and one `__all__` entry. Still open: the
-  wording sweep of bare "mirror" (ticket 03), and the binding class itself.
-  One `macro_rules!` invocation can generate a regular binding class
-  (struct, getters, constructor defaults, `From` impl) under the crate's
-  lints; it was not adopted because the compiler already catches Rust-side
-  drift, and it is untried on the classes ADR-0003 flattens. Revisit it when
-  a batch of new message types arrives. No stub generator fits today (PyO3's
-  is experimental and rejects function-declared modules, `pyo3-stub-gen`
-  needs Python 3.10 against our `abi3-py39`). [py][ready]
+- [ ] Generate each binding class from one field list
+  A field of a binding class is written 5 times in `bindings/python/src/ais.rs`
+  and `src/nmea.rs`: the `#[pyclass]` struct, the `#[pyo3(signature = ...)]`
+  list, the `#[new]` parameters, the `Self { ... }` body, and the `From<Rust…>`
+  impl. One `macro_rules!` invocation listing each field once can generate all
+  of it; tried 2026-10-03 on `SarAircraftPositionReport`, clean under the
+  crate's clippy lints, same behaviour on Python 3.9 and 3.13. Defaults must be
+  captured as `$($default:tt)::+`, not `$default:expr`, or the Python text
+  signature shows `...`; a default like `-1` needs another form. Untried on the
+  classes ADR-0003 flattens (`PositionReportA`, `StaticDataB24B`). May not be
+  worth doing: the compiler already catches a field missing from the struct
+  literal or the `From` impl, so this saves typing, not drift. Revisit when a
+  batch of new message types arrives. Split from the card below. [py][draft]
+- [x] Write each Python message field once per layer **DONE 2026-10-03**
+  Candidate 1 of the 2026-10-03 architecture review; spec and tickets in
+  `.scratch/py-field-once/`. A field was written about 11 times across three
+  layers. What landed: the public stubs are checked against the runtime by
+  `mypy.stubtest` (ticket 01, card below); `marlin.dataclasses` converts with
+  one generic converter that pairs a binding class with the dataclass mirror
+  of the same name, guarded by
+  `bindings/python/tests/unit/test_dataclass_agreement.py`, so adding a message
+  there is one dataclass and one `__all__` entry (ticket 02); docs and comments
+  say "binding class" and "dataclass mirror" (ticket 03). Not done: the binding
+  class still writes each field 5 times (card above), and the stubs stay
+  hand-written because no stub generator fits (PyO3's is experimental and
+  rejects function-declared modules, `pyo3-stub-gen` needs Python 3.10 against
+  our `abi3-py39`). [py]
 - [x] Gate the Python stubs with mypy.stubtest **DONE 2026-10-03**
   `just py-type-check` and the CI type-check job run
   `python -m mypy.stubtest marlin --ignore-missing-stub` with
