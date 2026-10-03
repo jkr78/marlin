@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   no turn indicator" (ITU-R M.1371-5 Table 48). The enum's int values
   are discriminants, not wire codes. `marlin.dataclasses.PositionReportA`
   mirrors it as `turn_direction: Optional[int]`.
+- `StaticDataB24B.mothership_mmsi` and `StaticDataB24B.epfd`: a Type 24
+  Part B from an auxiliary craft (MMSI `98MIDxxxx`) carries the mother
+  ship's MMSI in the 30 bits that otherwise hold dimensions (ADR-0002);
+  the EPFD type at bits 162–165 was previously dropped.
+  `marlin.dataclasses.StaticDataB24B` mirrors both.
 
 ### Fixed
 
@@ -41,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not-available sentinel are unchanged. Consumers that treated
   `abs(rate_of_turn) > 708.7` as the no-turn-indicator case should test
   `turn_direction is not None` instead.
+- `StaticDataB24B.dimensions` is `Optional[Dimensions]`: `None` for an
+  auxiliary craft, whose extent surfaces as `mothership_mmsi` instead
+  (ADR-0003 flattening; parser output sets exactly one of the two). The
+  constructor no longer substitutes an all-`None` `Dimensions` when the
+  argument is omitted. `marlin.dataclasses.StaticDataB24B.dimensions` is
+  `Optional[Dimensions]` likewise.
 - `ReassemblyError` no longer carries a "channel mismatch" message; the
   underlying `marlin-ais` variant is removed. The out-of-order and
   timeout messages are unchanged.

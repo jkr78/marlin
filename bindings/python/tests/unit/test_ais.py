@@ -62,6 +62,15 @@ _AIVDM_TYPE1 = _aivdm(1, 1, None, "A", b"13aGmP0P00PD;88MD5MTDww@2<0L", 0)
 _AIVDM_TYPE1_ROT_PLUS_127 = _aivdm(1, 1, None, "A", b"11mg=5@Oh0000000000000000000", 0)
 _AIVDM_TYPE1_ROT_MINUS_127 = _aivdm(1, 1, None, "A", b"11mg=5@P@0000000000000000000", 0)
 
+# Synthetic Type 24 Part B from auxiliary-craft MMSI 987654321 (ship type
+# 37, vendor "VND1234", call sign "CS001", EPFD GPS) whose 30 extent bits
+# hold the mother-ship MMSI 211000123. Pinned by the Rust BitWriter test
+# `part_b_auxiliary_craft_payload_armors_to_known_string` in
+# crates/marlin-ais/src/static_data_b.rs.
+_AIVDM_TYPE24B_AUXILIARY_CRAFT = _aivdm(
+    1, 1, None, "A", b"H>eq`dDUF>4ijkl3Chhi00<Tqds4", 0
+)
+
 
 def test_nav_status_values() -> None:
     # Every variant is pinned to its wire value. The sparse jump from 8 to
@@ -289,12 +298,25 @@ def test_static_data_b24b_shape() -> None:
         vendor_id="VND1",
         call_sign="CS1",
         dimensions=Dimensions(to_bow_m=12),
+        epfd=EpfdType.GALILEO,
     )
     assert s.mmsi == 222333444
     assert s.ship_type == 37
     assert s.vendor_id == "VND1"
     assert s.call_sign == "CS1"
+    assert s.dimensions is not None
     assert s.dimensions.to_bow_m == 12
+    assert s.mothership_mmsi is None
+    assert s.epfd == EpfdType.GALILEO
+
+
+def test_static_data_b24b_defaults() -> None:
+    # Both flattened extent attributes default to None (ADR-0003); the
+    # constructor does not validate that exactly one is set.
+    s = StaticDataB24B()
+    assert s.dimensions is None
+    assert s.mothership_mmsi is None
+    assert s.epfd == EpfdType.UNDEFINED
 
 
 def test_other_shape() -> None:
@@ -458,6 +480,25 @@ def test_position_report_a_turn_direction(
     assert body.mmsi == 123456789
     assert body.rate_of_turn is None
     assert body.turn_direction == expected
+
+
+def test_static_data_b24b_mothership_mmsi() -> None:
+    # An auxiliary-craft MMSI (98MIDxxxx) carries the mother ship's MMSI
+    # in the 30 bits that otherwise hold dimensions (ADR-0002); the sum
+    # type flattens to `dimensions` / `mothership_mmsi` (ADR-0003).
+    p = AisParser.streaming()
+    p.feed(_AIVDM_TYPE24B_AUXILIARY_CRAFT)
+    msgs = list(p)
+    assert len(msgs) == 1
+    body = msgs[0].body
+    assert isinstance(body, StaticDataB24B)
+    assert body.mmsi == 987654321
+    assert body.ship_type == 37
+    assert body.vendor_id == "VND1234"
+    assert body.call_sign == "CS001"
+    assert body.dimensions is None
+    assert body.mothership_mmsi == 211000123
+    assert body.epfd == EpfdType.GPS
 
 
 def test_ais_auto_clock_reads_time() -> None:

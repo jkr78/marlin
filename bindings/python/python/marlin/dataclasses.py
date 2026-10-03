@@ -397,14 +397,19 @@ class StaticDataB24A:
 class StaticDataB24B:
     """Mirror of marlin.ais.StaticDataB24B (Type 24 Part B).
 
-    `dimensions` is always present per the Rust type.
+    Exactly one of `dimensions` and `mothership_mmsi` is set on parser
+    output: the latter for an auxiliary craft (MMSI `98MIDxxxx`), whose
+    30 extent bits carry the mother ship's MMSI instead of dimensions.
+    `epfd` is stored as int (wire value).
     """
 
     mmsi: int
     ship_type: int
     vendor_id: Optional[str]
     call_sign: Optional[str]
-    dimensions: Dimensions
+    dimensions: Optional[Dimensions]
+    mothership_mmsi: Optional[int]
+    epfd: int
 
 
 @dataclass(frozen=True)
@@ -798,7 +803,11 @@ def _convert_static_data_b24b(msg: object) -> StaticDataB24B:
         ship_type=msg.ship_type,
         vendor_id=msg.vendor_id,
         call_sign=msg.call_sign,
-        dimensions=_convert_dimensions(msg.dimensions),
+        dimensions=(
+            _convert_dimensions(msg.dimensions) if msg.dimensions is not None else None
+        ),
+        mothership_mmsi=msg.mothership_mmsi,
+        epfd=int(msg.epfd),
     )
 
 

@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `Dimensions` implements `Default` (all fields `None`).
 - `RateOfTurn` and `TurnDirection` (re-exported from the crate root):
   the decoded Type 1/2/3 rate-of-turn field.
+- `Type24BExtent` (re-exported from the crate root): what the 30-bit
+  extent field of a Type 24 Part B holds.
+- `StaticDataB24B.epfd` — the EPFD type at bits 162–165, which the
+  decoder used to drop.
 
 ### Fixed
 
@@ -38,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   ("turning right/left at more than 5° per 30 s, no turn indicator",
   ITU-R M.1371-5 Table 48) instead of a fabricated ±720 °/min. `None`
   still means the `−128` not-available sentinel (ADR-0001).
+- `StaticDataB24B.dimensions: Dimensions` is replaced by
+  `extent: Type24BExtent`. For an auxiliary-craft MMSI (`98MIDxxxx`,
+  `is_auxiliary_craft_mmsi`) the 30 bits are the mother ship's MMSI and
+  decode to `MothershipMmsi(u32)` verbatim; they used to be misread as
+  dimensions (gpsd / USCG convention, ADR-0002). Every other MMSI decodes
+  to `Dimensions(..)` exactly as before.
 - `AisError::ReassemblyChannelMismatch` removed: with channel-keyed
   lookups the branch is unreachable. Match on `ReassemblyOutOfOrder`
   instead.

@@ -15,6 +15,15 @@ AIVDM_TYPE1 = b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*23\r\n"
 # `_AIVDM_TYPE1_ROT_PLUS_127` constant in test_ais.py.
 AIVDM_TYPE1_ROT_PLUS_127 = b"!AIVDM,1,1,,A,11mg=5@Oh0000000000000000000,0*73\r\n"
 
+# Synthetic Type 24 Part B from auxiliary-craft MMSI 987654321 carrying
+# mother-ship MMSI 211000123, pinned by the Rust BitWriter test
+# `part_b_auxiliary_craft_payload_armors_to_known_string`
+# (crates/marlin-ais/src/static_data_b.rs). Same payload as the
+# `_AIVDM_TYPE24B_AUXILIARY_CRAFT` constant in test_ais.py.
+AIVDM_TYPE24B_AUXILIARY_CRAFT = (
+    b"!AIVDM,1,1,,A,H>eq`dDUF>4ijkl3Chhi00<Tqds4,0*3A\r\n"
+)
+
 # Type 5 two-fragment message (same corpus as test_aio.py).
 _TYPE5_FRAG1 = (
     b"!AIVDM,2,1,3,A,"
@@ -306,6 +315,33 @@ def test_ais_static_and_voyage_a_round_trip() -> None:
     # eta and dimensions are always-present nested dataclasses.
     assert "eta" in d["body"]
     assert "dimensions" in d["body"]
+
+
+def test_ais_static_data_b24b_mothership_round_trip() -> None:
+    from marlin.ais import AisParser, EpfdType, StaticDataB24B
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import StaticDataB24B as DCStaticDataB24B
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE24B_AUXILIARY_CRAFT)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert isinstance(msgs[0].body, StaticDataB24B)
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCStaticDataB24B)
+    assert dc.type_tag == "type24b"
+    # The mirror keeps the flattened extent: no all-None Dimensions stand-in.
+    assert dc.body.dimensions is None
+    assert dc.body.mothership_mmsi == 211000123
+    assert dc.body.epfd == int(EpfdType.GPS)
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+    assert d["body"]["dimensions"] is None
+    assert d["body"]["mothership_mmsi"] == 211000123
 
 
 def test_to_dataclass_type_error_on_unknown() -> None:

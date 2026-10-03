@@ -18,7 +18,7 @@ use marlin_ais::{
     PositionReportA as RustPositionReportA, PositionReportB as RustPositionReportB,
     RateOfTurn as RustRateOfTurn, StaticAndVoyageA as RustStaticAndVoyageA,
     StaticDataB24A as RustStaticDataB24A, StaticDataB24B as RustStaticDataB24B,
-    TurnDirection as RustTurnDirection, DEFAULT_MAX_PARTIALS,
+    TurnDirection as RustTurnDirection, Type24BExtent as RustType24BExtent, DEFAULT_MAX_PARTIALS,
 };
 use marlin_nmea_envelope::{OneShot, Streaming};
 
@@ -917,6 +917,11 @@ impl From<RustStaticDataB24A> for PyStaticDataB24A {
 // ---------- StaticDataB24B (Type 24 Part B) ----------
 
 /// Class B static data Part B payload (Type 24B).
+///
+/// The Rust `extent: Type24BExtent` sum type is flattened into two
+/// sibling optionals (ADR-0003): `dimensions` for every other MMSI,
+/// `mothership_mmsi` for an auxiliary craft (`98MIDxxxx`, ADR-0002).
+/// Parser output sets exactly one; the constructor validates nothing.
 #[pyclass(name = "StaticDataB24B", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyStaticDataB24B {
@@ -929,7 +934,11 @@ pub struct PyStaticDataB24B {
     #[pyo3(get)]
     call_sign: Option<String>,
     #[pyo3(get)]
-    dimensions: PyDimensions,
+    dimensions: Option<PyDimensions>,
+    #[pyo3(get)]
+    mothership_mmsi: Option<u32>,
+    #[pyo3(get)]
+    epfd: PyEpfdType,
 }
 
 #[pymethods]
@@ -941,6 +950,8 @@ impl PyStaticDataB24B {
         vendor_id = None,
         call_sign = None,
         dimensions = None,
+        mothership_mmsi = None,
+        epfd = PyEpfdType::Undefined,
     ))]
     fn new(
         mmsi: u32,
@@ -948,21 +959,17 @@ impl PyStaticDataB24B {
         vendor_id: Option<String>,
         call_sign: Option<String>,
         dimensions: Option<PyDimensions>,
+        mothership_mmsi: Option<u32>,
+        epfd: PyEpfdType,
     ) -> Self {
-        let dimensions = dimensions.unwrap_or_else(|| {
-            PyDimensions::from(RustDimensions {
-                to_bow_m: None,
-                to_stern_m: None,
-                to_port_m: None,
-                to_starboard_m: None,
-            })
-        });
         Self {
             mmsi,
             ship_type,
             vendor_id,
             call_sign,
             dimensions,
+            mothership_mmsi,
+            epfd,
         }
     }
 
@@ -976,12 +983,18 @@ impl PyStaticDataB24B {
 
 impl From<RustStaticDataB24B> for PyStaticDataB24B {
     fn from(d: RustStaticDataB24B) -> Self {
+        let (dimensions, mothership_mmsi) = match d.extent {
+            RustType24BExtent::Dimensions(dims) => (Some(dims.into()), None),
+            RustType24BExtent::MothershipMmsi(mmsi) => (None, Some(mmsi)),
+        };
         Self {
             mmsi: d.mmsi,
             ship_type: d.ship_type,
             vendor_id: d.vendor_id,
             call_sign: d.call_sign,
-            dimensions: d.dimensions.into(),
+            dimensions,
+            mothership_mmsi,
+            epfd: d.epfd.into(),
         }
     }
 }
