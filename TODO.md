@@ -9,35 +9,24 @@ track deliverables (not conversational state).
 ## New tasks
 
 - [ ] Write each Python message field once per layer
-  Adding one message type to `bindings/python` means about 17 hand-edit sites,
-  and each field name is written about 11 times: 5 in the binding class
-  (`src/ais.rs`, `src/nmea.rs`), 2 in the public stub, 2 in the dataclass
-  mirror and its converter, the rest in tests. Candidate 1 of the 2026-10-03
-  architecture review, under grilling since the same day. Decided so far: the
-  driver is drift between layers, not the cost of adding a type; each layer
-  loses its own repetition, with no single schema across Rust and Python;
-  `marlin.dataclasses` keeps its hand-written classes and gets one generic
-  converter in place of the per-class `_convert_*` bodies; the public Python
-  surface does not change. Established by experiment: one `macro_rules!`
-  invocation can generate a regular binding class (struct, getters,
-  constructor defaults, `From` impl) under the crate's lints, untried on the
-  classes ADR-0003 flattens; no stub generator fits today (PyO3's is
-  experimental and rejects function-declared modules, `pyo3-stub-gen` needs
-  Python 3.10 against our `abi3-py39`). Round 2: the macro is not adopted
-  now (the compiler already catches Rust-side drift; revisit when a batch of
-  new types arrives); a test asserts each binding class and its dataclass
-  mirror have the same field names, written before the converter changes; the
-  lenient fallbacks in `_convert_dimensions`, `_convert_eta`, and the `Prdid`
-  body go, with a `### Changed` line; the stub layer is answered by the
-  stubtest card, done first; bare "mirror" meaning binding class is swept in
-  its own docs-only ticket. Round 3: the converter finds a dataclass mirror
-  by class name and treats an unmirrored `marlin.*` value as an enum
-  (`int()`, `TypeError` on failure); the agreement test also asserts no class
-  name repeats across packages; work is packaged as `.scratch/py-field-once/`
-  with three tickets (stubtest gate, done; converter with its test; wording
-  sweep).
-  Grilling complete and confirmed 2026-10-03. Spec and tickets:
-  `.scratch/py-field-once/` (01 is the stubtest card below). [py][ready]
+  A field of a Python message is written in three layers: 5 times in the
+  binding class (`bindings/python/src/ais.rs`, `src/nmea.rs`), twice in the
+  public stub, once in the dataclass mirror, plus tests. Candidate 1 of the
+  2026-10-03 architecture review; spec and tickets in
+  `.scratch/py-field-once/`. Landed: the stubs are checked against the
+  runtime by `mypy.stubtest` (ticket 01, card below), and
+  `marlin.dataclasses` converts with one generic converter that pairs a
+  binding class with the dataclass mirror of the same name, guarded by
+  `tests/unit/test_dataclass_agreement.py` (ticket 02); adding a message
+  there is now one dataclass and one `__all__` entry. Still open: the
+  wording sweep of bare "mirror" (ticket 03), and the binding class itself.
+  One `macro_rules!` invocation can generate a regular binding class
+  (struct, getters, constructor defaults, `From` impl) under the crate's
+  lints; it was not adopted because the compiler already catches Rust-side
+  drift, and it is untried on the classes ADR-0003 flattens. Revisit it when
+  a batch of new message types arrives. No stub generator fits today (PyO3's
+  is experimental and rejects function-declared modules, `pyo3-stub-gen`
+  needs Python 3.10 against our `abi3-py39`). [py][ready]
 - [x] Gate the Python stubs with mypy.stubtest **DONE 2026-10-03**
   `just py-type-check` and the CI type-check job run
   `python -m mypy.stubtest marlin --ignore-missing-stub` with
