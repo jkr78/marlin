@@ -15,8 +15,18 @@
 //!   header fields (fragment count, sequential id, channel, payload,
 //!   fill bits) from a [`RawSentence`].
 //!
-//! Typed message decoders (Type 1/2/3, 5, 18, 19, 24A/24B) and
-//! multi-sentence reassembly land in subsequent milestones.
+//! - **Typed message decoders** — [`decode_message`] and [`decode`]
+//!   route on the 6-bit message type to a typed [`AisMessageBody`]
+//!   variant: Types 1/2/3 ([`PositionReportA`]), 5
+//!   ([`StaticAndVoyageA`]), 9 ([`SarAircraftPositionReport`]), 18
+//!   ([`PositionReportB`]), 19 ([`ExtendedPositionReportB`]), 21
+//!   ([`AidToNavigationReport`]) and 24 Parts A and B
+//!   ([`StaticDataB24A`], [`StaticDataB24B`]). Every other type
+//!   surfaces as [`AisMessageBody::Other`] with the raw bits.
+//! - **Multi-sentence reassembly** — [`AisReassembler`] stitches
+//!   fragments keyed on `(channel, sequential_id)`;
+//!   [`AisFragmentParser`] runs the whole pipeline from bytes to
+//!   [`AisMessage`].
 //!
 //! # Layered architecture
 //!

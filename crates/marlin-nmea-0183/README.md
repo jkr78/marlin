@@ -9,8 +9,11 @@ Typed decoders for NMEA 0183 sentences. Built on top of
 | --- | --- | --- |
 | `$__GGA` | ✅ done | Global Positioning System Fix Data |
 | `$__GLL` | ✅ done | Geographic Position, Latitude/Longitude (NMEA 2.3+ mode) |
+| `$__HDG` | ✅ done | Heading, Deviation and Variation; the two corrections decode to signed degrees (`E` positive, `W` negative) |
 | `$__HDT` | ✅ done | True Heading |
 | `$__RMC` | ✅ done | Recommended Minimum Specific GNSS Data; pre-2.3 (11 fields), 2.3+ with mode (12 fields), and 4.10+ with nav status (13 fields) all accepted |
+| `$__TLL` | ✅ done | Target Latitude/Longitude (radar/ARPA); name, UTC time, status and reference flag are optional trailing fields |
+| `$__TTM` | ✅ done | Tracked Target Message (radar/ARPA); the NMEA 3.0 UTC time and acquisition type fields are optional |
 | `$__VTG` | ✅ done | Course Over Ground / Ground Speed (NMEA 2.3+ mode) |
 | `$PSXN` | ✅ done | Proprietary motion sentence; 6 data slots whose meaning is install-configured via [`PsxnLayout`]. Default `rphx` (roll, pitch, heave, ignored ×3). Supports TSS sine-encoded variants. |
 | `$PRDID` | ✅ done | Proprietary attitude; two dialects (`PitchRollHeading`, `RollPitchHeading`). Default dialect is `Unknown` → preserves raw fields. Select via [`DecodeOptions::with_prdid_dialect`]. |

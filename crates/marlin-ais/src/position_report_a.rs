@@ -1,7 +1,7 @@
 //! Class A position reports — AIS message types 1, 2, and 3.
 //!
 //! All three types share the same 168-bit field layout (ITU-R M.1371-5
-//! §5.3.1). They differ only semantically:
+//! Annex 8 §3.1, Table 48). They differ only semantically:
 //!
 //! - **Type 1** — scheduled position report.
 //! - **Type 2** — assigned scheduled position report.
@@ -11,11 +11,12 @@
 //! payload to determine the type, then calls [`decode_position_report_a`]
 //! for all three. The returned [`PositionReportA`] is identical across
 //! types; the dispatcher wraps it in the appropriate enum variant
-//! (`AisMessage::Type1`/`Type2`/`Type3` — added in a later round).
+//! ([`AisMessageBody::Type1`](crate::AisMessageBody::Type1), `Type2` or
+//! `Type3`).
 //!
 //! # Sentinel values
 //!
-//! Per ITU-R M.1371-5 §5.3.1, several fields carry sentinel values
+//! Per ITU-R M.1371-5 Annex 8 §3.1, Table 48, several fields carry sentinel values
 //! meaning "not available". The decoder maps sentinels to `None` on
 //! `Option<T>` fields:
 //!
@@ -51,7 +52,7 @@ pub struct PositionReportA {
     /// Maritime Mobile Service Identity of the reporting vessel.
     pub mmsi: u32,
     /// Navigation status (one of the 15 defined values, plus
-    /// `Reserved` for 9..=13 and future expansion).
+    /// `Reserved` for 9..=13).
     pub navigation_status: NavStatus,
     /// Rate of turn: a measured rate in degrees per minute, or the
     /// "turning faster than 5° per 30 s, no turn indicator" status
@@ -224,7 +225,8 @@ impl ManeuverIndicator {
     }
 }
 
-/// Minimum valid payload size for Types 1/2/3 (ITU-R M.1371-5 §5.3.1).
+/// Minimum valid payload size for Types 1/2/3 (ITU-R M.1371-5 Annex 8
+/// §3.1, Table 48).
 pub const POSITION_REPORT_A_BITS: usize = 168;
 
 /// Decode a Class A position report (Type 1, 2, or 3) from a

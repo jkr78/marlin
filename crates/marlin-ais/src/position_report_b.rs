@@ -1,6 +1,6 @@
 //! Class B CS position report — AIS message Type 18.
 //!
-//! 168-bit payload (ITU-R M.1371-5 §5.3.18). Similar shape to
+//! 168-bit payload (ITU-R M.1371-5 Annex 8 §3.16, Table 70). Similar shape to
 //! Types 1/2/3 but tailored for Class B transponders (smaller
 //! vessels, voluntary carriage) — omits `navigation_status` and
 //! `rate_of_turn`, adds Class-B-specific capability flags.
@@ -8,7 +8,8 @@
 use crate::shared_types::{cog_deg, heading_deg, lat_deg, lon_deg, sog_tenths_kn};
 use crate::{AisError, BitReader};
 
-/// Minimum valid payload size for Type 18 (ITU-R M.1371-5 §5.3.18).
+/// Minimum valid payload size for Type 18 (ITU-R M.1371-5 Annex 8
+/// §3.16, Table 70).
 pub const POSITION_REPORT_B_BITS: usize = 168;
 
 /// Decoded Class B position report.

@@ -14,7 +14,13 @@
 //! # Supported sentence types
 //!
 //! - **`$__GGA`** — [`GgaData`] — position + fix quality + satellites
+//! - **`$__GLL`** — [`GllData`] — position + UTC time + validity status
+//! - **`$__HDG`** — [`HdgData`] — magnetic heading, deviation, variation
 //! - **`$__HDT`** — [`HdtData`] — true heading
+//! - **`$__RMC`** — [`RmcData`] — recommended minimum: time, date,
+//!   position, speed, course, magnetic variation
+//! - **`$__TLL`** — [`TllData`] — radar/ARPA target position
+//! - **`$__TTM`** — [`TtmData`] — radar/ARPA tracked target
 //! - **`$__VTG`** — [`VtgData`] — course & speed over ground
 //! - **`$PSXN`** — [`PsxnData`] — Kongsberg-family proprietary motion; slot
 //!   meanings are install-configurable via [`PsxnLayout`] / [`DecodeOptions`]

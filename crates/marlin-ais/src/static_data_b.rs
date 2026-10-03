@@ -1,6 +1,6 @@
 //! Class B static data — AIS message Type 24, Parts A and B.
 //!
-//! Per ITU-R M.1371-5 §5.3.24, Type 24 splits into two separate AIS
+//! Per ITU-R M.1371-5 Annex 8 §3.22, Type 24 splits into two separate AIS
 //! messages (not multi-sentence fragments): Part A carries the
 //! vessel name, Part B carries ship type, vendor ID, call sign,
 //! dimensions (or a mother-ship MMSI, see [`Type24BExtent`]) and EPFD
@@ -17,11 +17,13 @@ use crate::shared_types::{
 };
 use crate::{AisError, BitReader};
 
-/// Spec-canonical bit count for Type 24 Part A (ITU-R M.1371-5 §5.3.24.1):
+/// Spec-canonical bit count for Type 24 Part A (ITU-R M.1371-5 Annex 8
+/// §3.22, Table 78):
 /// 6 `msg_type` + 2 `repeat` + 30 `mmsi` + 2 `part` + 120 `name` = **160**.
 pub const STATIC_DATA_B_24A_BITS: usize = 160;
 
-/// Spec-canonical bit count for Type 24 Part B (ITU-R M.1371-5 §5.3.24.2):
+/// Spec-canonical bit count for Type 24 Part B (ITU-R M.1371-5 Annex 8
+/// §3.22, Table 79):
 /// 40-bit header + 8 `ship_type` + 42 `vendor_id` + 42 `callsign` +
 /// 30 `dimensions` + 4 `EPFD` + 2 spare = **168**.
 pub const STATIC_DATA_B_24B_BITS: usize = 168;
@@ -81,7 +83,7 @@ pub struct StaticDataB24B {
     /// Ship and cargo type — ITU-R M.1371-5 Table 53 raw value.
     pub ship_type: u8,
     /// Vendor ID (up to 7 characters). `None` on all-padding. Per
-    /// ITU-R M.1371-5 §5.3.24.2 this is a composite of a 3-char
+    /// ITU-R M.1371-5 Annex 8 §3.22, Table 79 this is a composite of a 3-char
     /// vendor ID, 4-bit unit-model code, and 20-bit serial number;
     /// we surface the entire 7-char string and let callers split.
     pub vendor_id: Option<String>,
@@ -230,7 +232,7 @@ mod tests {
         w.u(30, u64::from(mmsi));
         w.u(2, 0); // part A
         write_ais_str(&mut w, name, 20);
-        // Total: 6 + 2 + 30 + 2 + 120 = 160 bits per ITU-R M.1371-5 §5.3.24.1.
+        // Total: 6 + 2 + 30 + 2 + 120 = 160 bits per ITU-R M.1371-5 Annex 8 §3.22, Table 78.
         w.finish()
     }
 
@@ -400,7 +402,7 @@ mod tests {
 
     /// Regression: real-world Type 24 Part A sentences are 27 chars × 6
     /// bits = 162 gross bits, minus 2 fill bits = **160 bits exact**.
-    /// That matches ITU-R M.1371-5 §5.3.24.1 (40-bit header + 120-bit
+    /// That matches ITU-R M.1371-5 Annex 8 §3.22, Table 78 (40-bit header + 120-bit
     /// name). v0.1.0 enforced 168 as the floor for both parts and
     /// rejected every Part A frame with `PayloadTooShort`. Reported by
     /// a Python-bindings consumer with a batch of 160 sentences.

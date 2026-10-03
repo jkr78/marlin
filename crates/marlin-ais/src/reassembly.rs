@@ -29,8 +29,11 @@
 //!   [`take_pending_error`](AisReassembler::take_pending_error) call.
 //!   PRD §A5 specifies a 60 s timeout as the motivation — this
 //!   bounded-slot approach satisfies the underlying memory-safety goal
-//!   clock-free; a future `tick(now_ms)` API can layer actual time-
-//!   based expiry on top non-breakingly.
+//!   clock-free. Time-based expiry is opt-in on top of it:
+//!   [`AisReassembler::with_timeout_ms`] sets an age limit and the
+//!   caller supplies the clock through
+//!   [`feed_fragment_at`](AisReassembler::feed_fragment_at) and
+//!   [`tick`](AisReassembler::tick).
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;

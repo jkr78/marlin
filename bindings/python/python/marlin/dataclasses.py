@@ -505,7 +505,8 @@ def to_dataclass(msg: object) -> object:
 
     Accepts any of:
     - Envelope: ``marlin.envelope.RawSentence``
-    - NMEA: ``Gga``, ``Vtg``, ``Hdt``, ``Psxn``, ``Prdid``, ``Unknown``
+    - NMEA: ``Gga``, ``Gll``, ``Hdg``, ``Hdt``, ``Rmc``, ``Tll``, ``Ttm``,
+      ``Vtg``, ``Psxn``, ``Prdid``, ``Unknown``
     - AIS: ``AisMessage`` (the wrapper) or any body variant directly
 
     Raises ``TypeError`` if the object is not a recognized marlin message.

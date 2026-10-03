@@ -1,6 +1,6 @@
 //! Class A static and voyage data — AIS message Type 5.
 //!
-//! 424-bit payload (ITU-R M.1371-5 §5.3.5). Spans multiple AIVDM
+//! 424-bit payload (ITU-R M.1371-5 Annex 8 §3.3, Table 52). Spans multiple AIVDM
 //! fragments in practice; caller is responsible for having
 //! reassembled the bit stream before calling
 //! [`decode_static_and_voyage_a`].
@@ -10,7 +10,8 @@ use alloc::string::String;
 use crate::shared_types::{read_dimensions, trim_ais_string, Dimensions, EpfdType};
 use crate::{AisError, BitReader};
 
-/// Minimum valid payload size for Type 5 (ITU-R M.1371-5 §5.3.5).
+/// Minimum valid payload size for Type 5 (ITU-R M.1371-5 Annex 8 §3.3,
+/// Table 52).
 pub const STATIC_VOYAGE_A_BITS: usize = 424;
 
 /// Decoded Class A static and voyage-related data.

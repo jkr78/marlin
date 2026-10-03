@@ -155,11 +155,12 @@ track deliverables (not conversational state).
 | Crate | State | Tests |
 | --- | --- | --- |
 | `marlin-nmea-envelope` | ✅ **Feature-complete** | 52 unit · 9 golden · 4 doctest |
-| `marlin-nmea-0183`     | ✅ **Feature-complete** | 78 unit · 4 doctest |
-| `marlin-ais`           | ✅ **Feature-complete for v0.1** — all spec message types, reassembly with clock-based timeout, `AisFragmentParser` wrapper, fuzz coverage | 137 unit · 1 doctest |
-| `marlin-py` (Python bindings) | ✅ **Feature-complete for v0.1** | 145 pytest |
+| `marlin-nmea-0183`     | ✅ **Feature-complete** — GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID | 122 unit · 4 doctest |
+| `marlin-ais`           | ✅ **Feature-complete for 0.2.0** — Types 1/2/3, 5, 9, 18, 19, 21, 24A/24B, reassembly keyed on `(channel, sequential_id)` with clock-based timeout, `AisFragmentParser` wrapper, fuzz coverage | 188 unit · 1 doctest |
+| `marlin-klv`           | ✅ **Feature-complete for v0.1** | 48 unit · 1 doctest |
+| `marlin-py` (Python bindings) | ✅ **Feature-complete for 0.2.0** | 206 pytest |
 
-**Rust workspace total: 285 tests pass, `just ci` clean. Python bindings: 145 pytest pass, mypy --strict clean (30 source files).**
+**Rust workspace total: 429 tests pass, `just ci` clean. Python bindings: 206 pytest pass, mypy --strict clean (35 source files). Counted 2026-10-03.**
 
 ---
 
@@ -201,6 +202,9 @@ track deliverables (not conversational state).
 - [x] **GGA** — fix quality, satellites, HDOP, altitude, geoid, DGPS fields
 - [x] **VTG** — pre-2.3 + 2.3+ forms; `VtgMode` with every recognized indicator
 - [x] **HDT** — true heading
+- [x] **HDG** — magnetic heading, deviation and variation as signed degrees (`E` positive) (added v0.1.4 2026-07-07)
+- [x] **TTM** — radar/ARPA tracked target, `AngleReference` / `DistanceUnits` / `AcquisitionType` / `TargetStatus` enums, optional NMEA 3.0 trailing fields (added v0.1.4 2026-07-07)
+- [x] **TLL** — radar/ARPA target position with optional trailing fields (added v0.1.4 2026-07-07)
 - [x] **PSXN** — install-configured 6-slot layout (`PsxnLayout`), `PsxnSlot` variants including TSS sine-encoded roll/pitch, `FromStr` for legacy `"rphx1"` strings
 - [x] **PRDID** — two dialect structs (`PitchRollHeading`, `RollPitchHeading`) + `PrdidDialect::Unknown` strict default emitting `PrdidData::Raw`
 - [x] `UtcTime` with ms resolution
@@ -227,17 +231,19 @@ track deliverables (not conversational state).
 ### Done
 
 - [x] `AisError` (non_exhaustive, thiserror) — envelope/armor/wrapper/payload variants plus the two reassembly variants `ReassemblyOutOfOrder` and `ReassemblyTimeout`, all emitted. `UnknownMessageType` (never emitted; unrouted types go to `Other`) and `ReassemblyChannelMismatch` (unreachable once partials are keyed on channel) removed in 0.2.0
-- [x] `armor::decode` + `armor::decode_char` — ASCII-to-6-bit alphabet per ITU-R M.1371-5 §8.2.4
+- [x] `armor::decode` + `armor::decode_char` — ASCII-to-6-bit alphabet per IEC 61162-1
 - [x] `BitReader<'a>` — `u(n)`, `i(n)` (two's-complement at field width), `b()`, `string(chars)` (AIS Table 47), `remaining()`
 - [x] Past-end reads yield saturating zeros (panic-free contract, PRD §T5)
 - [x] `AivdmHeader` + `parse_aivdm_wrapper` — fragment count, sequential id, channel, payload, fill bits; `is_own_ship` distinguishes `!AIVDM` from `!AIVDO`
-- [x] **Type 1/2/3** — `PositionReportA` + `NavStatus` + `ManeuverIndicator` + ROT sign-preserved decode + lat/lon/COG/heading sentinels → `None`
+- [x] **Type 1/2/3** — `PositionReportA` + `NavStatus` + `ManeuverIndicator` + `rate_of_turn: Option<RateOfTurn>` (a measured rate, or `NoIndicator(TurnDirection)` for ±127; 0.2.0 fix: ±127 used to decode as ±720 °/min) + lat/lon/COG/heading sentinels → `None`
 - [x] **Type 5** — `StaticAndVoyageA` + `AisVersion` + `Eta` + per-sub-field sentinels, 424-bit payload
+- [x] **Type 9** — `SarAircraftPositionReport` + `AltitudeSensor`: altitude and SOG as whole-unit `Option<u16>`, 168 bits, ITU-R M.1371-5 Annex 8 §3.7, Table 59 (0.2.0)
 - [x] **Type 18** — `PositionReportB` with Class B capability flags
-- [x] **Type 19** — `ExtendedPositionReportB` (Class B extended position report with static tail: name, ship type, dimensions, EPFD). 312 bits, ITU-R M.1371-5 §5.3.19
-- [x] **Type 24A / 24B** — `StaticDataB24A` + `StaticDataB24B` + `decode_static_data_b` dispatcher (routes on part-number field)
-- [x] Shared `Dimensions` + `EpfdType` + `trim_ais_string` helpers
-- [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/18/19/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
+- [x] **Type 19** — `ExtendedPositionReportB` (Class B extended position report with static tail: name, ship type, dimensions, EPFD). 312 bits, ITU-R M.1371-5 Annex 8 §3.17, Table 71
+- [x] **Type 21** — `AidToNavigationReport` + `AtonType` (32 codes, Table 74): variable length 272–360 bits, name joined with its optional extension, ITU-R M.1371-5 Annex 8 §3.19, Table 73 (0.2.0)
+- [x] **Type 24A / 24B** — `StaticDataB24A` + `StaticDataB24B` + `decode_static_data_b` dispatcher (routes on part-number field). Part B `extent: Type24BExtent` is dimensions, or the mother-ship MMSI for an auxiliary craft (`98MIDxxxx`, ADR-0002), and `epfd` is decoded (0.2.0)
+- [x] Shared `Dimensions` + `EpfdType` + `trim_ais_string` helpers; public `sentinel` wire codes and `is_auxiliary_craft_mmsi` (0.2.0, ADR-0001)
+- [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/9/18/19/21/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
 - [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — fragment buffers keyed on `(channel, sequential_id)` for every lookup (0.2.0 fix: continuation fragments used to match on sequential id alone, so the same id live on A and B lost both messages); in-order enforcement; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`feed_fragment_at`/`tick(now_ms)` (caller owns the clock — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
 - [x] **`AisFragmentParser<P>` generic wrapper + `Parser` enum** — mirrors `Nmea0183Parser` pattern; composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `next_message_at(now_ms)` variant drives the reassembler clock for time-based expiry
 - [x] **cargo-fuzz targets** (PRD §F1) — `ais_armor`, `ais_bit_reader`, `ais_parser`. 15 s smoke runs each: 9 M / 1.5 M / 1.25 M executions, zero panics. `just fuzz-smoke-all` and `just fuzz-release` wrap up the set
@@ -295,10 +301,11 @@ track deliverables (not conversational state).
 - [x] Scaffold: PyO3 0.27 + maturin, `cdylib` named `_core`
 - [x] Error hierarchy: `MarlinError` → `{Envelope,Decode,Ais,Reassembly}Error`
 - [x] Envelope: `RawSentence`, `OneShotParser`, `StreamingParser`, `parse()`
-- [x] NMEA typed: `Nmea0183Parser`, `Gga/Vtg/Hdt/Psxn/Prdid/Unknown`,
+- [x] NMEA typed: `Nmea0183Parser`, `Gga/Gll/Hdg/Hdt/Rmc/Tll/Ttm/Vtg/Psxn/Prdid/Unknown`,
       enums, `DecodeOptions`, per-sentence extension-point functions
 - [x] AIS typed: `AisParser` (three clock modes), `AisMessage`, all
-      message variants, `BitReader`
+      message variants (Types 9 and 21 added in 0.2.0; field-level sum
+      types flattened per ADR-0003), `BitReader`
 
 #### Ergonomics
 

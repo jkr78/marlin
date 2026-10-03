@@ -1,4 +1,4 @@
-"""Typed NMEA 0183 decoders (GGA, GLL, HDT, RMC, VTG, PSXN, PRDID)."""
+"""Typed NMEA 0183 decoders (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)."""
 
 from .. import _core
 

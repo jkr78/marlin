@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   channel's partial, raised a channel mismatch, and both messages were
   lost. Both now reassemble. A continuation fragment with no partial on
   its own key is still `ReassemblyOutOfOrder`.
+- ITU citations in the rustdoc and in this changelog. The `§5.3.x`
+  numbers pointed at Annex 2 transport clauses or at nothing; they now
+  name the Annex 8 section and table (ITU-R M.1371-5). The 6-bit armor
+  is cited to IEC 61162-1, where it is defined.
+- The crate docs and README described the typed decoders and
+  reassembly as still to come. They now list the supported message
+  types.
 
 ### Changed (BREAKING)
 
@@ -100,8 +107,8 @@ adds the new `marlin-klv` crate (MISB ST 0601 KLV encoder/decoder).
 
 - **Type 24 Part A decoder rejected every spec-canonical 160-bit
   payload** with `AisError::PayloadTooShort`. The previous floor of
-  168 bits was Part B's size; ITU-R M.1371-5 §5.3.24.1 specifies Part A
-  as 6 + 2 + 30 + 2 + 120 = 160 bits exactly. Real-world transmitters
+  168 bits was Part B's size; ITU-R M.1371-5 Annex 8 §3.22, Table 78
+  specifies Part A as 6 + 2 + 30 + 2 + 120 = 160 bits exactly. Real-world transmitters
   emit Part A at 160 bits with no padding; v0.1.0 silently dropped all
   such frames. Reported via the Python bindings against a 161-sentence
   batch from a public AIS feed.
@@ -127,7 +134,7 @@ adds the new `marlin-klv` crate (MISB ST 0601 KLV encoder/decoder).
   (AIVDM/AIVDO) messages, built on `marlin-nmea-envelope`
 - `AisError` (non-exhaustive, `thiserror`-derived) covers envelope,
   armor, wrapper, and reassembly failure modes
-- 6-bit ASCII armor codec per ITU-R M.1371-5 §8.2.4
+- 6-bit ASCII armor codec per IEC 61162-1
   (`armor::decode`, `armor::decode_char`)
 - `BitReader<'a>` with width-aware unsigned, two's-complement signed,
   boolean, and AIS-Table-47 string readers; past-end reads yield
@@ -144,7 +151,7 @@ adds the new `marlin-klv` crate (MISB ST 0601 KLV encoder/decoder).
   - Type 18: `PositionReportB` with Class B capability flags
   - Type 19: `ExtendedPositionReportB`, the Class B extended position
     report with the static tail (name, ship type, dimensions, EPFD).
-    312 bits, ITU-R M.1371-5 §5.3.19
+    312 bits, ITU-R M.1371-5 Annex 8 §3.17, Table 71
   - Type 24A / 24B: `StaticDataB24A`, `StaticDataB24B`, and a
     `decode_static_data_b` dispatcher that routes on the part-number field
 - Shared `Dimensions`, `EpfdType`, and `trim_ais_string` helpers

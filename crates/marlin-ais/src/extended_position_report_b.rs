@@ -1,6 +1,6 @@
 //! Class B extended position report — AIS message Type 19.
 //!
-//! 312-bit payload (ITU-R M.1371-5 §5.3.19). Like Type 18 for the
+//! 312-bit payload (ITU-R M.1371-5 Annex 8 §3.17, Table 71). Like Type 18 for the
 //! position portion, with the Class A static-data tail (vessel name,
 //! ship type, dimensions, EPFD) appended. Rarely seen on Class B
 //! feeds — most Class B units transmit Type 18 + Type 24 Part A/B
@@ -14,7 +14,8 @@ use crate::shared_types::{
 };
 use crate::{AisError, BitReader};
 
-/// Minimum valid payload size for Type 19 (ITU-R M.1371-5 §5.3.19).
+/// Minimum valid payload size for Type 19 (ITU-R M.1371-5 Annex 8
+/// §3.17, Table 71).
 pub const EXTENDED_POSITION_REPORT_B_BITS: usize = 312;
 
 /// Decoded Class B extended position report.

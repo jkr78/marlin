@@ -1,6 +1,6 @@
 [package]
 name = "marlin-nmea-0183"
-description = "Sans-I/O typed decoders for NMEA 0183 sentences (GGA, GLL, HDT, RMC, VTG, PSXN, PRDID). Built on marlin-nmea-envelope."
+description = "Sans-I/O typed decoders for NMEA 0183 sentences (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID). Built on marlin-nmea-envelope."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

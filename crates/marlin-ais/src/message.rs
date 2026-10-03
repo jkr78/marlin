@@ -15,7 +15,7 @@
 //!   is single-fragment (`fragment_count == 1`); multi-fragment inputs
 //!   will typically produce [`AisError::PayloadTooShort`] because the
 //!   partial payload is too short for its declared type. Multi-sentence
-//!   reassembly is the job of the (future) `AisFragmentParser`.
+//!   reassembly is the job of [`AisFragmentParser`](crate::AisFragmentParser).
 
 use alloc::vec::Vec;
 
@@ -35,8 +35,8 @@ use crate::{
 /// `!AIVDO` distinction from the envelope (PRD §A7). The split exists
 /// because the two pieces have different sources — `body` is
 /// bit-level decode, `is_own_ship` is a wrapper-tag boolean — and
-/// because future reassembly metadata (channel, fragment count) would
-/// naturally live alongside `is_own_ship` if it were ever exposed.
+/// because any other envelope metadata (channel, fragment count)
+/// would sit alongside `is_own_ship` if it were ever exposed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AisMessage {
     /// `true` if the source sentence was `!AIVDO` (own-ship loopback),
@@ -157,7 +157,7 @@ pub fn decode_message(
 /// Multi-fragment inputs are not rejected explicitly — their partial
 /// payload usually decodes to [`AisError::PayloadTooShort`] because
 /// the per-type decoders require a specific minimum bit count. Use
-/// the reassembly parser (landing in a later commit) to handle
+/// [`AisFragmentParser`](crate::AisFragmentParser) to handle
 /// multi-fragment messages correctly.
 ///
 /// # Errors
@@ -274,7 +274,7 @@ mod tests {
         for _ in 0..15 {
             w.u(8, 0);
         }
-        // Header (40) + name (120) = 160 bits per ITU-R M.1371-5 §5.3.24.1.
+        // Header (40) + name (120) = 160 bits per ITU-R M.1371-5 Annex 8 §3.22, Table 78.
         w.finish()
     }
 
