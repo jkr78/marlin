@@ -8,6 +8,31 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Declare each Python message mirror once
+  Adding one message type to `bindings/python` means about 17 hand-edit sites,
+  and each field name is written 11 times, across the PyO3 class, the public
+  stub, the package re-export, and the `marlin.dataclasses` mirror. Candidate 1
+  of the 2026-10-03 architecture review. Needs grilling before code: what the
+  one declaration is, and whether the saving justifies generating the rest,
+  are both open.
+  Ticket `.scratch/py-single-stub/issues/01` removed only the second stub
+  copy (`marlin/_core.pyi`). [py][draft]
+- [ ] Gate the Python stubs with mypy.stubtest
+  `tests/unit/test_stub_agreement.py` compares only `__all__` names between
+  each public stub and its runtime module. `mypy.stubtest` compares
+  signatures too, and is not run anywhere. Run from `bindings/python/python`,
+  `python -m mypy.stubtest marlin --ignore-missing-stub` reported 477 findings
+  before ticket `.scratch/py-single-stub/issues/01` and 475 after it (Python
+  3.13, mypy 1.20.2): 346 for a stub `__init__` where the PyO3 runtime has
+  `__new__` (173 pairs), 55 classes missing `@final`, 55
+  missing `@disjoint_base`, 18 parameters that should be positional-only, and
+  1 for `marlin.ais.ClockMode` ("is not a Union": the runtime alias is a
+  two-value `Literal`, which looks like a stubtest quirk and probably belongs
+  in an allowlist). The 3 names missing at runtime are fixed. Counts depend on
+  the interpreter: Python 3.9 with mypy 1.19.1 reports 299. Fix the stubs or
+  allowlist each kind, then add the command to `just py-type-check`. The
+  "declare each Python message mirror once" card may change most of what this
+  checks, so decide that one first or accept redoing the stub fixes. [py]
 - [ ] Give the supported sentence and message lists one source
   The NMEA sentence list (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)
   is written out by hand in about twelve places and the AIS type list in about
