@@ -1260,7 +1260,8 @@ impl From<PyPsxnSlot> for RustPsxnSlot {
     }
 }
 
-/// Runtime selector for PRDID field ordering (binding class for `PrdidDialect`).
+/// Runtime selector for PRDID field ordering (binding class for
+/// `PrdidDialect`).
 #[pyclass(
     name = "PrdidDialect",
     frozen,

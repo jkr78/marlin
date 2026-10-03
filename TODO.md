@@ -8,17 +8,6 @@ track deliverables (not conversational state).
 
 ## New tasks
 
-- [ ] Give the parser iterator classes one name in stubs and runtime
-  The public stubs declare `_AisIterator`, `_NmeaIterator`, and
-  `_EnvelopeIterator` as what `__iter__` returns. At runtime the classes are
-  `marlin.ais.PyAisIterator`, `marlin.nmea.PyNmeaIterator`, and
-  `marlin.envelope.PyEnvelopeIterator`: the `#[pyclass]` attributes in
-  `bindings/python/src/` set no Python name, and the package modules do not
-  re-export them. `mypy.stubtest` does not report this, because the stub names
-  are private and absent at runtime. May not need fixing: users iterate these
-  objects and never name them, so nothing breaks today. A fix picks the
-  Python-visible name in `#[pyclass(name = ...)]`, matches the stubs to it, and
-  rebuilds the extension. Found by the py-field-once ticket 01 review. [py][draft]
 - [ ] Generate each binding class from one field list
   A field of a binding class is written 5 times in `bindings/python/src/ais.rs`
   and `src/nmea.rs`: the `#[pyclass]` struct, the `#[pyo3(signature = ...)]`
@@ -32,6 +21,17 @@ track deliverables (not conversational state).
   worth doing: the compiler already catches a field missing from the struct
   literal or the `From` impl, so this saves typing, not drift. Revisit when a
   batch of new message types arrives. Split from the card below. [py][draft]
+- [ ] Give the parser iterator classes one name in stubs and runtime
+  The public stubs declare `_AisIterator`, `_NmeaIterator`, and
+  `_EnvelopeIterator` as what `__iter__` returns. At runtime the classes are
+  `marlin.ais.PyAisIterator`, `marlin.nmea.PyNmeaIterator`, and
+  `marlin.envelope.PyEnvelopeIterator`: the `#[pyclass]` attributes in
+  `bindings/python/src/` set no Python name, and the package modules do not
+  re-export them. `mypy.stubtest` does not report this, because the stub names
+  are private and absent at runtime. May not need fixing: users iterate these
+  objects and never name them, so nothing breaks today. A fix picks the
+  Python-visible name in `#[pyclass(name = ...)]`, matches the stubs to it, and
+  rebuilds the extension. Found by the py-field-once ticket 01 review. [py][draft]
 - [x] Write each Python message field once per layer **DONE 2026-10-03**
   Candidate 1 of the 2026-10-03 architecture review; spec and tickets in
   `.scratch/py-field-once/`. A field was written about 11 times across three

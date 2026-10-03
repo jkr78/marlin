@@ -201,9 +201,10 @@ impl From<RustAltitudeSensor> for PyAltitudeSensor {
 
 // ---------- AtonType ----------
 
-/// Type of aid to navigation (binding class for `AtonType`, ITU-R M.1371-5 Table
-/// 74). The int values are the 5-bit wire codes 0..=31. The Rust enum
-/// names all 32 codes, so the `From` impl is exhaustive with no wildcard.
+/// Type of aid to navigation (binding class for `AtonType`, ITU-R
+/// M.1371-5 Table 74). The int values are the 5-bit wire codes 0..=31. The
+/// Rust enum names all 32 codes, so the `From` impl is exhaustive with no
+/// wildcard.
 #[pyclass(name = "AtonType", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyAtonType {
@@ -316,8 +317,8 @@ impl From<RustAtonType> for PyAtonType {
 
 // ---------- EpfdType ----------
 
-/// Electronic Position-Fixing Device type (binding class for `EpfdType`). Wire
-/// values 0..8 and 15; `Reserved(u8)` for 9..=14 collapses to
+/// Electronic Position-Fixing Device type (binding class for `EpfdType`).
+/// Wire values 0..8 and 15; `Reserved(u8)` for 9..=14 collapses to
 /// `UNDEFINED`.
 #[pyclass(name = "EpfdType", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -368,8 +369,8 @@ impl From<RustEpfdType> for PyEpfdType {
 
 // ---------- AisVersion ----------
 
-/// AIS protocol version indicator (binding class for `AisVersion`). Rust type is
-/// `#[non_exhaustive]`; defensive wildcard collapses future variants
+/// AIS protocol version indicator (binding class for `AisVersion`). Rust
+/// type is `#[non_exhaustive]`; defensive wildcard collapses future variants
 /// onto `FUTURE`.
 #[pyclass(name = "AisVersion", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -402,8 +403,8 @@ impl From<RustAisVersion> for PyAisVersion {
 
 // ---------- Dimensions ----------
 
-/// Frozen vessel dimensions value type (binding class for `Dimensions`). All four
-/// fields are `Option<u{8,16}>` with `None` signalling "not available"
+/// Frozen vessel dimensions value type (binding class for `Dimensions`). All
+/// four fields are `Option<u{8,16}>` with `None` signalling "not available"
 /// (the wire sentinel `0`). `_m` suffix preserves the unit, matching
 /// the Rust struct.
 // All four fields are `to_*` distances — the shared prefix is the wire
@@ -1576,9 +1577,10 @@ impl PyAisMessage {
 
 // ---------- BitReader (power-user primitive) ----------
 
-/// Bit-level reader over an AIS payload. Binding class for `marlin_ais::BitReader`.
+/// Bit-level reader over an AIS payload. Binding class for
+/// `marlin_ais::BitReader`.
 ///
-/// The Python wrapper owns its byte buffer and tracks the cursor itself;
+/// The binding class owns its byte buffer and tracks the cursor itself;
 /// every method constructs a fresh Rust `BitReader` and fast-forwards to
 /// the current cursor position. That fast-forward is O(cursor) per call,
 /// i.e. O(n²) total — documented as accepted for v0.1 AIS rates in the
