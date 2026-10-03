@@ -8,6 +8,17 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Give the parser iterator classes one name in stubs and runtime
+  The public stubs declare `_AisIterator`, `_NmeaIterator`, and
+  `_EnvelopeIterator` as what `__iter__` returns. At runtime the classes are
+  `marlin.ais.PyAisIterator`, `marlin.nmea.PyNmeaIterator`, and
+  `marlin.envelope.PyEnvelopeIterator`: the `#[pyclass]` attributes in
+  `bindings/python/src/` set no Python name, and the package modules do not
+  re-export them. `mypy.stubtest` does not report this, because the stub names
+  are private and absent at runtime. May not need fixing: users iterate these
+  objects and never name them, so nothing breaks today. A fix picks the
+  Python-visible name in `#[pyclass(name = ...)]`, matches the stubs to it, and
+  rebuilds the extension. Found by the py-field-once ticket 01 review. [py][draft]
 - [ ] Write each Python message field once per layer
   A field of a Python message is written in three layers: 5 times in the
   binding class (`bindings/python/src/ais.rs`, `src/nmea.rs`), twice in the
