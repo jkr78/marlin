@@ -18,9 +18,10 @@ track deliverables (not conversational state).
   Ticket `.scratch/py-single-stub/issues/01` removed only the second stub
   copy (`marlin/_core.pyi`). [py][draft]
 - [ ] Gate the Python stubs with mypy.stubtest
-  `tests/unit/test_stub_agreement.py` compares only `__all__` names between
-  each public stub and its runtime module. `mypy.stubtest` compares
-  signatures too, and is not run anywhere. Run from `bindings/python/python`,
+  `tests/unit/test_stub_agreement.py` compares only `__all__` names and the
+  members of the `Union` / `Literal` type aliases between each public stub and
+  its runtime module. `mypy.stubtest` compares signatures too, and is not run
+  anywhere. Run from `bindings/python/python`,
   `python -m mypy.stubtest marlin --ignore-missing-stub` reported 477 findings
   before ticket `.scratch/py-single-stub/issues/01` and 475 after it (Python
   3.13, mypy 1.20.2): 346 for a stub `__init__` where the PyO3 runtime has
