@@ -34,30 +34,24 @@ track deliverables (not conversational state).
   by class name and treats an unmirrored `marlin.*` value as an enum
   (`int()`, `TypeError` on failure); the agreement test also asserts no class
   name repeats across packages; work is packaged as `.scratch/py-field-once/`
-  with three tickets (stubtest gate, converter with its test, wording sweep).
+  with three tickets (stubtest gate, done; converter with its test; wording
+  sweep).
   Grilling complete and confirmed 2026-10-03. Spec and tickets:
   `.scratch/py-field-once/` (01 is the stubtest card below). [py][ready]
-- [ ] Gate the Python stubs with mypy.stubtest
-  `tests/unit/test_stub_agreement.py` compares only `__all__` names and the
-  members of the `Union` / `Literal` type aliases between each public stub and
-  its runtime module. `mypy.stubtest` compares signatures too, and is not run
-  anywhere. Run from `bindings/python/python`,
-  `python -m mypy.stubtest marlin --ignore-missing-stub` reported 477 findings
-  before ticket `.scratch/py-single-stub/issues/01` and 475 after it (Python
-  3.13, mypy 1.20.2): 346 for a stub `__init__` where the PyO3 runtime has
-  `__new__` (173 pairs), 55 classes missing `@final`, 55
-  missing `@disjoint_base`, 18 parameters that should be positional-only, and
-  1 for `marlin.ais.ClockMode` ("is not a Union": the runtime alias is a
-  two-value `Literal`, which looks like a stubtest quirk and probably belongs
-  in an allowlist). The 3 names missing at runtime are fixed. Counts depend on
-  the interpreter: Python 3.9 with mypy 1.19.1 reports 299. Fix the stubs or
-  allowlist each kind, then add the command to `just py-type-check`. Nothing in
-  the "write each Python message field once per layer" card changes the stubs,
-  so this goes first. Decided 2026-10-03: fix the `__new__`, `@final`, and
-  positional-only kinds in the stubs (`@final` gets a `### Changed` line);
-  allowlist `@disjoint_base` and `ClockMode`; gate on the newer interpreter and
-  state the minimum mypy version in the recipe. Ticket:
-  `.scratch/py-field-once/issues/01`. [py][ready]
+- [x] Gate the Python stubs with mypy.stubtest **DONE 2026-10-03**
+  `just py-type-check` and the CI type-check job run
+  `python -m mypy.stubtest marlin --ignore-missing-stub` with
+  `bindings/python/stubtest-allowlist.txt`. Of the 475 findings (Python 3.13,
+  mypy 1.20.2), 346 went by declaring constructors as `__new__`, 55 by marking
+  every binding class `@final` (which also cleared the 55 `@disjoint_base`
+  findings), and 18 by making `__eq__` positional-only. Removing the `__init__`
+  noise exposed one real disagreement: the stubs for `Gga`, `Vtg`, `Hdt`, and
+  `Unknown` marked constructor parameters keyword-only where the runtime takes
+  them positionally; the stubs now follow the runtime. The allowlist has two
+  entries: `marlin.ais.ClockMode` (a two-value `Literal` alias reported as "is
+  not a Union") and, on Python 3.9 only, `marlin.aio.AsyncIterator`. The second
+  forces `--ignore-unused-allowlist`, so a stale entry is not reported. Ticket:
+  `.scratch/py-field-once/issues/01`. [py]
 - [ ] Give the supported sentence and message lists one source
   The NMEA sentence list (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)
   is written out by hand in about twelve places and the AIS type list in about
