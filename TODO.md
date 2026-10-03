@@ -8,6 +8,17 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Unify the marlin-ais test payload builders on one style
+  `message.rs` routing tests mix named `build_typeN(mmsi)` helpers (Types 1/2/3,
+  5, 18, 24) with inline `w.u(64, 0)` padding (Types 19 and 9); one
+  `build_min_payload(msg_type, mmsi, total_bits)` would replace all eight. The
+  decoder modules mix positional builders under `too_many_arguments`
+  (`build_prb`, `build_pra`, `build_part_b`) with the `Fields` struct + `Default`
+  + struct-update form `sar_aircraft_position_report.rs` introduced for Type 9.
+  Keep the `Fields` form (each test names only what it varies, no allow needed)
+  and convert the siblings when their tests are next touched; ticket 06 (Type 21)
+  should use it from the start. Raised by the ticket 05 Standards review.
+  [ais][ready]
 - [ ] Make `just py-ci` self-sufficient: add maturin and pyright to the venv
   `py-dev` runs `maturin develop` and `py-type-check` runs `pyright` from PATH;
   `bindings/python/.venv` (uv) has neither, so the recipe fails at `py-dev` on a
