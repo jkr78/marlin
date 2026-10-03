@@ -30,7 +30,7 @@ def stub_all(stub_path: Path) -> list[str]:
 
 
 @pytest.mark.parametrize("module_name", STUBBED_MODULES)
-def test_stub_all_matches_runtime_all(module_name):
+def test_stub_all_matches_runtime_all(module_name: str) -> None:
     module = importlib.import_module(module_name)
     assert module.__file__ is not None
     stub_path = Path(module.__file__).with_suffix(".pyi")

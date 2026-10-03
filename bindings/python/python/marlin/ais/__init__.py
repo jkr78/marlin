@@ -51,6 +51,7 @@ AisMessageBody = Union[
 AisMessage = _core.ais.AisMessage
 
 # Parser
+# The `clock` argument of `AisParser`: who drives the reassembly timeout.
 ClockMode = Literal["auto", "manual"]
 AisParser = _core.ais.AisParser
 
