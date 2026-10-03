@@ -13,6 +13,8 @@ from .ais_vectors import (
     AIVDM_TYPE5_FRAG1,
     AIVDM_TYPE5_FRAG2,
     AIVDM_TYPE9_GPSD_T9_2,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG1,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG2,
     AIVDM_TYPE21_GPSD_T21_2_FRAG1,
     AIVDM_TYPE21_GPSD_T21_2_FRAG2,
     AIVDM_TYPE24B_AUXILIARY_CRAFT,
@@ -392,6 +394,23 @@ def test_ais_static_data_b24b_mothership_round_trip() -> None:
     json.dumps(d, default=_json_default)
     assert d["body"]["dimensions"] is None
     assert d["body"]["mothership_mmsi"] == 211000123
+
+
+def test_to_dataclass_accepts_bare_ais_body() -> None:
+    # A body passed without its AisMessage wrapper converts through the
+    # same dispatcher as the wrapped path.
+    from marlin.ais import AisParser
+    from marlin.dataclasses import (
+        AidToNavigationReport as DCAidToNavigationReport,
+    )
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE21_GPSD_T21_1_FRAG1 + AIVDM_TYPE21_GPSD_T21_1_FRAG2)
+    body = list(p)[0].body
+    dc = to_dataclass(body)
+    assert isinstance(dc, DCAidToNavigationReport)
+    assert dc.name == "CHINA ROSE MURPHY EXPRESS ALERT"
 
 
 def test_to_dataclass_type_error_on_unknown() -> None:

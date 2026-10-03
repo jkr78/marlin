@@ -642,28 +642,12 @@ def to_dataclass(msg: object) -> object:
             type_tag=msg.type_tag,
             body=_convert_ais_body(msg.body),
         )
-    if isinstance(msg, _ais.PositionReportA):
-        return _convert_position_report_a(msg)
-    if isinstance(msg, _ais.StaticAndVoyageA):
-        return _convert_static_and_voyage_a(msg)
-    if isinstance(msg, _ais.SarAircraftPositionReport):
-        return _convert_sar_aircraft_position_report(msg)
-    if isinstance(msg, _ais.PositionReportB):
-        return _convert_position_report_b(msg)
-    if isinstance(msg, _ais.ExtendedPositionReportB):
-        return _convert_extended_position_report_b(msg)
-    if isinstance(msg, _ais.AidToNavigationReport):
-        return _convert_aid_to_navigation_report(msg)
-    if isinstance(msg, _ais.StaticDataB24A):
-        return StaticDataB24A(mmsi=msg.mmsi, vessel_name=msg.vessel_name)
-    if isinstance(msg, _ais.StaticDataB24B):
-        return _convert_static_data_b24b(msg)
-    if isinstance(msg, _ais.Other):
-        return Other(
-            msg_type=msg.msg_type,
-            raw_payload=msg.raw_payload,
-            total_bits=msg.total_bits,
-        )
+    # A bare AIS body goes through the same dispatcher as a wrapped one,
+    # so each body type is registered in exactly one place.
+    try:
+        return _convert_ais_body(msg)
+    except TypeError:
+        pass
 
     raise TypeError(
         f"to_dataclass: unrecognised marlin message type {type(msg).__qualname__!r}"
