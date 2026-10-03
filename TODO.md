@@ -8,15 +8,35 @@ track deliverables (not conversational state).
 
 ## New tasks
 
-- [ ] Declare each Python message mirror once
+- [ ] Write each Python message field once per layer
   Adding one message type to `bindings/python` means about 17 hand-edit sites,
-  and each field name is written 11 times, across the PyO3 class, the public
-  stub, the package re-export, and the `marlin.dataclasses` mirror. Candidate 1
-  of the 2026-10-03 architecture review. Needs grilling before code: what the
-  one declaration is, and whether the saving justifies generating the rest,
-  are both open.
-  Ticket `.scratch/py-single-stub/issues/01` removed only the second stub
-  copy (`marlin/_core.pyi`). [py][draft]
+  and each field name is written about 11 times: 5 in the binding class
+  (`src/ais.rs`, `src/nmea.rs`), 2 in the public stub, 2 in the dataclass
+  mirror and its converter, the rest in tests. Candidate 1 of the 2026-10-03
+  architecture review, under grilling since the same day. Decided so far: the
+  driver is drift between layers, not the cost of adding a type; each layer
+  loses its own repetition, with no single schema across Rust and Python;
+  `marlin.dataclasses` keeps its hand-written classes and gets one generic
+  converter in place of the per-class `_convert_*` bodies; the public Python
+  surface does not change. Established by experiment: one `macro_rules!`
+  invocation can generate a regular binding class (struct, getters,
+  constructor defaults, `From` impl) under the crate's lints, untried on the
+  classes ADR-0003 flattens; no stub generator fits today (PyO3's is
+  experimental and rejects function-declared modules, `pyo3-stub-gen` needs
+  Python 3.10 against our `abi3-py39`). Round 2: the macro is not adopted
+  now (the compiler already catches Rust-side drift; revisit when a batch of
+  new types arrives); a test asserts each binding class and its dataclass
+  mirror have the same field names, written before the converter changes; the
+  lenient fallbacks in `_convert_dimensions`, `_convert_eta`, and the `Prdid`
+  body go, with a `### Changed` line; the stub layer is answered by the
+  stubtest card, done first; bare "mirror" meaning binding class is swept in
+  its own docs-only ticket. Round 3: the converter finds a dataclass mirror
+  by class name and treats an unmirrored `marlin.*` value as an enum
+  (`int()`, `TypeError` on failure); the agreement test also asserts no class
+  name repeats across packages; work is packaged as `.scratch/py-field-once/`
+  with three tickets (stubtest gate, converter with its test, wording sweep).
+  Grilling complete and confirmed 2026-10-03. Spec and tickets:
+  `.scratch/py-field-once/` (01 is the stubtest card below). [py][ready]
 - [ ] Gate the Python stubs with mypy.stubtest
   `tests/unit/test_stub_agreement.py` compares only `__all__` names and the
   members of the `Union` / `Literal` type aliases between each public stub and
@@ -31,9 +51,13 @@ track deliverables (not conversational state).
   two-value `Literal`, which looks like a stubtest quirk and probably belongs
   in an allowlist). The 3 names missing at runtime are fixed. Counts depend on
   the interpreter: Python 3.9 with mypy 1.19.1 reports 299. Fix the stubs or
-  allowlist each kind, then add the command to `just py-type-check`. The
-  "declare each Python message mirror once" card may change most of what this
-  checks, so decide that one first or accept redoing the stub fixes. [py]
+  allowlist each kind, then add the command to `just py-type-check`. Nothing in
+  the "write each Python message field once per layer" card changes the stubs,
+  so this goes first. Decided 2026-10-03: fix the `__new__`, `@final`, and
+  positional-only kinds in the stubs (`@final` gets a `### Changed` line);
+  allowlist `@disjoint_base` and `ClockMode`; gate on the newer interpreter and
+  state the minimum mypy version in the recipe. Ticket:
+  `.scratch/py-field-once/issues/01`. [py][ready]
 - [ ] Give the supported sentence and message lists one source
   The NMEA sentence list (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)
   is written out by hand in about twelve places and the AIS type list in about
