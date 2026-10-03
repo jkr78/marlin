@@ -5,7 +5,7 @@ per-protocol filtering, context managers, and dataclass serialization.
 Examples use real bytes (files, sockets, captured logs).
 
 For install steps, see `README.md`. For exact signatures, read the type
-stubs in `python/marlin/*.pyi`.
+stubs in `python/marlin/*/__init__.pyi`.
 
 ---
 
@@ -282,5 +282,5 @@ loggers, or anything else that reads plain Python dataclasses.
   tracker (envelope + AIS combined).
 - `README.md` covers install, the error hierarchy, and AIS clock modes.
 - `CHANGELOG.md` tracks per-version changes.
-- `python/marlin/*.pyi` has exact type signatures for every public
+- `python/marlin/*/__init__.pyi` has exact type signatures for every public
   symbol.
