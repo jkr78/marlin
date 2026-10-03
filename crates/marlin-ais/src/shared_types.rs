@@ -228,6 +228,18 @@ pub(crate) fn sog_tenths_kn(raw: u64) -> Option<f32> {
     }
 }
 
+/// Decode a whole-unit field of at most 16 bits (Type 9 altitude in
+/// metres, aircraft SOG in knots), mapping `not_available` to `None`
+/// and passing every other value, over-range codes included, through.
+#[allow(clippy::cast_possible_truncation)] // callers pass fields of at most 16 bits
+pub(crate) fn whole_u16(raw: u64, not_available: u16) -> Option<u16> {
+    if raw == u64::from(not_available) {
+        None
+    } else {
+        Some((raw & 0xFFFF) as u16)
+    }
+}
+
 /// Read the 30-bit dimension block (A 9, B 9, C 6, D 6 bits) at the
 /// reader's current position.
 pub(crate) fn read_dimensions(r: &mut BitReader<'_>) -> Dimensions {
@@ -307,6 +319,24 @@ mod tests {
         let over = sog_tenths_kn(u64::from(sentinel::SOG_OVER_RANGE)).unwrap();
         assert!((over - sentinel::SOG_OVER_RANGE_KN).abs() < 1e-6);
         assert!((over - 102.2).abs() < 1e-4);
+    }
+
+    #[test]
+    fn whole_u16_sentinel_is_none_and_over_range_is_kept() {
+        assert_eq!(
+            whole_u16(
+                u64::from(sentinel::ALTITUDE_NOT_AVAILABLE),
+                sentinel::ALTITUDE_NOT_AVAILABLE
+            ),
+            None
+        );
+        assert_eq!(
+            whole_u16(
+                u64::from(sentinel::ALTITUDE_OVER_RANGE),
+                sentinel::ALTITUDE_NOT_AVAILABLE
+            ),
+            Some(4094)
+        );
     }
 
     #[test]

@@ -26,9 +26,11 @@ checked against gpsd's `test/sample.aivdm.chk` when the file was added.
 |------|--------|----------|
 | `01_type9_gpsd.nmea` | gpsd `test/sample.aivdm` | Type 9 SAR aircraft position reports T9-1 (MMSI 111265591) and T9-2 (MMSI 111232511) |
 
-The gpsd test data is distributed under the BSD-2-Clause licence:
+The gpsd test data is distributed under the BSD-2-Clause licence. gpsd's
+`COPYING` states: "Compilation copyright is held by the GPSD project. All
+rights reserved." and lists the SPDX short identifier `BSD-2-Clause`; the
+per-contributor copyright lines are in that file. The licence text:
 
-> Copyright (c) the gpsd project contributors.
 >
 > Redistribution and use in source and binary forms, with or without
 > modification, are permitted provided that the following conditions are

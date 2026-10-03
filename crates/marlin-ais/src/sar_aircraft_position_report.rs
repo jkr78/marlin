@@ -7,7 +7,7 @@
 //! heading. The 20-bit `radio_status` follows the Type 18 precedent
 //! (selector bit plus 19-bit communication state).
 
-use crate::shared_types::{cog_deg, lat_deg, lon_deg, sentinel};
+use crate::shared_types::{cog_deg, lat_deg, lon_deg, sentinel, whole_u16};
 use crate::{AisError, BitReader};
 
 /// Minimum valid payload size for Type 9 (ITU-R M.1371-5 Annex 8
@@ -91,8 +91,8 @@ pub fn decode_sar_aircraft_position_report(
     let _ = r.u(2); // repeat
     let mmsi = (r.u(30) & 0xFFFF_FFFF) as u32;
 
-    let altitude_m = sentinel_u16(r.u(12), sentinel::ALTITUDE_NOT_AVAILABLE);
-    let speed_over_ground = sentinel_u16(r.u(10), sentinel::AIRCRAFT_SOG_NOT_AVAILABLE);
+    let altitude_m = whole_u16(r.u(12), sentinel::ALTITUDE_NOT_AVAILABLE);
+    let speed_over_ground = whole_u16(r.u(10), sentinel::AIRCRAFT_SOG_NOT_AVAILABLE);
     let position_accuracy = r.b();
     let longitude_deg = lon_deg(r.i(28));
     let latitude_deg = lat_deg(r.i(27));
@@ -127,17 +127,6 @@ pub fn decode_sar_aircraft_position_report(
     })
 }
 
-/// Decode a whole-unit field of at most 16 bits, mapping `code` to
-/// `None` and passing every other value (over-range included) through.
-#[allow(clippy::cast_possible_truncation)] // field widths 12 and 10 fit in u16
-fn sentinel_u16(raw: u64, code: u16) -> Option<u16> {
-    if raw == u64::from(code) {
-        None
-    } else {
-        Some((raw & 0xFFFF) as u16)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -165,7 +154,7 @@ mod tests {
         lat_raw: i64,
         cog: u16,
         timestamp: u8,
-        altitude_sensor: u8,
+        barometric: bool,
         dte: bool,
         assigned: bool,
         raim: bool,
@@ -183,7 +172,7 @@ mod tests {
                 lat_raw: 0,
                 cog: 0,
                 timestamp: 0,
-                altitude_sensor: 0,
+                barometric: false,
                 dte: false,
                 assigned: false,
                 raim: false,
@@ -205,7 +194,7 @@ mod tests {
         w.i(27, f.lat_raw);
         w.u(12, u64::from(f.cog));
         w.u(6, u64::from(f.timestamp));
-        w.u(1, u64::from(f.altitude_sensor));
+        w.b(f.barometric);
         w.u(7, 0); // spare
         w.b(f.dte);
         w.u(3, 0); // spare
@@ -226,7 +215,7 @@ mod tests {
             lat_raw: -2_880_000, // 4.8°S
             cog: 2705,           // 270.5°
             timestamp: 33,
-            altitude_sensor: 1,
+            barometric: true,
             dte: true,
             assigned: true,
             raim: true,
@@ -281,14 +270,14 @@ mod tests {
     #[test]
     fn altitude_sensor_bit_is_categorical() {
         let (bits, total) = build_type9(&Fields {
-            altitude_sensor: 0,
+            barometric: false,
             ..Fields::default()
         });
         let msg = decode_sar_aircraft_position_report(&bits, total).unwrap();
         assert_eq!(msg.altitude_sensor, AltitudeSensor::Gnss);
 
         let (bits, total) = build_type9(&Fields {
-            altitude_sensor: 1,
+            barometric: true,
             ..Fields::default()
         });
         let msg = decode_sar_aircraft_position_report(&bits, total).unwrap();
