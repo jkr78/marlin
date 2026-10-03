@@ -160,7 +160,7 @@ track deliverables (not conversational state).
 | `marlin-klv`           | ✅ **Feature-complete for v0.1** | 48 unit · 1 doctest |
 | `marlin-py` (Python bindings) | ✅ **Feature-complete for 0.2.0** | 206 pytest |
 
-**Rust workspace total: 429 tests pass, `just ci` clean. Python bindings: 206 pytest pass, mypy --strict clean (35 source files). Counted 2026-10-03.**
+**Rust workspace total: 429 tests pass, `just ci` clean. Python bindings: 206 pytest pass, mypy --strict clean (35 source files). Counted 2026-10-03 from `just ci` output, default features.**
 
 ---
 
@@ -317,7 +317,8 @@ track deliverables (not conversational state).
 - [x] `@dataclass`-style frozen mirrors in `marlin.dataclasses` with
       `to_dataclass(msg)` dispatcher — JSON / msgspec / dataclasses-asdict
       friendly. Covers all typed runtime classes: envelope RawSentence, NMEA
-      Gga/Vtg/Hdt/Psxn/Prdid/Unknown, AIS message variants, and AisMessage
+      Gga/Gll/Hdg/Hdt/Rmc/Tll/Ttm/Vtg/Psxn/Prdid/Unknown, AIS message
+      variants (Types 9 and 21 included), and AisMessage
       wrapper. Enums serialize as integer values.
 
 #### Quality + tooling

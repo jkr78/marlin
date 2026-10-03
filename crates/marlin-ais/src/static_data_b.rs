@@ -83,8 +83,8 @@ pub struct StaticDataB24B {
     /// Ship and cargo type — ITU-R M.1371-5 Table 53 raw value.
     pub ship_type: u8,
     /// Vendor ID (up to 7 characters). `None` on all-padding. Per
-    /// ITU-R M.1371-5 Annex 8 §3.22, Table 79 this is a composite of a 3-char
-    /// vendor ID, 4-bit unit-model code, and 20-bit serial number;
+    /// ITU-R M.1371-5 Annex 8 §3.22, Table 79A this is a composite of a
+    /// 3-char vendor ID, 4-bit unit-model code, and 20-bit serial number;
     /// we surface the entire 7-char string and let callers split.
     pub vendor_id: Option<String>,
     /// Call sign (up to 7 characters). `None` on all-padding.

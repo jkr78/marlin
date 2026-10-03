@@ -14,7 +14,6 @@
 //! - **AIVDM wrapper parser** — [`parse_aivdm_wrapper`] extracts the
 //!   header fields (fragment count, sequential id, channel, payload,
 //!   fill bits) from a [`RawSentence`].
-//!
 //! - **Typed message decoders** — [`decode_message`] and [`decode`]
 //!   route on the 6-bit message type to a typed [`AisMessageBody`]
 //!   variant: Types 1/2/3 ([`PositionReportA`]), 5
@@ -23,7 +22,7 @@
 //!   ([`AidToNavigationReport`]) and 24 Parts A and B
 //!   ([`StaticDataB24A`], [`StaticDataB24B`]). Every other type
 //!   surfaces as [`AisMessageBody::Other`] with the raw bits.
-//! - **Multi-sentence reassembly** — [`AisReassembler`] stitches
+//! - **Multi-sentence reassembly** — [`AisReassembler`] joins
 //!   fragments keyed on `(channel, sequential_id)`;
 //!   [`AisFragmentParser`] runs the whole pipeline from bytes to
 //!   [`AisMessage`].
@@ -32,6 +31,8 @@
 //!
 //! ```text
 //!  bytes ─▶ nmea_envelope ─▶ RawSentence ─▶ parse_aivdm_wrapper
+//!                                             ↓
+//!                                           AisReassembler (multi-sentence only)
 //!                                             ↓
 //!                                           armor::decode ─▶ (bits, total_bits)
 //!                                                              ↓

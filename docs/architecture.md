@@ -124,7 +124,8 @@ altitude 4094 m, dimensions 511 m and 63 m). The decoders map a
 not-available code to `None` and pass an over-range code through as the
 value it names. A decoded field never carries the raw code. The codes
 are public constants in `marlin_ais::sentinel`, so a consumer that
-needs to tell a floor from a measurement compares against them.
+needs to tell an over-range value from a measurement compares against
+them.
 
 Rate of turn is the exception. ±127 means "turning at more than 5° per
 30 s, no turn indicator", which is a status and not a rate, so
@@ -162,8 +163,9 @@ touches no state.
 
 ### Python mirror policy
 
-`marlin.ais` exposes one class per `AisMessageBody` variant plus a
-`type_tag` string on `AisMessage`. Coded enums (`NavStatus`,
+`marlin.ais` exposes one class per message struct (Types 1, 2 and 3
+share `PositionReportA`) plus a `type_tag` string on `AisMessage` that
+names the variant. Coded enums (`NavStatus`,
 `EpfdType`, `AtonType`) are int-backed classes, and
 `marlin.dataclasses` stores them as `int`.
 
