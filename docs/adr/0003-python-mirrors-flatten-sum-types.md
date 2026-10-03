@@ -5,7 +5,7 @@ sibling optional attributes on the Python class (`rate_of_turn` + `turn_directio
 `dimensions` + `mothership_mmsi`). On parser output at most one is set: exactly one
 for `Type24BExtent`, none when the Rust field is itself `None` (ROT −128). The
 constructors do not validate hand-built instances. Message-level enums keep the
-existing convention: one class per message struct (Types 1, 2 and 3 share
+existing convention: one class per message struct (Types 1, 2, and 3 share
 `PositionReportA`) plus a `type_tag` string that names the variant.
 
 ## Considered options

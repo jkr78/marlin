@@ -19,7 +19,7 @@
 //!   variant: Types 1/2/3 ([`PositionReportA`]), 5
 //!   ([`StaticAndVoyageA`]), 9 ([`SarAircraftPositionReport`]), 18
 //!   ([`PositionReportB`]), 19 ([`ExtendedPositionReportB`]), 21
-//!   ([`AidToNavigationReport`]) and 24 Parts A and B
+//!   ([`AidToNavigationReport`]), and 24 Parts A and B
 //!   ([`StaticDataB24A`], [`StaticDataB24B`]). Every other type
 //!   surfaces as [`AisMessageBody::Other`] with the raw bits.
 //! - **Multi-sentence reassembly** — [`AisReassembler`] joins

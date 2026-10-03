@@ -62,8 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   exceptions), so type checkers no longer report variables assigned inside a
   `with parser as p:` block as possibly-unbound after the block.
 - The package docstring, `marlin.dataclasses.to_dataclass` docstring,
-  README and GUIDE list every typed NMEA sentence (GLL, RMC, HDG, TTM
-  and TLL were missing) and the AIS Type 9 and Type 21 classes.
+  README, and GUIDE now list every typed NMEA sentence (GLL, RMC, HDG,
+  TTM, and TLL were missing) and the AIS Type 9 and Type 21 classes.
 
 ### Changed (BREAKING)
 

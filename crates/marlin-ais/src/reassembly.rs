@@ -30,7 +30,7 @@
 //!   PRD §A5 specifies a 60 s timeout as the motivation — this
 //!   bounded-slot approach satisfies the underlying memory-safety goal
 //!   clock-free. Time-based expiry is opt-in on top of it:
-//!   [`AisReassembler::with_timeout_ms`] sets an age limit and the
+//!   [`AisReassembler::with_timeout_ms`] sets an age limit, and the
 //!   caller supplies the clock through
 //!   [`feed_fragment_at`](AisReassembler::feed_fragment_at) and
 //!   [`tick`](AisReassembler::tick).

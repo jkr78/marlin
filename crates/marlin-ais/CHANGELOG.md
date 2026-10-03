@@ -57,10 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   channel's partial, raised a channel mismatch, and both messages were
   lost. Both now reassemble. A continuation fragment with no partial on
   its own key is still `ReassemblyOutOfOrder`.
-- ITU citations in the rustdoc and in this changelog. The `§5.3.x`
-  numbers pointed at Annex 2 transport clauses or at nothing; they now
-  name the Annex 8 section and table (ITU-R M.1371-5). The 6-bit armor
-  is cited to IEC 61162-1, where it is defined.
+- The ITU citations in the rustdoc and in this changelog were wrong.
+  The `§5.3.x` numbers pointed at Annex 2 transport clauses or at
+  nothing; they now name the Annex 8 section and table (ITU-R
+  M.1371-5). The 6-bit armor citation now names IEC 61162-1, which
+  defines it.
 - The crate docs and README described the typed decoders and
   reassembly as still to come. They now list the supported message
   types.

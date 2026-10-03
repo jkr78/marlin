@@ -11,9 +11,9 @@ track deliverables (not conversational state).
 - [ ] Give the supported sentence and message lists one source
   The NMEA sentence list (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)
   is written out by hand in about twelve places and the AIS type list in about
-  six: root, crate and Python READMEs, `GUIDE.md`, crate-level rustdoc, Cargo
+  six: root, crate, and Python READMEs, `GUIDE.md`, crate-level rustdoc, Cargo
   descriptions, Python docstrings, this file. Ticket 07 existed because GLL,
-  RMC, HDG, TTM and TLL had drifted out of most of them. Pick one home per list
+  RMC, HDG, TTM, and TLL had drifted out of most of them. Pick one home per list
   (the crate README table is the likely one), have the others link to it or
   name only the count, and decide whether a CI check should compare the list
   against the `Nmea0183Message` / `AisMessageBody` variants. Needs a short

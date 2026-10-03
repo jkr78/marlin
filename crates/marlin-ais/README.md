@@ -22,7 +22,7 @@ decoder with `BitReader`.
 
 Field layouts follow ITU-R M.1371-5 Annex 8. A field whose wire code
 means "not available" decodes to `None`. A code that means "this value
-or higher" stays a value. The codes themselves are public constants in
+or higher" stays a value. The codes are public constants in
 `marlin_ais::sentinel`.
 
 `Parser` takes bytes and yields `AisMessage` values. It
@@ -50,8 +50,8 @@ while let Some(result) = parser.next_message() {
 }
 ```
 
-`Parser::one_shot()` is the datagram variant: one sentence per `feed`,
-no `\r\n` needed.
+`Parser::one_shot()` is the datagram variant. It takes one sentence per
+`feed` and does not need a trailing `\r\n`.
 
 ## What AIS is
 

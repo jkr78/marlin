@@ -86,7 +86,7 @@ bytes → marlin-nmea-envelope → RawSentence → parse_aivdm_wrapper
   payload characters into a packed bit buffer plus a bit count with the
   fill bits removed.
 - `bit_reader` — `BitReader` reads unsigned, two's-complement signed,
-  boolean and 6-bit-ASCII string fields (ITU-R M.1371-5 Annex 8 §3,
+  boolean, and 6-bit-ASCII string fields (ITU-R M.1371-5 Annex 8 §3,
   Table 47). A read past the end returns zeros and never panics.
 - `reassembly` — `AisReassembler` joins multi-sentence payloads.
 - `message` — `AisMessage { is_own_ship, body }`, the `AisMessageBody`
@@ -97,7 +97,7 @@ bytes → marlin-nmea-envelope → RawSentence → parse_aivdm_wrapper
   streaming at runtime.
 - `shared_types` — `Dimensions`, `EpfdType`, `is_auxiliary_craft_mmsi`,
   the public `sentinel` constants, and the crate-private readers for
-  longitude, latitude, COG, heading and SOG that the position decoders
+  longitude, latitude, COG, heading, and SOG that the position decoders
   share.
 - `error` — `AisError` (`non_exhaustive`).
 - One module per message layout, each with a public `decode_*` function
@@ -128,8 +128,9 @@ needs to tell an over-range value from a measurement compares against
 them.
 
 Rate of turn is the exception. ±127 means "turning at more than 5° per
-30 s, no turn indicator", which is a status and not a rate, so
-`PositionReportA.rate_of_turn` is an `Option<RateOfTurn>` enum.
+30 s, no turn indicator". That is a status, so
+`PositionReportA.rate_of_turn` is an `Option<RateOfTurn>` enum with a
+variant for it.
 
 See [ADR-0001](adr/0001-sentinel-representation.md).
 
@@ -156,21 +157,20 @@ touches no state.
   `AisError::ReassemblyOutOfOrder` and drops the partial.
 - At most `DEFAULT_MAX_PARTIALS` (16) partials are open. One more
   evicts the oldest and queues `AisError::ReassemblyTimeout`.
-- Expiry by age is opt-in: `with_timeout_ms` sets the limit, and the
-  caller supplies monotonic milliseconds through `feed_fragment_at`,
-  `tick`, or `AisFragmentParser::next_message_at`. The crate never
-  reads a clock.
+- Expiry by age is opt-in. `with_timeout_ms` sets the limit. The crate
+  never reads a clock, so the caller supplies monotonic milliseconds
+  through `feed_fragment_at`, `tick`, or
+  `AisFragmentParser::next_message_at`.
 
 ### Python mirror policy
 
-`marlin.ais` exposes one class per message struct (Types 1, 2 and 3
+`marlin.ais` exposes one class per message struct (Types 1, 2, and 3
 share `PositionReportA`) plus a `type_tag` string on `AisMessage` that
-names the variant. Coded enums (`NavStatus`,
-`EpfdType`, `AtonType`) are int-backed classes, and
-`marlin.dataclasses` stores them as `int`.
+names the variant. Coded enums (`NavStatus`, `EpfdType`, `AtonType`)
+are int-backed classes, and `marlin.dataclasses` stores them as `int`.
 
-A Rust enum that carries data in a field position is flattened into
-sibling optional attributes:
+The bindings flatten a Rust enum that carries data in a field position
+into sibling optional attributes:
 
 | Rust field | Python attributes |
 | --- | --- |
