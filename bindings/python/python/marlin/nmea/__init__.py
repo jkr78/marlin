@@ -1,5 +1,7 @@
 """Typed NMEA 0183 decoders (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)."""
 
+from typing import Union
+
 from .. import _core
 
 DecodeError: type[Exception] = _core.DecodeError
@@ -18,6 +20,8 @@ PrdidPitchRollHeading = _core.nmea.PrdidPitchRollHeading
 PrdidRollPitchHeading = _core.nmea.PrdidRollPitchHeading
 PrdidRaw = _core.nmea.PrdidRaw
 Unknown = _core.nmea.Unknown
+# Any typed message; what `decode` returns and `Nmea0183Parser` yields.
+Nmea0183Message = Union[Gga, Gll, Hdt, Rmc, Vtg, Hdg, Ttm, Tll, Psxn, Prdid, Unknown]
 GgaFixQuality = _core.nmea.GgaFixQuality
 VtgMode = _core.nmea.VtgMode
 DataStatus = _core.nmea.DataStatus
@@ -57,6 +61,7 @@ __all__ = [
     "Gll",
     "Hdg",
     "Hdt",
+    "Nmea0183Message",
     "Nmea0183Parser",
     "Prdid",
     "PrdidDialect",

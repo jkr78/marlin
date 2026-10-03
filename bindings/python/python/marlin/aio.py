@@ -8,14 +8,11 @@ chunk, so no thread offload is needed — see GUIDE.md §2.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, AsyncIterator, Optional
+from typing import AsyncIterator, Optional
 
 from marlin.ais import AisMessage, AisParser
 from marlin.envelope import RawSentence, StreamingParser
-from marlin.nmea import Nmea0183Parser
-
-if TYPE_CHECKING:
-    from marlin.nmea import Nmea0183Message
+from marlin.nmea import Nmea0183Message, Nmea0183Parser
 
 __all__ = ["aiter_sentences", "aiter_nmea_messages", "aiter_ais_messages"]
 
@@ -39,7 +36,7 @@ async def aiter_nmea_messages(
     *,
     parser: Optional[Nmea0183Parser] = None,
     chunk_size: int = 4096,
-) -> AsyncIterator["Nmea0183Message"]:
+) -> AsyncIterator[Nmea0183Message]:
     """Yield typed NMEA messages from `reader` until EOF."""
     p = parser if parser is not None else Nmea0183Parser.streaming()
     while chunk := await reader.read(chunk_size):

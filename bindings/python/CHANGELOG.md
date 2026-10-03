@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `02_type21_gpsd_extension`, `03_type21_gpsd_overlong` (gpsd T21-1 and
   T21-2) and `04_type21_short` (246 bits, decodes to nothing).
 
+- `marlin.ais.AisMessageBody`, `marlin.ais.ClockMode`, and
+  `marlin.nmea.Nmea0183Message` exist at runtime. The stubs always
+  exported these three type aliases, but importing one outside
+  `if TYPE_CHECKING:` raised `ImportError`. `AisMessageBody` is the
+  `Union` of the nine AIS body classes, `ClockMode` is
+  `Literal["auto", "manual"]`, and `Nmea0183Message` is the `Union` of
+  the eleven NMEA message classes. `marlin.dataclasses.AisMessageBody`
+  is a different alias, the union of the dataclass mirrors.
+
 ### Fixed
 
 - Every int-backed enum in `marlin.ais` and `marlin.nmea` (`NavStatus`,
