@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `Literal["auto", "manual"]`, and `Nmea0183Message` is the `Union` of
   the eleven NMEA message classes. `marlin.dataclasses.AisMessageBody`
   is a different alias, the union of the dataclass mirrors.
+- `marlin.dataclasses.to_dataclass` also converts a value type passed on
+  its own (`UtcTime`, `UtcDate`, `Dimensions`, `Eta`, and the three
+  `Prdid` bodies), which used to raise `TypeError`. Messages convert
+  exactly as before.
 
 ### Fixed
 
@@ -110,10 +114,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   extension classes define, and `__eq__` on the enums and `RawSentence`
   takes its argument positional-only. Ordinary calls type-check as
   before.
-- `marlin.dataclasses.to_dataclass` also converts a value type passed on
-  its own (`UtcTime`, `UtcDate`, `Dimensions`, `Eta`, and the three
-  `Prdid` bodies), which used to raise `TypeError`. Messages convert
-  exactly as before.
 
 ## [0.1.4] - 2026-07-07
 

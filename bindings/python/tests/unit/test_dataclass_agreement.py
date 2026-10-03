@@ -9,7 +9,8 @@ import pytest
 
 import marlin.dataclasses
 
-BINDING_MODULES = ["marlin.ais", "marlin.nmea", "marlin.envelope"]
+# The converter's own list: a module missing from it is not converted at all.
+BINDING_MODULES = marlin.dataclasses._BINDING_MODULES
 
 DATACLASS_MIRRORS = sorted(
     name

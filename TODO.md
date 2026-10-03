@@ -17,7 +17,7 @@ track deliverables (not conversational state).
   runtime by `mypy.stubtest` (ticket 01, card below), and
   `marlin.dataclasses` converts with one generic converter that pairs a
   binding class with the dataclass mirror of the same name, guarded by
-  `tests/unit/test_dataclass_agreement.py` (ticket 02); adding a message
+  `bindings/python/tests/unit/test_dataclass_agreement.py` (ticket 02); adding a message
   there is now one dataclass and one `__all__` entry. Still open: the
   wording sweep of bare "mirror" (ticket 03), and the binding class itself.
   One `macro_rules!` invocation can generate a regular binding class

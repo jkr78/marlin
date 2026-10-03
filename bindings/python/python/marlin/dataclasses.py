@@ -28,7 +28,7 @@ export it. `tests/unit/test_dataclass_agreement.py` checks the pairing.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Optional, SupportsInt, Tuple, Union
+from typing import Optional, SupportsInt, Tuple, Union, get_args
 
 
 # ---------- shared value types ----------
@@ -522,10 +522,19 @@ def to_dataclass(msg: object) -> object:
 
     Raises ``TypeError`` for anything else, enum members included.
     """
-    if _mirror_of(msg) is None:
+    mirror = _mirror_of(msg)
+    if mirror is None:
         raise TypeError(
             f"to_dataclass: unrecognised marlin message type {type(msg).__qualname__!r}"
         )
+    if mirror is AisMessage:
+        # `AisMessage.body` is the one field the binding class does not type
+        # check, so a hand-built wrapper can hold anything.
+        body = getattr(msg, "body")
+        if _mirror_of(body) not in get_args(AisMessageBody):
+            raise TypeError(
+                f"to_dataclass: unrecognised AIS body type {type(body).__qualname__!r}"
+            )
     return _convert(msg)
 
 

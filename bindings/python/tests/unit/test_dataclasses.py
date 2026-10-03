@@ -476,9 +476,42 @@ def test_hand_built_message_with_no_dimensions_converts_to_all_none() -> None:
 
 
 def test_binding_class_rejects_a_wrong_typed_nested_value() -> None:
-    # `to_dataclass` needs no fallback for a wrong-typed field, because no
-    # such message can be built.
+    # `to_dataclass` needs no fallback for a wrong-typed value field, because
+    # no such message can be built. `AisMessage.body` is the one untyped field.
     import marlin.ais
 
     with pytest.raises(TypeError):
         marlin.ais.StaticAndVoyageA(dimensions="not dimensions")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["junk", None, 5],
+    ids=["str", "none", "int"],
+)
+def test_to_dataclass_type_error_on_hand_built_wrapper_with_a_non_body(
+    body: object,
+) -> None:
+    import marlin.ais
+    from marlin.dataclasses import to_dataclass
+
+    wrapper = marlin.ais.AisMessage(False, "type1", body)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="unrecognised AIS body type"):
+        to_dataclass(wrapper)
+
+
+def test_to_dataclass_type_error_on_wrapper_holding_a_non_body_binding_value() -> None:
+    import marlin.ais
+    import marlin.nmea
+    from marlin.dataclasses import to_dataclass
+
+    enum_member = marlin.ais.NavStatus.AT_ANCHOR
+    nmea_message = marlin.nmea.Hdt(talker=b"IN", heading_true_deg=1.0)
+    enum_as_body = marlin.ais.AisMessage(False, "type1", enum_member)  # type: ignore[arg-type]
+    nmea_as_body = marlin.ais.AisMessage(False, "type1", nmea_message)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="unrecognised AIS body type"):
+        to_dataclass(enum_as_body)
+    with pytest.raises(TypeError, match="unrecognised AIS body type"):
+        to_dataclass(nmea_as_body)
