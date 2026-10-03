@@ -30,7 +30,7 @@ use crate::errors::ais_err;
 
 // ---------- NavStatus ----------
 
-/// Navigation status (mirrors `NavStatus`). Wire values 0..8, 14, 15;
+/// Navigation status (binding class for `NavStatus`). Wire values 0..8, 14, 15;
 /// `Reserved(u8)` for 9..=13 collapses to `NOT_DEFINED`.
 #[pyclass(name = "NavStatus", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -84,7 +84,7 @@ impl From<RustNavStatus> for PyNavStatus {
 
 // ---------- ManeuverIndicator ----------
 
-/// Special maneuver indicator (mirrors `ManeuverIndicator`).
+/// Special maneuver indicator (binding class for `ManeuverIndicator`).
 ///
 /// All four upstream variants are fieldless and map 1:1. The Rust
 /// source is `#[non_exhaustive]` across crate boundaries, which forces
@@ -135,8 +135,9 @@ impl From<RustManeuverIndicator> for PyManeuverIndicator {
 
 /// Direction of turn when a Type 1/2/3 report carries the "turning
 /// right/left at more than 5° per 30 s, no turn indicator" status
-/// (mirrors `TurnDirection`). Exposed on `PositionReportA.turn_direction`
-/// per ADR-0003; `rate_of_turn` is `None` whenever this is set.
+/// (binding class for `TurnDirection`). Exposed on
+/// `PositionReportA.turn_direction` per ADR-0003; `rate_of_turn` is `None`
+/// whenever this is set.
 ///
 /// The int values (`RIGHT = 0`, `LEFT = 1`) are enum discriminants, not
 /// wire codes: on the wire the statuses are the raw ROT bytes `+127` and
@@ -169,7 +170,7 @@ impl From<RustTurnDirection> for PyTurnDirection {
 
 // ---------- AltitudeSensor ----------
 
-/// Source of a SAR aircraft's reported altitude (mirrors
+/// Source of a SAR aircraft's reported altitude (binding class for
 /// `AltitudeSensor`, ITU-R M.1371-5 Table 59 bit 134). The int values
 /// are the wire codes: `GNSS = 0`, `BAROMETRIC = 1`. The Rust enum is
 /// exhaustive (a one-bit field), so the `From` impl needs no wildcard.
@@ -200,7 +201,7 @@ impl From<RustAltitudeSensor> for PyAltitudeSensor {
 
 // ---------- AtonType ----------
 
-/// Type of aid to navigation (mirrors `AtonType`, ITU-R M.1371-5 Table
+/// Type of aid to navigation (binding class for `AtonType`, ITU-R M.1371-5 Table
 /// 74). The int values are the 5-bit wire codes 0..=31. The Rust enum
 /// names all 32 codes, so the `From` impl is exhaustive with no wildcard.
 #[pyclass(name = "AtonType", frozen, eq, eq_int, hash, module = "marlin.ais")]
@@ -315,7 +316,7 @@ impl From<RustAtonType> for PyAtonType {
 
 // ---------- EpfdType ----------
 
-/// Electronic Position-Fixing Device type (mirrors `EpfdType`). Wire
+/// Electronic Position-Fixing Device type (binding class for `EpfdType`). Wire
 /// values 0..8 and 15; `Reserved(u8)` for 9..=14 collapses to
 /// `UNDEFINED`.
 #[pyclass(name = "EpfdType", frozen, eq, eq_int, hash, module = "marlin.ais")]
@@ -367,7 +368,7 @@ impl From<RustEpfdType> for PyEpfdType {
 
 // ---------- AisVersion ----------
 
-/// AIS protocol version indicator (mirrors `AisVersion`). Rust type is
+/// AIS protocol version indicator (binding class for `AisVersion`). Rust type is
 /// `#[non_exhaustive]`; defensive wildcard collapses future variants
 /// onto `FUTURE`.
 #[pyclass(name = "AisVersion", frozen, eq, eq_int, hash, module = "marlin.ais")]
@@ -401,7 +402,7 @@ impl From<RustAisVersion> for PyAisVersion {
 
 // ---------- Dimensions ----------
 
-/// Frozen vessel dimensions value type (mirrors `Dimensions`). All four
+/// Frozen vessel dimensions value type (binding class for `Dimensions`). All four
 /// fields are `Option<u{8,16}>` with `None` signalling "not available"
 /// (the wire sentinel `0`). `_m` suffix preserves the unit, matching
 /// the Rust struct.
@@ -461,7 +462,7 @@ impl From<RustDimensions> for PyDimensions {
 
 // ---------- Eta ----------
 
-/// Frozen ETA value type (mirrors `Eta`). All four fields are
+/// Frozen ETA value type (binding class for `Eta`). All four fields are
 /// `Option<u8>` with `None` on the per-sub-field sentinel.
 #[pyclass(name = "Eta", frozen, eq, hash, module = "marlin.ais")]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -1575,7 +1576,7 @@ impl PyAisMessage {
 
 // ---------- BitReader (power-user primitive) ----------
 
-/// Bit-level reader over an AIS payload. Mirrors `marlin_ais::BitReader`.
+/// Bit-level reader over an AIS payload. Binding class for `marlin_ais::BitReader`.
 ///
 /// The Python wrapper owns its byte buffer and tracks the cursor itself;
 /// every method constructs a fresh Rust `BitReader` and fast-forwards to

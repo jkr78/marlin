@@ -36,7 +36,7 @@ from typing import Optional, SupportsInt, Tuple, Union, get_args
 
 @dataclass(frozen=True)
 class UtcTime:
-    """Mirror of marlin.nmea.UtcTime."""
+    """Dataclass mirror of marlin.nmea.UtcTime."""
 
     hour: int
     minute: int
@@ -46,7 +46,7 @@ class UtcTime:
 
 @dataclass(frozen=True)
 class UtcDate:
-    """Mirror of marlin.nmea.UtcDate (RMC `ddmmyy` field).
+    """Dataclass mirror of marlin.nmea.UtcDate (RMC `ddmmyy` field).
 
     `year_yy` is the raw two-digit year — caller applies century resolution.
     """
@@ -58,7 +58,7 @@ class UtcDate:
 
 @dataclass(frozen=True)
 class Eta:
-    """Mirror of marlin.ais.Eta. All fields are Optional[int]."""
+    """Dataclass mirror of marlin.ais.Eta. All fields are Optional[int]."""
 
     month: Optional[int]
     day: Optional[int]
@@ -68,7 +68,7 @@ class Eta:
 
 @dataclass(frozen=True)
 class Dimensions:
-    """Mirror of marlin.ais.Dimensions. All fields are Optional[int]."""
+    """Dataclass mirror of marlin.ais.Dimensions. All fields are Optional[int]."""
 
     to_bow_m: Optional[int]
     to_stern_m: Optional[int]
@@ -76,12 +76,12 @@ class Dimensions:
     to_starboard_m: Optional[int]
 
 
-# ---------- envelope mirror ----------
+# ---------- envelope dataclass mirror ----------
 
 
 @dataclass(frozen=True)
 class RawSentence:
-    """Mirror of marlin.envelope.RawSentence.
+    """Dataclass mirror of marlin.envelope.RawSentence.
 
     `fields` uses Tuple to preserve frozen-ness (lists are mutable).
     """
@@ -95,12 +95,12 @@ class RawSentence:
     raw: bytes
 
 
-# ---------- NMEA message mirrors ----------
+# ---------- NMEA dataclass mirrors ----------
 
 
 @dataclass(frozen=True)
 class Gga:
-    """Mirror of marlin.nmea.Gga.
+    """Dataclass mirror of marlin.nmea.Gga.
 
     `fix_quality` is stored as an int (wire value) for JSON compatibility.
     """
@@ -120,7 +120,7 @@ class Gga:
 
 @dataclass(frozen=True)
 class Vtg:
-    """Mirror of marlin.nmea.Vtg.
+    """Dataclass mirror of marlin.nmea.Vtg.
 
     `mode` is stored as Optional[int] (wire value) for JSON compatibility.
     """
@@ -135,7 +135,7 @@ class Vtg:
 
 @dataclass(frozen=True)
 class Hdt:
-    """Mirror of marlin.nmea.Hdt."""
+    """Dataclass mirror of marlin.nmea.Hdt."""
 
     talker: Optional[bytes]
     heading_true_deg: Optional[float]
@@ -143,7 +143,7 @@ class Hdt:
 
 @dataclass(frozen=True)
 class Rmc:
-    """Mirror of marlin.nmea.Rmc.
+    """Dataclass mirror of marlin.nmea.Rmc.
 
     `status`, `mode`, and `nav_status` are stored as int (wire values) for
     JSON compatibility. `mode` and `nav_status` are Optional because they
@@ -165,7 +165,7 @@ class Rmc:
 
 @dataclass(frozen=True)
 class Gll:
-    """Mirror of marlin.nmea.Gll.
+    """Dataclass mirror of marlin.nmea.Gll.
 
     `status` is stored as int (wire value) for JSON compatibility.
     """
@@ -180,7 +180,7 @@ class Gll:
 
 @dataclass(frozen=True)
 class Hdg:
-    """Mirror of marlin.nmea.Hdg."""
+    """Dataclass mirror of marlin.nmea.Hdg."""
 
     talker: Optional[bytes]
     heading_magnetic_deg: Optional[float]
@@ -190,7 +190,7 @@ class Hdg:
 
 @dataclass(frozen=True)
 class Ttm:
-    """Mirror of marlin.nmea.Ttm.
+    """Dataclass mirror of marlin.nmea.Ttm.
 
     `bearing_reference`, `course_reference`, `units`, `status`, and
     `acquisition` are stored as Optional[int] (wire values) for JSON
@@ -217,7 +217,7 @@ class Ttm:
 
 @dataclass(frozen=True)
 class Tll:
-    """Mirror of marlin.nmea.Tll.
+    """Dataclass mirror of marlin.nmea.Tll.
 
     `status` is stored as Optional[int] (wire value) for JSON compatibility.
     """
@@ -234,7 +234,7 @@ class Tll:
 
 @dataclass(frozen=True)
 class Unknown:
-    """Mirror of marlin.nmea.Unknown."""
+    """Dataclass mirror of marlin.nmea.Unknown."""
 
     talker: Optional[bytes]
     sentence_type: str
@@ -242,7 +242,7 @@ class Unknown:
 
 @dataclass(frozen=True)
 class Psxn:
-    """Mirror of marlin.nmea.Psxn."""
+    """Dataclass mirror of marlin.nmea.Psxn."""
 
     id: Optional[int]
     token: Optional[bytes]
@@ -253,7 +253,7 @@ class Psxn:
 
 @dataclass(frozen=True)
 class PrdidPitchRollHeading:
-    """Mirror of marlin.nmea.PrdidPitchRollHeading."""
+    """Dataclass mirror of marlin.nmea.PrdidPitchRollHeading."""
 
     pitch_deg: Optional[float]
     roll_deg: Optional[float]
@@ -262,7 +262,7 @@ class PrdidPitchRollHeading:
 
 @dataclass(frozen=True)
 class PrdidRollPitchHeading:
-    """Mirror of marlin.nmea.PrdidRollPitchHeading."""
+    """Dataclass mirror of marlin.nmea.PrdidRollPitchHeading."""
 
     roll_deg: Optional[float]
     pitch_deg: Optional[float]
@@ -271,7 +271,7 @@ class PrdidRollPitchHeading:
 
 @dataclass(frozen=True)
 class PrdidRaw:
-    """Mirror of marlin.nmea.PrdidRaw.
+    """Dataclass mirror of marlin.nmea.PrdidRaw.
 
     `fields` uses Tuple to preserve frozen-ness.
     """
@@ -281,7 +281,7 @@ class PrdidRaw:
 
 @dataclass(frozen=True)
 class Prdid:
-    """Mirror of marlin.nmea.Prdid (tagged union).
+    """Dataclass mirror of marlin.nmea.Prdid (tagged union).
 
     `variant` is the stable snake-case tag string (e.g. "pitch_roll_heading").
     `body` is one of PrdidPitchRollHeading, PrdidRollPitchHeading, or PrdidRaw.
@@ -291,12 +291,12 @@ class Prdid:
     body: Union[PrdidPitchRollHeading, PrdidRollPitchHeading, PrdidRaw]
 
 
-# ---------- AIS message mirrors ----------
+# ---------- AIS dataclass mirrors ----------
 
 
 @dataclass(frozen=True)
 class PositionReportA:
-    """Mirror of marlin.ais.PositionReportA (Types 1/2/3).
+    """Dataclass mirror of marlin.ais.PositionReportA (Types 1/2/3).
 
     `navigation_status` and `special_maneuver` are stored as int (wire values).
     `turn_direction` is stored as int too, but it is the `TurnDirection`
@@ -323,7 +323,7 @@ class PositionReportA:
 
 @dataclass(frozen=True)
 class StaticAndVoyageA:
-    """Mirror of marlin.ais.StaticAndVoyageA (Type 5).
+    """Dataclass mirror of marlin.ais.StaticAndVoyageA (Type 5).
 
     `ais_version` and `epfd` are stored as int (wire values).
     `dimensions` and `eta` are always present (non-Optional) per the Rust type.
@@ -345,7 +345,7 @@ class StaticAndVoyageA:
 
 @dataclass(frozen=True)
 class SarAircraftPositionReport:
-    """Mirror of marlin.ais.SarAircraftPositionReport (Type 9).
+    """Dataclass mirror of marlin.ais.SarAircraftPositionReport (Type 9).
 
     `altitude_m` and `speed_over_ground` are whole metres / whole knots;
     None is the not-available code and over-range codes pass through.
@@ -369,7 +369,7 @@ class SarAircraftPositionReport:
 
 @dataclass(frozen=True)
 class PositionReportB:
-    """Mirror of marlin.ais.PositionReportB (Type 18)."""
+    """Dataclass mirror of marlin.ais.PositionReportB (Type 18)."""
 
     mmsi: int
     speed_over_ground: Optional[float]
@@ -391,7 +391,7 @@ class PositionReportB:
 
 @dataclass(frozen=True)
 class ExtendedPositionReportB:
-    """Mirror of marlin.ais.ExtendedPositionReportB (Type 19).
+    """Dataclass mirror of marlin.ais.ExtendedPositionReportB (Type 19).
 
     `epfd` is stored as int (wire value). `dimensions` is always present.
     """
@@ -415,7 +415,7 @@ class ExtendedPositionReportB:
 
 @dataclass(frozen=True)
 class AidToNavigationReport:
-    """Mirror of marlin.ais.AidToNavigationReport (Type 21).
+    """Dataclass mirror of marlin.ais.AidToNavigationReport (Type 21).
 
     `aton_type` and `epfd` are stored as int (wire values). `name` is the
     joined and trimmed 20 + up to 14 character name; `dimensions` is
@@ -440,7 +440,7 @@ class AidToNavigationReport:
 
 @dataclass(frozen=True)
 class StaticDataB24A:
-    """Mirror of marlin.ais.StaticDataB24A (Type 24 Part A)."""
+    """Dataclass mirror of marlin.ais.StaticDataB24A (Type 24 Part A)."""
 
     mmsi: int
     vessel_name: Optional[str]
@@ -448,7 +448,7 @@ class StaticDataB24A:
 
 @dataclass(frozen=True)
 class StaticDataB24B:
-    """Mirror of marlin.ais.StaticDataB24B (Type 24 Part B).
+    """Dataclass mirror of marlin.ais.StaticDataB24B (Type 24 Part B).
 
     Exactly one of `dimensions` and `mothership_mmsi` is set on parser
     output: the latter for an auxiliary craft (MMSI `98MIDxxxx`), whose
@@ -467,7 +467,7 @@ class StaticDataB24B:
 
 @dataclass(frozen=True)
 class Other:
-    """Mirror of marlin.ais.Other (catch-all for un-decoded msg_type)."""
+    """Dataclass mirror of marlin.ais.Other (catch-all for un-decoded msg_type)."""
 
     msg_type: int
     raw_payload: bytes
@@ -489,7 +489,7 @@ AisMessageBody = Union[
 
 @dataclass(frozen=True)
 class AisMessage:
-    """Mirror of marlin.ais.AisMessage."""
+    """Dataclass mirror of marlin.ais.AisMessage."""
 
     is_own_ship: bool
     type_tag: str

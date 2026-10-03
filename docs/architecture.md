@@ -162,12 +162,13 @@ touches no state.
   through `feed_fragment_at`, `tick`, or
   `AisFragmentParser::next_message_at`.
 
-### Python mirror policy
+### Python binding class policy
 
-`marlin.ais` exposes one class per message struct (Types 1, 2, and 3
-share `PositionReportA`) plus a `type_tag` string on `AisMessage` that
-names the variant. Coded enums (`NavStatus`, `EpfdType`, `AtonType`)
-are int-backed classes, and `marlin.dataclasses` stores them as `int`.
+`marlin.ais` exposes one binding class per message struct (Types 1, 2,
+and 3 share `PositionReportA`) plus a `type_tag` string on `AisMessage`
+that names the variant. Coded enums (`NavStatus`, `EpfdType`, `AtonType`)
+are int-backed binding classes, and the dataclass mirrors in
+`marlin.dataclasses` store them as `int`.
 
 The bindings flatten a Rust enum that carries data in a field position
 into sibling optional attributes:

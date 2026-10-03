@@ -32,7 +32,7 @@ use crate::errors::{decode_err, envelope_err};
 
 // ---------- Enums ----------
 
-/// GPS fix quality indicator (mirrors `GgaFixQuality`).
+/// GPS fix quality indicator (binding class for `GgaFixQuality`).
 ///
 /// `GgaFixQuality::Other(u8)` carries a raw byte this fieldless Python
 /// enum cannot represent; it collapses to `INVALID` for v0.1.
@@ -87,7 +87,7 @@ impl From<RustGgaFixQuality> for PyGgaFixQuality {
     }
 }
 
-/// VTG mode indicator (mirrors `VtgMode`).
+/// VTG mode indicator (binding class for `VtgMode`).
 ///
 /// `VtgMode::Other(u8)` collapses to `NOT_VALID` for v0.1 — same
 /// information-loss rationale as `PyGgaFixQuality`.
@@ -125,7 +125,7 @@ impl From<RustVtgMode> for PyVtgMode {
     }
 }
 
-/// A/V validity status carried by RMC and GLL (mirrors `DataStatus`).
+/// A/V validity status carried by RMC and GLL (binding class for `DataStatus`).
 ///
 /// `DataStatus::Other(u8)` collapses to `VOID` for v0.1 — fieldless
 /// Python enum cannot carry the raw byte. Same trade-off as
@@ -153,7 +153,7 @@ impl From<RustDataStatus> for PyDataStatus {
     }
 }
 
-/// RMC nav-status indicator (NMEA 4.10+, mirrors `RmcNavStatus`).
+/// RMC nav-status indicator (NMEA 4.10+, binding class for `RmcNavStatus`).
 ///
 /// `RmcNavStatus::Other(u8)` collapses to `NOT_VALID`; same fieldless-
 /// enum information loss as the other discriminator types here.
@@ -190,7 +190,7 @@ impl From<RustRmcNavStatus> for PyRmcNavStatus {
     }
 }
 
-/// Radar target tracking state (mirrors `TargetStatus`). `Other(u8)`
+/// Radar target tracking state (binding class for `TargetStatus`). `Other(u8)`
 /// collapses to `UNKNOWN` — a fieldless Python enum cannot carry the
 /// raw byte (same trade-off as `PyVtgMode`).
 #[pyclass(
@@ -225,7 +225,7 @@ impl From<RustTargetStatus> for PyTargetStatus {
     }
 }
 
-/// Bearing/course reference (mirrors `AngleReference`). `Other(u8)` →
+/// Bearing/course reference (binding class for `AngleReference`). `Other(u8)` →
 /// `UNKNOWN`.
 #[pyclass(
     name = "AngleReference",
@@ -256,7 +256,7 @@ impl From<RustAngleReference> for PyAngleReference {
     }
 }
 
-/// Speed/distance units (mirrors `DistanceUnits`). `Other(u8)` →
+/// Speed/distance units (binding class for `DistanceUnits`). `Other(u8)` →
 /// `UNKNOWN`.
 #[pyclass(
     name = "DistanceUnits",
@@ -290,7 +290,7 @@ impl From<RustDistanceUnits> for PyDistanceUnits {
     }
 }
 
-/// Target acquisition type (mirrors `AcquisitionType`). `Other(u8)` →
+/// Target acquisition type (binding class for `AcquisitionType`). `Other(u8)` →
 /// `UNKNOWN`.
 #[pyclass(
     name = "AcquisitionType",
@@ -326,7 +326,7 @@ impl From<RustAcquisitionType> for PyAcquisitionType {
 
 // ---------- UtcTime ----------
 
-/// Frozen UTC time-of-day value (mirrors `UtcTime`).
+/// Frozen UTC time-of-day value (binding class for `UtcTime`).
 #[pyclass(name = "UtcTime", frozen, eq, hash, module = "marlin.nmea")]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PyUtcTime {
@@ -374,7 +374,7 @@ impl From<RustUtcTime> for PyUtcTime {
 // ---------- UtcDate ----------
 
 /// Frozen UTC calendar date carried by RMC's `ddmmyy` field
-/// (mirrors `UtcDate`).
+/// (binding class for `UtcDate`).
 ///
 /// `year_yy` is the raw two-digit year — callers apply their own
 /// century-resolution rule (the spec does not pin a pivot year).
@@ -420,7 +420,7 @@ impl From<RustUtcDate> for PyUtcDate {
 
 // ---------- Gga ----------
 
-/// Frozen `$__GGA` message (mirrors `GgaData`).
+/// Frozen `$__GGA` message (binding class for `GgaData`).
 #[pyclass(name = "Gga", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyGga {
@@ -546,7 +546,7 @@ impl From<GgaData> for PyGga {
 
 // ---------- Vtg ----------
 
-/// Frozen `$__VTG` message (mirrors `VtgData`).
+/// Frozen `$__VTG` message (binding class for `VtgData`).
 #[pyclass(name = "Vtg", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyVtg {
@@ -631,7 +631,7 @@ impl From<VtgData> for PyVtg {
 
 // ---------- Hdt ----------
 
-/// Frozen `$__HDT` message (mirrors `HdtData`).
+/// Frozen `$__HDT` message (binding class for `HdtData`).
 #[pyclass(name = "Hdt", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyHdt {
@@ -679,7 +679,7 @@ impl From<HdtData> for PyHdt {
 
 // ---------- Hdg ----------
 
-/// Frozen `$__HDG` message (mirrors `HdgData`).
+/// Frozen `$__HDG` message (binding class for `HdgData`).
 #[pyclass(name = "Hdg", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyHdg {
@@ -747,7 +747,7 @@ impl From<HdgData> for PyHdg {
 
 // ---------- Ttm ----------
 
-/// Frozen `$__TTM` message (mirrors `TtmData`).
+/// Frozen `$__TTM` message (binding class for `TtmData`).
 #[pyclass(name = "Ttm", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyTtm {
@@ -872,7 +872,7 @@ impl From<TtmData> for PyTtm {
 
 // ---------- Tll ----------
 
-/// Frozen `$__TLL` message (mirrors `TllData`).
+/// Frozen `$__TLL` message (binding class for `TllData`).
 #[pyclass(name = "Tll", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyTll {
@@ -949,7 +949,7 @@ impl From<TllData> for PyTll {
 
 // ---------- Rmc ----------
 
-/// Frozen `$__RMC` message (mirrors `RmcData`).
+/// Frozen `$__RMC` message (binding class for `RmcData`).
 ///
 /// Single-sentence carrier of UTC time + date + position + speed +
 /// course + magnetic variation. Safety-critical consumers should
@@ -1082,7 +1082,7 @@ impl From<RmcData> for PyRmc {
 
 // ---------- Gll ----------
 
-/// Frozen `$__GLL` message (mirrors `GllData`).
+/// Frozen `$__GLL` message (binding class for `GllData`).
 ///
 /// Position-only sentence with UTC time and an A/V validity status.
 /// Safety-critical consumers should reject `DataStatus.VOID` before
@@ -1211,7 +1211,7 @@ impl PyUnknown {
 // ---------- PsxnSlot / PrdidDialect enums ----------
 
 /// Meaning of one of the six `dataN` slots in a PSXN sentence
-/// (mirrors `PsxnSlot`).
+/// (binding class for `PsxnSlot`).
 #[pyclass(name = "PsxnSlot", frozen, eq, eq_int, hash, module = "marlin.nmea")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyPsxnSlot {
@@ -1260,7 +1260,7 @@ impl From<PyPsxnSlot> for RustPsxnSlot {
     }
 }
 
-/// Runtime selector for PRDID field ordering (mirrors `PrdidDialect`).
+/// Runtime selector for PRDID field ordering (binding class for `PrdidDialect`).
 #[pyclass(
     name = "PrdidDialect",
     frozen,
@@ -1306,7 +1306,7 @@ impl From<PyPrdidDialect> for RustPrdidDialect {
 
 // ---------- PsxnLayout / DecodeOptions ----------
 
-/// Frozen PSXN layout descriptor (mirrors `PsxnLayout`).
+/// Frozen PSXN layout descriptor (binding class for `PsxnLayout`).
 ///
 /// Construct via the `from_str()` staticmethod with a legacy layout
 /// string like `"rphx"` or `"rphx1"` (case-insensitive).
@@ -1321,7 +1321,7 @@ impl PyPsxnLayout {
     /// Parse a legacy layout string. Raises `ValueError` on unrecognised
     /// characters or more than 6 slots.
     //
-    // The `from_str` name mirrors the Rust `FromStr` impl for Python-side
+    // The `from_str` name follows the Rust `FromStr` impl for Python-side
     // symmetry; silence `should_implement_trait` since the trait is
     // inherently not available in Python.
     #[staticmethod]
@@ -1357,7 +1357,7 @@ impl PyPsxnLayout {
     }
 }
 
-/// Frozen runtime configuration for ambiguous decodings (mirrors
+/// Frozen runtime configuration for ambiguous decodings (binding class for
 /// `DecodeOptions`). Construct with `DecodeOptions()` and chain
 /// `.with_psxn_layout(...)` / `.with_prdid_dialect(...)`.
 #[pyclass(name = "DecodeOptions", frozen, module = "marlin.nmea")]
@@ -1402,7 +1402,7 @@ impl PyDecodeOptions {
 
 // ---------- Psxn ----------
 
-/// Frozen `$PSXN` payload (mirrors `PsxnData`).
+/// Frozen `$PSXN` payload (binding class for `PsxnData`).
 ///
 /// PSXN is proprietary — there is no talker. `PsxnLayout` describes
 /// how the six on-wire slots decode into these five motion quantities;
@@ -1481,8 +1481,8 @@ impl From<PsxnData> for PyPsxn {
 // ---------- Prdid (tagged union) ----------
 
 /// Frozen `$PRDID` body for the `pitch, roll, heading` dialect
-/// (mirrors `PrdidPitchRollHeading`).
-// Field names mirror the Rust struct and are Python-visible via getters;
+/// (binding class for `PrdidPitchRollHeading`).
+// Field names match the Rust struct and are Python-visible via getters;
 // `_deg` conveys the unit and must stay.
 #[allow(clippy::struct_field_names)]
 #[pyclass(name = "PrdidPitchRollHeading", frozen, module = "marlin.nmea")]
@@ -1530,8 +1530,8 @@ impl From<RustPrdidPitchRollHeading> for PyPrdidPitchRollHeading {
 }
 
 /// Frozen `$PRDID` body for the `roll, pitch, heading` dialect
-/// (mirrors `PrdidRollPitchHeading`).
-// Field names mirror the Rust struct and are Python-visible via getters;
+/// (binding class for `PrdidRollPitchHeading`).
+// Field names match the Rust struct and are Python-visible via getters;
 // `_deg` conveys the unit and must stay.
 #[allow(clippy::struct_field_names)]
 #[pyclass(name = "PrdidRollPitchHeading", frozen, module = "marlin.nmea")]
@@ -1578,7 +1578,7 @@ impl From<RustPrdidRollPitchHeading> for PyPrdidRollPitchHeading {
     }
 }
 
-/// Frozen `$PRDID` raw-bytes body (mirrors `PrdidData::Raw`).
+/// Frozen `$PRDID` raw-bytes body (binding class for `PrdidData::Raw`).
 ///
 /// Emitted when no dialect is configured (default
 /// `PrdidDialect.UNKNOWN`). The `fields` getter returns a tuple of
@@ -1841,7 +1841,7 @@ impl PyNmea0183Parser {
     }
 }
 
-/// Owned mirror of `Nmea0183Message<'a>` — lifetime-stripped so we can
+/// Owned copy of `Nmea0183Message<'a>` — lifetime-stripped so we can
 /// hand the result back across `PyO3` borrows without holding the
 /// underlying envelope buffer borrow open.
 enum OwnedMessage {
