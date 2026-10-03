@@ -110,6 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   extension classes define, and `__eq__` on the enums and `RawSentence`
   takes its argument positional-only. Ordinary calls type-check as
   before.
+- `marlin.dataclasses.to_dataclass` also converts a value type passed on
+  its own (`UtcTime`, `UtcDate`, `Dimensions`, `Eta`, and the three
+  `Prdid` bodies), which used to raise `TypeError`. Messages convert
+  exactly as before.
 
 ## [0.1.4] - 2026-07-07
 

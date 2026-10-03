@@ -17,14 +17,18 @@ classes — `dataclasses.asdict()` cannot introspect them. Convert with
 `to_dataclass(msg)` to get a frozen-dataclass equivalent.
 
 Enum-typed fields (GgaFixQuality, NavStatus, EpfdType, etc.) are stored
-as their integer values for JSON-friendly output. The converters below
-handle the `int(...)` extraction.
+as their integer values for JSON-friendly output.
+
+A dataclass mirror has the same name and the same field names as its
+binding class; `to_dataclass` relies on both to convert without a
+per-class function. To add a message, write its dataclass here and
+export it. `tests/unit/test_dataclass_agreement.py` checks the pairing.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from dataclasses import dataclass, fields, is_dataclass
+from typing import Optional, SupportsInt, Tuple, Union
 
 
 # ---------- shared value types ----------
@@ -497,433 +501,65 @@ class AisMessage:
 NmeaMessage = Union[Gga, Gll, Hdg, Hdt, Rmc, Tll, Ttm, Vtg, Psxn, Prdid, Unknown]
 
 
-# ---------- dispatcher ----------
+# ---------- conversion ----------
+
+# Modules whose classes are binding classes. A value from one of them is
+# either a class with a dataclass mirror of the same name, or an enum.
+_BINDING_MODULES = ("marlin.ais", "marlin.envelope", "marlin.nmea")
 
 
 def to_dataclass(msg: object) -> object:
     """Convert a marlin runtime message into its frozen dataclass mirror.
 
     Accepts any of:
+
     - Envelope: ``marlin.envelope.RawSentence``
     - NMEA: ``Gga``, ``Gll``, ``Hdg``, ``Hdt``, ``Rmc``, ``Tll``, ``Ttm``,
       ``Vtg``, ``Psxn``, ``Prdid``, ``Unknown``
     - AIS: ``AisMessage`` (the wrapper) or any body variant directly
+    - A value type nested in one of those, such as ``UtcTime``,
+      ``Dimensions`` or ``Eta``
 
-    Raises ``TypeError`` if the object is not a recognized marlin message.
+    Raises ``TypeError`` for anything else, enum members included.
     """
-    import marlin.ais as _ais
-    import marlin.envelope as _env
-    import marlin.nmea as _nmea
-
-    # --- envelope ---
-    if isinstance(msg, _env.RawSentence):
-        return RawSentence(
-            start_delimiter=msg.start_delimiter,
-            talker=msg.talker,
-            sentence_type=msg.sentence_type,
-            fields=msg.fields,
-            tag_block=msg.tag_block,
-            checksum_ok=msg.checksum_ok,
-            raw=msg.raw,
+    if _mirror_of(msg) is None:
+        raise TypeError(
+            f"to_dataclass: unrecognised marlin message type {type(msg).__qualname__!r}"
         )
-
-    # --- NMEA ---
-    if isinstance(msg, _nmea.Gga):
-        return Gga(
-            talker=msg.talker,
-            utc=_convert_utc(msg.utc),
-            latitude_deg=msg.latitude_deg,
-            longitude_deg=msg.longitude_deg,
-            fix_quality=int(msg.fix_quality),
-            satellites_used=msg.satellites_used,
-            hdop=msg.hdop,
-            altitude_m=msg.altitude_m,
-            geoid_separation_m=msg.geoid_separation_m,
-            dgps_age_s=msg.dgps_age_s,
-            dgps_station_id=msg.dgps_station_id,
-        )
-    if isinstance(msg, _nmea.Vtg):
-        return Vtg(
-            talker=msg.talker,
-            course_true_deg=msg.course_true_deg,
-            course_magnetic_deg=msg.course_magnetic_deg,
-            speed_knots=msg.speed_knots,
-            speed_kmh=msg.speed_kmh,
-            mode=int(msg.mode) if msg.mode is not None else None,
-        )
-    if isinstance(msg, _nmea.Hdt):
-        return Hdt(
-            talker=msg.talker,
-            heading_true_deg=msg.heading_true_deg,
-        )
-    if isinstance(msg, _nmea.Rmc):
-        return Rmc(
-            talker=msg.talker,
-            utc=_convert_utc(msg.utc),
-            status=int(msg.status),
-            latitude_deg=msg.latitude_deg,
-            longitude_deg=msg.longitude_deg,
-            speed_knots=msg.speed_knots,
-            course_true_deg=msg.course_true_deg,
-            date=_convert_date(msg.date),
-            magnetic_variation_deg=msg.magnetic_variation_deg,
-            mode=int(msg.mode) if msg.mode is not None else None,
-            nav_status=int(msg.nav_status) if msg.nav_status is not None else None,
-        )
-    if isinstance(msg, _nmea.Gll):
-        return Gll(
-            talker=msg.talker,
-            latitude_deg=msg.latitude_deg,
-            longitude_deg=msg.longitude_deg,
-            utc=_convert_utc(msg.utc),
-            status=int(msg.status),
-            mode=int(msg.mode) if msg.mode is not None else None,
-        )
-    if isinstance(msg, _nmea.Hdg):
-        return Hdg(
-            talker=msg.talker,
-            heading_magnetic_deg=msg.heading_magnetic_deg,
-            deviation_deg=msg.deviation_deg,
-            variation_deg=msg.variation_deg,
-        )
-    if isinstance(msg, _nmea.Ttm):
-        return Ttm(
-            talker=msg.talker,
-            target_number=msg.target_number,
-            distance=msg.distance,
-            bearing_deg=msg.bearing_deg,
-            bearing_reference=(
-                int(msg.bearing_reference) if msg.bearing_reference is not None else None
-            ),
-            speed=msg.speed,
-            course_deg=msg.course_deg,
-            course_reference=(
-                int(msg.course_reference) if msg.course_reference is not None else None
-            ),
-            cpa=msg.cpa,
-            tcpa=msg.tcpa,
-            units=int(msg.units) if msg.units is not None else None,
-            name=msg.name,
-            status=int(msg.status) if msg.status is not None else None,
-            reference_target=msg.reference_target,
-            utc_time=_convert_utc(msg.utc_time),
-            acquisition=int(msg.acquisition) if msg.acquisition is not None else None,
-        )
-    if isinstance(msg, _nmea.Tll):
-        return Tll(
-            talker=msg.talker,
-            target_number=msg.target_number,
-            latitude_deg=msg.latitude_deg,
-            longitude_deg=msg.longitude_deg,
-            name=msg.name,
-            utc_time=_convert_utc(msg.utc_time),
-            status=int(msg.status) if msg.status is not None else None,
-            reference_target=msg.reference_target,
-        )
-    if isinstance(msg, _nmea.Unknown):
-        return Unknown(
-            talker=msg.talker,
-            sentence_type=msg.sentence_type,
-        )
-    if isinstance(msg, _nmea.Psxn):
-        return Psxn(
-            id=msg.id,
-            token=msg.token,
-            roll_deg=msg.roll_deg,
-            pitch_deg=msg.pitch_deg,
-            heave_m=msg.heave_m,
-        )
-    if isinstance(msg, _nmea.Prdid):
-        return _convert_prdid(msg)
-
-    # --- AIS ---
-    if isinstance(msg, _ais.AisMessage):
-        return AisMessage(
-            is_own_ship=msg.is_own_ship,
-            type_tag=msg.type_tag,
-            body=_convert_ais_body(msg.body),
-        )
-    # A bare AIS body goes through the same dispatcher as a wrapped one,
-    # so each body type is registered in exactly one place.
-    try:
-        return _convert_ais_body(msg)
-    except TypeError:
-        pass
-
-    raise TypeError(
-        f"to_dataclass: unrecognised marlin message type {type(msg).__qualname__!r}"
-    )
+    return _convert(msg)
 
 
-# ---------- private converters ----------
-
-
-def _convert_date(date: object) -> Optional[UtcDate]:
-    import marlin.nmea as _nmea
-
-    if date is None:
+def _mirror_of(value: object) -> Optional[type]:
+    """The dataclass mirror named like `value`'s binding class, if any."""
+    binding_class = type(value)
+    if binding_class.__module__ not in _BINDING_MODULES:
         return None
-    if isinstance(date, _nmea.UtcDate):
-        return UtcDate(day=date.day, month=date.month, year_yy=date.year_yy)
-    raise TypeError(
-        f"_convert_date: expected marlin.nmea.UtcDate, got {type(date).__qualname__!r}"
-    )
+    mirror = globals().get(binding_class.__name__)
+    if isinstance(mirror, type) and is_dataclass(mirror):
+        return mirror
+    return None
 
 
-def _convert_utc(utc: object) -> Optional[UtcTime]:
-    import marlin.nmea as _nmea
+def _convert(value: object) -> object:
+    """Convert one value, descending into nested binding classes.
 
-    if utc is None:
-        return None
-    if isinstance(utc, _nmea.UtcTime):
-        return UtcTime(
-            hour=utc.hour,
-            minute=utc.minute,
-            second=utc.second,
-            millisecond=utc.millisecond,
+    A binding class becomes its dataclass mirror, field by field. Any other
+    value from a binding module is an enum and becomes its integer. Everything
+    else (``None``, numbers, ``str``, ``bytes``, tuples of those) passes through.
+    """
+    mirror = _mirror_of(value)
+    if mirror is not None:
+        return mirror(
+            **{f.name: _convert(getattr(value, f.name)) for f in fields(mirror)}
         )
-    raise TypeError(
-        f"_convert_utc: expected UtcTime or None, got {type(utc).__qualname__!r}"
-    )
-
-
-def _convert_dimensions(d: object) -> Dimensions:
-    import marlin.ais as _ais
-
-    if isinstance(d, _ais.Dimensions):
-        return Dimensions(
-            to_bow_m=d.to_bow_m,
-            to_stern_m=d.to_stern_m,
-            to_port_m=d.to_port_m,
-            to_starboard_m=d.to_starboard_m,
-        )
-    return Dimensions(to_bow_m=None, to_stern_m=None, to_port_m=None, to_starboard_m=None)
-
-
-def _convert_eta(e: object) -> Eta:
-    import marlin.ais as _ais
-
-    if isinstance(e, _ais.Eta):
-        return Eta(month=e.month, day=e.day, hour=e.hour, minute=e.minute)
-    return Eta(month=None, day=None, hour=None, minute=None)
-
-
-def _convert_prdid(msg: object) -> Prdid:
-    import marlin.nmea as _nmea
-
-    if not isinstance(msg, _nmea.Prdid):
-        raise TypeError(f"expected Prdid, got {type(msg)!r}")
-    variant = msg.variant
-    body = msg.body
-    if isinstance(body, _nmea.PrdidPitchRollHeading):
-        dc_body: Union[PrdidPitchRollHeading, PrdidRollPitchHeading, PrdidRaw] = (
-            PrdidPitchRollHeading(
-                pitch_deg=body.pitch_deg,
-                roll_deg=body.roll_deg,
-                heading_deg=body.heading_deg,
+    if type(value).__module__ in _BINDING_MODULES:
+        if not isinstance(value, SupportsInt):
+            raise TypeError(
+                f"to_dataclass: {type(value).__qualname__!r} has no dataclass mirror"
+                " and is not an enum"
             )
-        )
-    elif isinstance(body, _nmea.PrdidRollPitchHeading):
-        dc_body = PrdidRollPitchHeading(
-            roll_deg=body.roll_deg,
-            pitch_deg=body.pitch_deg,
-            heading_deg=body.heading_deg,
-        )
-    else:
-        # PrdidRaw (isinstance check for type narrowing)
-        if isinstance(body, _nmea.PrdidRaw):
-            dc_body = PrdidRaw(fields=body.fields)
-        else:
-            dc_body = PrdidRaw(fields=())
-    return Prdid(variant=variant, body=dc_body)
-
-
-def _convert_position_report_a(msg: object) -> PositionReportA:
-    import marlin.ais as _ais
-
-    if not isinstance(msg, _ais.PositionReportA):
-        raise TypeError(f"expected PositionReportA, got {type(msg)!r}")
-    return PositionReportA(
-        mmsi=msg.mmsi,
-        navigation_status=int(msg.navigation_status),
-        rate_of_turn=msg.rate_of_turn,
-        turn_direction=(
-            int(msg.turn_direction) if msg.turn_direction is not None else None
-        ),
-        speed_over_ground=msg.speed_over_ground,
-        position_accuracy=msg.position_accuracy,
-        longitude_deg=msg.longitude_deg,
-        latitude_deg=msg.latitude_deg,
-        course_over_ground=msg.course_over_ground,
-        true_heading=msg.true_heading,
-        timestamp=msg.timestamp,
-        special_maneuver=int(msg.special_maneuver),
-        raim=msg.raim,
-        radio_status=msg.radio_status,
-    )
-
-
-def _convert_static_and_voyage_a(msg: object) -> StaticAndVoyageA:
-    import marlin.ais as _ais
-
-    if not isinstance(msg, _ais.StaticAndVoyageA):
-        raise TypeError(f"expected StaticAndVoyageA, got {type(msg)!r}")
-    return StaticAndVoyageA(
-        mmsi=msg.mmsi,
-        ais_version=int(msg.ais_version),
-        imo_number=msg.imo_number,
-        call_sign=msg.call_sign,
-        vessel_name=msg.vessel_name,
-        ship_type=msg.ship_type,
-        dimensions=_convert_dimensions(msg.dimensions),
-        epfd=int(msg.epfd),
-        eta=_convert_eta(msg.eta),
-        draught_m=msg.draught_m,
-        destination=msg.destination,
-        dte=msg.dte,
-    )
-
-
-def _convert_sar_aircraft_position_report(msg: object) -> SarAircraftPositionReport:
-    import marlin.ais as _ais
-
-    if not isinstance(msg, _ais.SarAircraftPositionReport):
-        raise TypeError(f"expected SarAircraftPositionReport, got {type(msg)!r}")
-    return SarAircraftPositionReport(
-        mmsi=msg.mmsi,
-        altitude_m=msg.altitude_m,
-        speed_over_ground=msg.speed_over_ground,
-        position_accuracy=msg.position_accuracy,
-        longitude_deg=msg.longitude_deg,
-        latitude_deg=msg.latitude_deg,
-        course_over_ground=msg.course_over_ground,
-        timestamp=msg.timestamp,
-        altitude_sensor=int(msg.altitude_sensor),
-        dte=msg.dte,
-        assigned_flag=msg.assigned_flag,
-        raim=msg.raim,
-        radio_status=msg.radio_status,
-    )
-
-
-def _convert_position_report_b(msg: object) -> PositionReportB:
-    import marlin.ais as _ais
-
-    if not isinstance(msg, _ais.PositionReportB):
-        raise TypeError(f"expected PositionReportB, got {type(msg)!r}")
-    return PositionReportB(
-        mmsi=msg.mmsi,
-        speed_over_ground=msg.speed_over_ground,
-        position_accuracy=msg.position_accuracy,
-        longitude_deg=msg.longitude_deg,
-        latitude_deg=msg.latitude_deg,
-        course_over_ground=msg.course_over_ground,
-        true_heading=msg.true_heading,
-        timestamp=msg.timestamp,
-        class_b_cs_flag=msg.class_b_cs_flag,
-        class_b_display_flag=msg.class_b_display_flag,
-        class_b_dsc_flag=msg.class_b_dsc_flag,
-        class_b_band_flag=msg.class_b_band_flag,
-        class_b_message22_flag=msg.class_b_message22_flag,
-        assigned_flag=msg.assigned_flag,
-        raim=msg.raim,
-        radio_status=msg.radio_status,
-    )
-
-
-def _convert_extended_position_report_b(msg: object) -> ExtendedPositionReportB:
-    import marlin.ais as _ais
-
-    if not isinstance(msg, _ais.ExtendedPositionReportB):
-        raise TypeError(f"expected ExtendedPositionReportB, got {type(msg)!r}")
-    return ExtendedPositionReportB(
-        mmsi=msg.mmsi,
-        speed_over_ground=msg.speed_over_ground,
-        position_accuracy=msg.position_accuracy,
-        longitude_deg=msg.longitude_deg,
-        latitude_deg=msg.latitude_deg,
-        course_over_ground=msg.course_over_ground,
-        true_heading=msg.true_heading,
-        timestamp=msg.timestamp,
-        vessel_name=msg.vessel_name,
-        ship_type=msg.ship_type,
-        dimensions=_convert_dimensions(msg.dimensions),
-        epfd=int(msg.epfd),
-        raim=msg.raim,
-        dte=msg.dte,
-        assigned_flag=msg.assigned_flag,
-    )
-
-
-def _convert_aid_to_navigation_report(msg: object) -> AidToNavigationReport:
-    import marlin.ais as _ais
-
-    if not isinstance(msg, _ais.AidToNavigationReport):
-        raise TypeError(f"expected AidToNavigationReport, got {type(msg)!r}")
-    return AidToNavigationReport(
-        mmsi=msg.mmsi,
-        aton_type=int(msg.aton_type),
-        name=msg.name,
-        position_accuracy=msg.position_accuracy,
-        longitude_deg=msg.longitude_deg,
-        latitude_deg=msg.latitude_deg,
-        dimensions=_convert_dimensions(msg.dimensions),
-        epfd=int(msg.epfd),
-        timestamp=msg.timestamp,
-        off_position=msg.off_position,
-        aton_status=msg.aton_status,
-        raim=msg.raim,
-        virtual_aton=msg.virtual_aton,
-        assigned_flag=msg.assigned_flag,
-    )
-
-
-def _convert_static_data_b24b(msg: object) -> StaticDataB24B:
-    import marlin.ais as _ais
-
-    if not isinstance(msg, _ais.StaticDataB24B):
-        raise TypeError(f"expected StaticDataB24B, got {type(msg)!r}")
-    return StaticDataB24B(
-        mmsi=msg.mmsi,
-        ship_type=msg.ship_type,
-        vendor_id=msg.vendor_id,
-        call_sign=msg.call_sign,
-        dimensions=(
-            _convert_dimensions(msg.dimensions) if msg.dimensions is not None else None
-        ),
-        mothership_mmsi=msg.mothership_mmsi,
-        epfd=int(msg.epfd),
-    )
-
-
-def _convert_ais_body(body: object) -> AisMessageBody:
-    import marlin.ais as _ais
-
-    if isinstance(body, _ais.PositionReportA):
-        return _convert_position_report_a(body)
-    if isinstance(body, _ais.StaticAndVoyageA):
-        return _convert_static_and_voyage_a(body)
-    if isinstance(body, _ais.SarAircraftPositionReport):
-        return _convert_sar_aircraft_position_report(body)
-    if isinstance(body, _ais.PositionReportB):
-        return _convert_position_report_b(body)
-    if isinstance(body, _ais.ExtendedPositionReportB):
-        return _convert_extended_position_report_b(body)
-    if isinstance(body, _ais.AidToNavigationReport):
-        return _convert_aid_to_navigation_report(body)
-    if isinstance(body, _ais.StaticDataB24A):
-        return StaticDataB24A(mmsi=body.mmsi, vessel_name=body.vessel_name)
-    if isinstance(body, _ais.StaticDataB24B):
-        return _convert_static_data_b24b(body)
-    if isinstance(body, _ais.Other):
-        return Other(
-            msg_type=body.msg_type,
-            raw_payload=body.raw_payload,
-            total_bits=body.total_bits,
-        )
-    raise TypeError(
-        f"to_dataclass: unrecognised AIS body type {type(body).__qualname__!r}"
-    )
+        return int(value)
+    return value
 
 
 __all__ = [
