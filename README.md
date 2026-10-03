@@ -11,10 +11,10 @@ unit-test byte slices.
 
 | Crate | Purpose | Status |
 | --- | --- | --- |
-| [`marlin-nmea-envelope`](./crates/marlin-nmea-envelope) | NMEA 0183 framing, checksum, TAG block recognition | feature-complete (v0.1) |
-| [`marlin-nmea-0183`](./crates/marlin-nmea-0183) | Typed NMEA sentence decoders (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID) | feature-complete (v0.1) |
-| [`marlin-ais`](./crates/marlin-ais) | Typed AIS message decoders + multi-sentence reassembly | feature-complete (v0.1) |
-| [`marlin-klv`](./crates/marlin-klv) | MISB ST 0601 (KLV) encoder/decoder | feature-complete (v0.1) |
+| [`marlin-nmea-envelope`](./crates/marlin-nmea-envelope) | NMEA 0183 framing, checksum, TAG block recognition | feature-complete |
+| [`marlin-nmea-0183`](./crates/marlin-nmea-0183) | Typed NMEA sentence decoders (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID) | feature-complete |
+| [`marlin-ais`](./crates/marlin-ais) | Typed AIS message decoders + multi-sentence reassembly | feature-complete |
+| [`marlin-klv`](./crates/marlin-klv) | MISB ST 0601 (KLV) encoder/decoder | feature-complete |
 
 `marlin-nmea-0183` and `marlin-ais` are siblings; both depend on
 `marlin-nmea-envelope` but not on each other. `marlin-klv` is a
