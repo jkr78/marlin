@@ -12,13 +12,15 @@ use pyo3::types::{PyBytes, PyModule};
 
 use marlin_ais::{
     AisFragmentParser, AisMessageBody, AisReassembler, AisVersion as RustAisVersion,
-    BitReader as RustBitReader, Dimensions as RustDimensions, EpfdType as RustEpfdType,
-    Eta as RustEta, ExtendedPositionReportB as RustExtendedPositionReportB,
+    AltitudeSensor as RustAltitudeSensor, BitReader as RustBitReader, Dimensions as RustDimensions,
+    EpfdType as RustEpfdType, Eta as RustEta,
+    ExtendedPositionReportB as RustExtendedPositionReportB,
     ManeuverIndicator as RustManeuverIndicator, NavStatus as RustNavStatus,
     PositionReportA as RustPositionReportA, PositionReportB as RustPositionReportB,
-    RateOfTurn as RustRateOfTurn, StaticAndVoyageA as RustStaticAndVoyageA,
-    StaticDataB24A as RustStaticDataB24A, StaticDataB24B as RustStaticDataB24B,
-    TurnDirection as RustTurnDirection, Type24BExtent as RustType24BExtent, DEFAULT_MAX_PARTIALS,
+    RateOfTurn as RustRateOfTurn, SarAircraftPositionReport as RustSarAircraftPositionReport,
+    StaticAndVoyageA as RustStaticAndVoyageA, StaticDataB24A as RustStaticDataB24A,
+    StaticDataB24B as RustStaticDataB24B, TurnDirection as RustTurnDirection,
+    Type24BExtent as RustType24BExtent, DEFAULT_MAX_PARTIALS,
 };
 use marlin_nmea_envelope::{OneShot, Streaming};
 
@@ -160,6 +162,37 @@ impl From<RustTurnDirection> for PyTurnDirection {
         match v {
             RustTurnDirection::Right => Self::Right,
             RustTurnDirection::Left => Self::Left,
+        }
+    }
+}
+
+// ---------- AltitudeSensor ----------
+
+/// Source of a SAR aircraft's reported altitude (mirrors
+/// `AltitudeSensor`, ITU-R M.1371-5 Table 59 bit 134). The int values
+/// are the wire codes: `GNSS = 0`, `BAROMETRIC = 1`. The Rust enum is
+/// exhaustive (a one-bit field), so the `From` impl needs no wildcard.
+#[pyclass(
+    name = "AltitudeSensor",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.ais"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyAltitudeSensor {
+    #[pyo3(name = "GNSS")]
+    Gnss = 0,
+    #[pyo3(name = "BAROMETRIC")]
+    Barometric = 1,
+}
+
+impl From<RustAltitudeSensor> for PyAltitudeSensor {
+    fn from(v: RustAltitudeSensor) -> Self {
+        match v {
+            RustAltitudeSensor::Gnss => Self::Gnss,
+            RustAltitudeSensor::Barometric => Self::Barometric,
         }
     }
 }
@@ -603,6 +636,127 @@ impl From<RustStaticAndVoyageA> for PyStaticAndVoyageA {
             draught_m: d.draught_m,
             destination: d.destination,
             dte: d.dte,
+        }
+    }
+}
+
+// ---------- SarAircraftPositionReport (Type 9) ----------
+
+/// Standard SAR aircraft position report payload (Type 9).
+///
+/// `altitude_m` and `speed_over_ground` are whole metres / whole knots
+/// (not 0.1 kn as on the vessel reports); `None` is the not-available
+/// code, over-range codes (4094 m, 1022 kn) pass through (ADR-0001).
+/// No heading, rate of turn or navigational status exists on Type 9.
+// 4 bools (`position_accuracy`, `dte`, `assigned_flag`, `raim`) are
+// ITU-R M.1371 wire-format flags — the wire reality.
+#[allow(clippy::struct_excessive_bools)]
+#[pyclass(name = "SarAircraftPositionReport", frozen, module = "marlin.ais")]
+#[derive(Clone, Debug)]
+pub struct PySarAircraftPositionReport {
+    #[pyo3(get)]
+    mmsi: u32,
+    #[pyo3(get)]
+    altitude_m: Option<u16>,
+    #[pyo3(get)]
+    speed_over_ground: Option<u16>,
+    #[pyo3(get)]
+    position_accuracy: bool,
+    #[pyo3(get)]
+    longitude_deg: Option<f64>,
+    #[pyo3(get)]
+    latitude_deg: Option<f64>,
+    #[pyo3(get)]
+    course_over_ground: Option<f32>,
+    #[pyo3(get)]
+    timestamp: u8,
+    #[pyo3(get)]
+    altitude_sensor: PyAltitudeSensor,
+    #[pyo3(get)]
+    dte: bool,
+    #[pyo3(get)]
+    assigned_flag: bool,
+    #[pyo3(get)]
+    raim: bool,
+    #[pyo3(get)]
+    radio_status: u32,
+}
+
+#[pymethods]
+impl PySarAircraftPositionReport {
+    #[new]
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+    #[pyo3(signature = (
+        mmsi = 0,
+        altitude_m = None,
+        speed_over_ground = None,
+        position_accuracy = false,
+        longitude_deg = None,
+        latitude_deg = None,
+        course_over_ground = None,
+        timestamp = 60,
+        altitude_sensor = PyAltitudeSensor::Gnss,
+        dte = false,
+        assigned_flag = false,
+        raim = false,
+        radio_status = 0,
+    ))]
+    fn new(
+        mmsi: u32,
+        altitude_m: Option<u16>,
+        speed_over_ground: Option<u16>,
+        position_accuracy: bool,
+        longitude_deg: Option<f64>,
+        latitude_deg: Option<f64>,
+        course_over_ground: Option<f32>,
+        timestamp: u8,
+        altitude_sensor: PyAltitudeSensor,
+        dte: bool,
+        assigned_flag: bool,
+        raim: bool,
+        radio_status: u32,
+    ) -> Self {
+        Self {
+            mmsi,
+            altitude_m,
+            speed_over_ground,
+            position_accuracy,
+            longitude_deg,
+            latitude_deg,
+            course_over_ground,
+            timestamp,
+            altitude_sensor,
+            dte,
+            assigned_flag,
+            raim,
+            radio_status,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SarAircraftPositionReport(mmsi={}, altitude_m={:?}, lat={:?}, lon={:?})",
+            self.mmsi, self.altitude_m, self.latitude_deg, self.longitude_deg,
+        )
+    }
+}
+
+impl From<RustSarAircraftPositionReport> for PySarAircraftPositionReport {
+    fn from(d: RustSarAircraftPositionReport) -> Self {
+        Self {
+            mmsi: d.mmsi,
+            altitude_m: d.altitude_m,
+            speed_over_ground: d.speed_over_ground,
+            position_accuracy: d.position_accuracy,
+            longitude_deg: d.longitude_deg,
+            latitude_deg: d.latitude_deg,
+            course_over_ground: d.course_over_ground,
+            timestamp: d.timestamp,
+            altitude_sensor: d.altitude_sensor.into(),
+            dte: d.dte,
+            assigned_flag: d.assigned_flag,
+            raim: d.raim,
+            radio_status: d.radio_status,
         }
     }
 }
@@ -1057,6 +1211,9 @@ pub(crate) fn message_body_to_py(py: Python<'_>, body: AisMessageBody) -> PyResu
         | AisMessageBody::Type2(d)
         | AisMessageBody::Type3(d) => Py::new(py, PyPositionReportA::from(d))?.into_any(),
         AisMessageBody::Type5(d) => Py::new(py, PyStaticAndVoyageA::from(d))?.into_any(),
+        AisMessageBody::Type9(d) => {
+            Py::new(py, PySarAircraftPositionReport::from(d))?.into_any()
+        }
         AisMessageBody::Type18(d) => Py::new(py, PyPositionReportB::from(d))?.into_any(),
         AisMessageBody::Type19(d) => Py::new(py, PyExtendedPositionReportB::from(d))?.into_any(),
         AisMessageBody::Type24A(d) => Py::new(py, PyStaticDataB24A::from(d))?.into_any(),
@@ -1158,6 +1315,7 @@ impl PyAisMessage {
             AisMessageBody::Type2(_) => "type2",
             AisMessageBody::Type3(_) => "type3",
             AisMessageBody::Type5(_) => "type5",
+            AisMessageBody::Type9(_) => "type9",
             AisMessageBody::Type18(_) => "type18",
             AisMessageBody::Type19(_) => "type19",
             AisMessageBody::Type24A(_) => "type24a",
@@ -1493,6 +1651,7 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     m.add_class::<PyNavStatus>()?;
     m.add_class::<PyManeuverIndicator>()?;
     m.add_class::<PyTurnDirection>()?;
+    m.add_class::<PyAltitudeSensor>()?;
     m.add_class::<PyEpfdType>()?;
     m.add_class::<PyAisVersion>()?;
     m.add_class::<PyDimensions>()?;
@@ -1500,6 +1659,7 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     // Task 11 message variants:
     m.add_class::<PyPositionReportA>()?;
     m.add_class::<PyStaticAndVoyageA>()?;
+    m.add_class::<PySarAircraftPositionReport>()?;
     m.add_class::<PyPositionReportB>()?;
     m.add_class::<PyExtendedPositionReportB>()?;
     m.add_class::<PyStaticDataB24A>()?;

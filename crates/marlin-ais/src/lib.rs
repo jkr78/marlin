@@ -47,6 +47,7 @@ mod parser;
 mod position_report_a;
 mod position_report_b;
 mod reassembly;
+mod sar_aircraft_position_report;
 mod shared_types;
 mod static_data_b;
 mod static_voyage_a;
@@ -68,6 +69,10 @@ pub use position_report_a::{
 };
 pub use position_report_b::{decode_position_report_b, PositionReportB, POSITION_REPORT_B_BITS};
 pub use reassembly::{AisReassembler, ReassembledPayload, DEFAULT_MAX_PARTIALS};
+pub use sar_aircraft_position_report::{
+    decode_sar_aircraft_position_report, AltitudeSensor, SarAircraftPositionReport,
+    SAR_AIRCRAFT_POSITION_REPORT_BITS,
+};
 pub use shared_types::{is_auxiliary_craft_mmsi, sentinel, Dimensions, EpfdType};
 pub use static_data_b::{
     decode_static_data_b, decode_static_data_b_24a, decode_static_data_b_24b, StaticDataB,

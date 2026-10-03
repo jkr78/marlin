@@ -10,6 +10,7 @@ from marlin.ais import (
     AisMessage,
     AisParser,
     AisVersion,
+    AltitudeSensor,
     BitReader,
     Dimensions,
     EpfdType,
@@ -21,6 +22,7 @@ from marlin.ais import (
     PositionReportA,
     PositionReportB,
     ReassemblyError,
+    SarAircraftPositionReport,
     StaticAndVoyageA,
     StaticDataB24A,
     StaticDataB24B,
@@ -71,6 +73,11 @@ _AIVDM_TYPE24B_AUXILIARY_CRAFT = _aivdm(
     1, 1, None, "A", b"H>eq`dDUF>4ijkl3Chhi00<Tqds4", 0
 )
 
+# Type 9 SAR aircraft position report: gpsd test/sample.aivdm T9-2
+# (BSD-2-Clause). Its .chk file gives mmsi 111232511, altitude 303 m,
+# SOG 42 kn, 6.27884°W 58.144°N, COG 154.5°, second 15, DTE 1, radio 0x8270.
+_AIVDM_TYPE9_GPSD_T9_2 = b"!AIVDM,1,1,,B,91b55wi;hbOS@OdQAC062Ch2089h,0*30\r\n"
+
 
 def test_nav_status_values() -> None:
     # Every variant is pinned to its wire value. The sparse jump from 8 to
@@ -105,6 +112,13 @@ def test_turn_direction_values() -> None:
     assert TurnDirection.RIGHT != TurnDirection.LEFT
 
 
+def test_altitude_sensor_values() -> None:
+    # Wire codes of the one-bit Table 59 altitude-sensor field.
+    assert int(AltitudeSensor.GNSS) == 0
+    assert int(AltitudeSensor.BAROMETRIC) == 1
+    assert AltitudeSensor.GNSS != AltitudeSensor.BAROMETRIC
+
+
 def test_ais_enums_are_hashable() -> None:
     # The stubs declare __hash__ on every int-backed enum; pin it at
     # runtime so the enums work as set members and dict keys.
@@ -112,10 +126,11 @@ def test_ais_enums_are_hashable() -> None:
         NavStatus.MOORED,
         ManeuverIndicator.SPECIAL,
         TurnDirection.LEFT,
+        AltitudeSensor.BAROMETRIC,
         EpfdType.GALILEO,
         AisVersion.ITU1371V5,
     }
-    assert len(members) == 5
+    assert len(members) == 6
     assert NavStatus.MOORED in members
     assert hash(NavStatus.MOORED) == hash(NavStatus.MOORED)
 
@@ -248,6 +263,45 @@ def test_static_and_voyage_a_shape() -> None:
     assert s.dte is False
 
 
+def test_sar_aircraft_position_report_shape() -> None:
+    p = SarAircraftPositionReport(
+        mmsi=111222333,
+        altitude_m=1500,
+        speed_over_ground=120,
+        latitude_deg=58.1,
+        longitude_deg=-6.2,
+        altitude_sensor=AltitudeSensor.BAROMETRIC,
+        dte=True,
+    )
+    assert p.mmsi == 111222333
+    assert p.altitude_m == 1500
+    assert p.speed_over_ground == 120
+    assert p.latitude_deg == pytest.approx(58.1)
+    assert p.longitude_deg == pytest.approx(-6.2)
+    assert p.altitude_sensor == AltitudeSensor.BAROMETRIC
+    assert p.dte is True
+    # Defaults fire for unset fields:
+    assert p.position_accuracy is False
+    assert p.course_over_ground is None
+    assert p.timestamp == 60
+    assert p.assigned_flag is False
+    assert p.raim is False
+    assert p.radio_status == 0
+    # No heading, rate of turn or navigational status exists on Type 9.
+    assert not hasattr(p, "true_heading")
+    assert not hasattr(p, "rate_of_turn")
+    assert not hasattr(p, "navigation_status")
+
+
+def test_sar_aircraft_position_report_all_defaults() -> None:
+    p = SarAircraftPositionReport()
+    assert p.mmsi == 0
+    assert p.altitude_m is None
+    assert p.speed_over_ground is None
+    assert p.altitude_sensor == AltitudeSensor.GNSS
+    assert p.timestamp == 60
+
+
 def test_position_report_b_shape() -> None:
     p = PositionReportB(
         mmsi=222333444,
@@ -320,8 +374,9 @@ def test_static_data_b24b_defaults() -> None:
 
 
 def test_other_shape() -> None:
-    o = Other(msg_type=9, raw_payload=b"\x01\x02\x03", total_bits=24)
-    assert o.msg_type == 9
+    # Type 8 (binary broadcast) is not decoded, so it is a realistic Other.
+    o = Other(msg_type=8, raw_payload=b"\x01\x02\x03", total_bits=24)
+    assert o.msg_type == 8
     assert o.raw_payload == b"\x01\x02\x03"
     assert o.total_bits == 24
 
@@ -360,11 +415,11 @@ def test_ais_message_construct_own_ship() -> None:
 
 
 def test_ais_message_body_with_other_variant() -> None:
-    body = Other(msg_type=9, raw_payload=b"\x01\x02", total_bits=16)
+    body = Other(msg_type=8, raw_payload=b"\x01\x02", total_bits=16)
     msg = AisMessage(is_own_ship=False, type_tag="other", body=body)
     assert msg.type_tag == "other"
     assert isinstance(msg.body, Other)
-    assert msg.body.msg_type == 9
+    assert msg.body.msg_type == 8
 
 
 def test_ais_message_repr() -> None:
@@ -499,6 +554,32 @@ def test_static_data_b24b_mothership_mmsi() -> None:
     assert body.dimensions is None
     assert body.mothership_mmsi == 211000123
     assert body.epfd == EpfdType.GPS
+
+
+def test_sar_aircraft_position_report_gpsd_t9_2() -> None:
+    # A Type 9 payload decodes to SarAircraftPositionReport with
+    # type_tag "type9" instead of landing in Other. Expected values are
+    # the gpsd .chk entries for T9-2; lon/lat converted to degrees.
+    p = AisParser.streaming()
+    p.feed(_AIVDM_TYPE9_GPSD_T9_2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert msgs[0].type_tag == "type9"
+    body = msgs[0].body
+    assert isinstance(body, SarAircraftPositionReport)
+    assert body.mmsi == 111232511
+    assert body.altitude_m == 303
+    assert body.speed_over_ground == 42
+    assert body.position_accuracy is False
+    assert body.longitude_deg == pytest.approx(-6.278843, abs=1e-6)
+    assert body.latitude_deg == pytest.approx(58.144, abs=1e-6)
+    assert body.course_over_ground == pytest.approx(154.5, abs=1e-4)
+    assert body.timestamp == 15
+    assert body.altitude_sensor == AltitudeSensor.GNSS
+    assert body.dte is True
+    assert body.assigned_flag is False
+    assert body.raim is False
+    assert body.radio_status == 0x8270
 
 
 def test_ais_auto_clock_reads_time() -> None:

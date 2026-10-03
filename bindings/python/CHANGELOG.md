@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   ship's MMSI in the 30 bits that otherwise hold dimensions (ADR-0002);
   the EPFD type at bits 162–165 was previously dropped.
   `marlin.dataclasses.StaticDataB24B` mirrors both.
+- `marlin.ais.SarAircraftPositionReport` (`type_tag == "type9"`) and the
+  `AltitudeSensor` enum (`GNSS = 0`, `BAROMETRIC = 1`, wire codes): Type 9
+  SAR aircraft position reports now decode instead of surfacing as
+  `Other(msg_type=9)`. `altitude_m` and `speed_over_ground` are whole
+  metres / whole knots (`None` for the not-available codes 4095 / 1023;
+  the over-range codes 4094 m and 1022 kn pass through, ADR-0001); DTE,
+  assigned and RAIM flags and the 20-bit `radio_status` are exposed.
+  `marlin.dataclasses.SarAircraftPositionReport` mirrors it with
+  `altitude_sensor` as `int`. New golden fixture directory
+  `tests/fixtures/ais/` holds the gpsd T9-1 / T9-2 vectors
+  (BSD-2-Clause, attributed in `tests/fixtures/README.md`).
 
 ### Fixed
 

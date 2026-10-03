@@ -23,9 +23,10 @@ use marlin_nmea_envelope::RawSentence;
 
 use crate::{
     armor, decode_extended_position_report_b, decode_position_report_a, decode_position_report_b,
-    decode_static_and_voyage_a, decode_static_data_b, parse_aivdm_wrapper, AisError, BitReader,
-    ExtendedPositionReportB, PositionReportA, PositionReportB, StaticAndVoyageA, StaticDataB,
-    StaticDataB24A, StaticDataB24B,
+    decode_sar_aircraft_position_report, decode_static_and_voyage_a, decode_static_data_b,
+    parse_aivdm_wrapper, AisError, BitReader, ExtendedPositionReportB, PositionReportA,
+    PositionReportB, SarAircraftPositionReport, StaticAndVoyageA, StaticDataB, StaticDataB24A,
+    StaticDataB24B,
 };
 
 /// A fully decoded AIS message with envelope metadata.
@@ -49,8 +50,8 @@ pub struct AisMessage {
 
 /// The decoded AIS payload, dispatched on the 6-bit `msg_type` field.
 ///
-/// `#[non_exhaustive]` so additional message types (Type 19, Type 4,
-/// Type 21, ...) can be added as typed variants in minor versions
+/// `#[non_exhaustive]` so additional message types (Type 4, Type 21,
+/// Type 27, ...) can be added as typed variants in minor versions
 /// without a breaking change. Types this crate does not yet decode
 /// are surfaced as [`Self::Other`] with the raw bit buffer preserved.
 ///
@@ -66,6 +67,8 @@ pub enum AisMessageBody {
     Type3(PositionReportA),
     /// Type 5 — Class A static and voyage data.
     Type5(StaticAndVoyageA),
+    /// Type 9 — standard SAR aircraft position report.
+    Type9(SarAircraftPositionReport),
     /// Type 18 — Class B CS position report.
     Type18(PositionReportB),
     /// Type 19 — Class B extended position report (Type 18 plus the
@@ -129,6 +132,7 @@ pub fn decode_message(
         2 => AisMessageBody::Type2(decode_position_report_a(bits, total_bits)?),
         3 => AisMessageBody::Type3(decode_position_report_a(bits, total_bits)?),
         5 => AisMessageBody::Type5(decode_static_and_voyage_a(bits, total_bits)?),
+        9 => AisMessageBody::Type9(decode_sar_aircraft_position_report(bits, total_bits)?),
         18 => AisMessageBody::Type18(decode_position_report_b(bits, total_bits)?),
         19 => AisMessageBody::Type19(decode_extended_position_report_b(bits, total_bits)?),
         24 => match decode_static_data_b(bits, total_bits)? {
@@ -364,6 +368,37 @@ mod tests {
         match decode_message(&bits, total, false).unwrap().body {
             AisMessageBody::Type24B(b) => assert_eq!(b.mmsi, 24_002),
             other => panic!("expected Type24B, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Type 9 routes to its typed variant
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn routes_type_9_to_type9_variant() {
+        // 168 bits with just msg_type + mmsi set; everything else zero.
+        let mut w = BitWriter::new();
+        w.u(6, 9);
+        w.u(2, 0);
+        w.u(30, 111_000_009);
+        // Pad remaining 130 bits.
+        w.u(64, 0);
+        w.u(64, 0);
+        w.u(2, 0);
+        let (bits, total) = w.finish();
+        match decode_message(&bits, total, false).unwrap().body {
+            AisMessageBody::Type9(sar) => assert_eq!(sar.mmsi, 111_000_009),
+            other => panic!("expected Type9, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn type_9_short_payload_is_rejected() {
+        let (bits, _) = build_unknown(9);
+        match decode_message(&bits, 167, false) {
+            Err(AisError::PayloadTooShort) => {}
+            other => panic!("expected PayloadTooShort, got {other:?}"),
         }
     }
 

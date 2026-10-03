@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   extent field of a Type 24 Part B holds.
 - `StaticDataB24B.epfd` — the EPFD type at bits 162–165, which the
   decoder used to drop.
+- Type 9 (standard SAR aircraft position report) decodes to
+  `SarAircraftPositionReport` via `AisMessageBody::Type9` instead of
+  landing in `Other` (ITU-R M.1371-5 Annex 8 §3.7, Table 59). Altitude
+  and speed over ground are whole-unit `Option<u16>` (4095 / 1023 not
+  available → `None`; 4094 m and 1022 kn over-range kept, ADR-0001);
+  `AltitudeSensor::{Gnss, Barometric}` names the sensor bit; DTE,
+  assigned and RAIM flags and the 20-bit radio status are exposed.
+  `decode_sar_aircraft_position_report`, `AltitudeSensor`,
+  `SarAircraftPositionReport` and `SAR_AIRCRAFT_POSITION_REPORT_BITS`
+  are re-exported from the crate root.
 
 ### Fixed
 

@@ -340,6 +340,30 @@ class StaticAndVoyageA:
 
 
 @dataclass(frozen=True)
+class SarAircraftPositionReport:
+    """Mirror of marlin.ais.SarAircraftPositionReport (Type 9).
+
+    `altitude_m` and `speed_over_ground` are whole metres / whole knots;
+    None is the not-available code and over-range codes pass through.
+    `altitude_sensor` is stored as int (wire value: GNSS = 0, BAROMETRIC = 1).
+    """
+
+    mmsi: int
+    altitude_m: Optional[int]
+    speed_over_ground: Optional[int]
+    position_accuracy: bool
+    longitude_deg: Optional[float]
+    latitude_deg: Optional[float]
+    course_over_ground: Optional[float]
+    timestamp: int
+    altitude_sensor: int
+    dte: bool
+    assigned_flag: bool
+    raim: bool
+    radio_status: int
+
+
+@dataclass(frozen=True)
 class PositionReportB:
     """Mirror of marlin.ais.PositionReportB (Type 18)."""
 
@@ -424,6 +448,7 @@ class Other:
 AisMessageBody = Union[
     PositionReportA,
     StaticAndVoyageA,
+    SarAircraftPositionReport,
     PositionReportB,
     ExtendedPositionReportB,
     StaticDataB24A,
@@ -595,6 +620,8 @@ def to_dataclass(msg: object) -> object:
         return _convert_position_report_a(msg)
     if isinstance(msg, _ais.StaticAndVoyageA):
         return _convert_static_and_voyage_a(msg)
+    if isinstance(msg, _ais.SarAircraftPositionReport):
+        return _convert_sar_aircraft_position_report(msg)
     if isinstance(msg, _ais.PositionReportB):
         return _convert_position_report_b(msg)
     if isinstance(msg, _ais.ExtendedPositionReportB):
@@ -744,6 +771,28 @@ def _convert_static_and_voyage_a(msg: object) -> StaticAndVoyageA:
     )
 
 
+def _convert_sar_aircraft_position_report(msg: object) -> SarAircraftPositionReport:
+    import marlin.ais as _ais
+
+    if not isinstance(msg, _ais.SarAircraftPositionReport):
+        raise TypeError(f"expected SarAircraftPositionReport, got {type(msg)!r}")
+    return SarAircraftPositionReport(
+        mmsi=msg.mmsi,
+        altitude_m=msg.altitude_m,
+        speed_over_ground=msg.speed_over_ground,
+        position_accuracy=msg.position_accuracy,
+        longitude_deg=msg.longitude_deg,
+        latitude_deg=msg.latitude_deg,
+        course_over_ground=msg.course_over_ground,
+        timestamp=msg.timestamp,
+        altitude_sensor=int(msg.altitude_sensor),
+        dte=msg.dte,
+        assigned_flag=msg.assigned_flag,
+        raim=msg.raim,
+        radio_status=msg.radio_status,
+    )
+
+
 def _convert_position_report_b(msg: object) -> PositionReportB:
     import marlin.ais as _ais
 
@@ -818,6 +867,8 @@ def _convert_ais_body(body: object) -> AisMessageBody:
         return _convert_position_report_a(body)
     if isinstance(body, _ais.StaticAndVoyageA):
         return _convert_static_and_voyage_a(body)
+    if isinstance(body, _ais.SarAircraftPositionReport):
+        return _convert_sar_aircraft_position_report(body)
     if isinstance(body, _ais.PositionReportB):
         return _convert_position_report_b(body)
     if isinstance(body, _ais.ExtendedPositionReportB):
@@ -858,6 +909,7 @@ __all__ = [
     "Psxn",
     "RawSentence",
     "Rmc",
+    "SarAircraftPositionReport",
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",

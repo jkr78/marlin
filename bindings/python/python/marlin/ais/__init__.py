@@ -7,6 +7,7 @@ ReassemblyError: type[Exception] = _core.ReassemblyError
 
 # Data enums
 AisVersion = _core.ais.AisVersion
+AltitudeSensor = _core.ais.AltitudeSensor
 EpfdType = _core.ais.EpfdType
 ManeuverIndicator = _core.ais.ManeuverIndicator
 NavStatus = _core.ais.NavStatus
@@ -24,6 +25,7 @@ ExtendedPositionReportB = _core.ais.ExtendedPositionReportB
 Other = _core.ais.Other
 PositionReportA = _core.ais.PositionReportA
 PositionReportB = _core.ais.PositionReportB
+SarAircraftPositionReport = _core.ais.SarAircraftPositionReport
 StaticAndVoyageA = _core.ais.StaticAndVoyageA
 StaticDataB24A = _core.ais.StaticDataB24A
 StaticDataB24B = _core.ais.StaticDataB24B
@@ -39,6 +41,7 @@ __all__ = [
     "AisMessage",
     "AisParser",
     "AisVersion",
+    "AltitudeSensor",
     "BitReader",
     "Dimensions",
     "EpfdType",
@@ -50,6 +53,7 @@ __all__ = [
     "PositionReportA",
     "PositionReportB",
     "ReassemblyError",
+    "SarAircraftPositionReport",
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",

@@ -24,6 +24,10 @@ AIVDM_TYPE24B_AUXILIARY_CRAFT = (
     b"!AIVDM,1,1,,A,H>eq`dDUF>4ijkl3Chhi00<Tqds4,0*3A\r\n"
 )
 
+# Type 9 SAR aircraft position report: gpsd test/sample.aivdm T9-2
+# (BSD-2-Clause). Same sentence as `_AIVDM_TYPE9_GPSD_T9_2` in test_ais.py.
+AIVDM_TYPE9_GPSD_T9_2 = b"!AIVDM,1,1,,B,91b55wi;hbOS@OdQAC062Ch2089h,0*30\r\n"
+
 # Type 5 two-fragment message (same corpus as test_aio.py).
 _TYPE5_FRAG1 = (
     b"!AIVDM,2,1,3,A,"
@@ -315,6 +319,36 @@ def test_ais_static_and_voyage_a_round_trip() -> None:
     # eta and dimensions are always-present nested dataclasses.
     assert "eta" in d["body"]
     assert "dimensions" in d["body"]
+
+
+def test_ais_sar_aircraft_position_report_round_trip() -> None:
+    from marlin.ais import AisParser, AltitudeSensor, SarAircraftPositionReport
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import (
+        SarAircraftPositionReport as DCSarAircraftPositionReport,
+    )
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE9_GPSD_T9_2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert isinstance(msgs[0].body, SarAircraftPositionReport)
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCSarAircraftPositionReport)
+    assert dc.type_tag == "type9"
+    assert dc.body.mmsi == 111232511
+    assert dc.body.altitude_m == 303
+    assert dc.body.speed_over_ground == 42
+    # The mirror stores the AltitudeSensor wire value as int.
+    assert dc.body.altitude_sensor == int(AltitudeSensor.GNSS)
+    assert dc.body.dte is True
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+    assert d["body"]["radio_status"] == 0x8270
 
 
 def test_ais_static_data_b24b_mothership_round_trip() -> None:
