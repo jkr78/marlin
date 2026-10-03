@@ -180,4 +180,4 @@ into sibling optional attributes:
 
 Parser output sets at most one attribute of each pair. The constructors
 do not validate hand-built instances. See
-[ADR-0003](adr/0003-python-mirrors-flatten-sum-types.md).
+[ADR-0003](adr/0003-python-binding-classes-flatten-sum-types.md).

@@ -8,6 +8,18 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Settle what "wrapper" means in the Python bindings
+  The word appears 14 times in `bindings/python/src/` with two meanings. The
+  four module headers ("Python wrappers for `marlin-ais`", and the same in
+  `nmea.rs`, `envelope.rs`, `klv.rs`) mean binding classes, and `GLOSSARY.md`
+  lists "wrapper class" as a term to avoid for that. Elsewhere "the
+  `AisMessage` wrapper" means the outer message that holds a body; the
+  `marlin.dataclasses` docstring and `tests/unit/test_dataclasses.py` use it
+  that way too, and the glossary has no term for it. Decide the term for the
+  outer message first (keep "wrapper" with a glossary entry, or pick another),
+  then reword. Only the four module headers are clear misuses today, so this
+  may need no more than those four lines. Found by the py-field-once ticket 03
+  review. [docs][draft]
 - [ ] Generate each binding class from one field list
   A field of a binding class is written 5 times in `bindings/python/src/ais.rs`
   and `src/nmea.rs`: the `#[pyclass]` struct, the `#[pyo3(signature = ...)]`

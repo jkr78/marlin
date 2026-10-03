@@ -1,4 +1,4 @@
-# Python mirrors flatten Rust field-level sum types
+# Python binding classes flatten Rust field-level sum types
 
 A Rust enum with data in a *field* position (`RateOfTurn`, `Type24BExtent`) becomes
 sibling optional attributes on the binding class and on its dataclass mirror
