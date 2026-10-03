@@ -68,7 +68,7 @@ jobs:
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
       - name: Install test deps
-        run: pip install 'maturin>=1.7,<2.0' pytest hypothesis 'mypy>=1.8' 'pyright>=1.1'
+        run: pip install 'maturin>=1.7,<2.0' pytest hypothesis 'mypy>=1.19' 'pyright>=1.1'
       # The bindings crate is excluded from the Cargo workspace, so the main
       # CI's `just fmt-check` / `just lint` never see its Rust. Gate it here.
       - name: cargo fmt --check (bindings Rust)

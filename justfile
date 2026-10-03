@@ -135,9 +135,10 @@ py-test: py-dev
     cd bindings/python && python -m pytest tests/ -v
 
 # stubtest compares the public stubs with the built extension, so run
-# `just py-dev` first. Needs mypy >= 1.19 (verified with 1.19.1 on Python 3.9
-# and 1.20.2 on 3.13; older versions untested). Findings that are not stub
-# bugs live in bindings/python/stubtest-allowlist.txt.
+# `just py-dev` first. Needs mypy >= 1.19, which the dev extra and CI
+# require (verified with 1.19.1 on Python 3.9, 2.4.0 on 3.12 and 1.20.2 on
+# 3.13). Findings that are not stub bugs live in
+# bindings/python/stubtest-allowlist.txt.
 py-type-check:
     cd bindings/python && python -m mypy --strict .
     cd bindings/python && pyright

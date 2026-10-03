@@ -72,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The package docstring, `marlin.dataclasses.to_dataclass` docstring,
   README, and GUIDE now list every typed NMEA sentence (GLL, RMC, HDG,
   TTM, and TLL were missing) and the AIS Type 9 and Type 21 classes.
+- The stubs for `marlin.nmea.Gga`, `Vtg`, `Hdt`, and `Unknown` no longer
+  mark the constructor parameters keyword-only. The runtime always
+  accepted them positionally, like every other message class.
 
 ### Changed (BREAKING)
 
@@ -105,12 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   now reports it.
 - The stubs declare constructors as `__new__`, which is what the
   extension classes define, and `__eq__` on the enums and `RawSentence`
-  takes its argument positional-only. Calls type-check as before.
-- The stubs for `marlin.nmea.Gga`, `Vtg`, `Hdt`, and `Unknown` no longer
-  mark the constructor parameters keyword-only. The runtime always
-  accepted them positionally, like every other message class.
-- `mypy.stubtest` now checks the stubs against the built extension in
-  `just py-type-check` and in CI.
+  takes its argument positional-only. Ordinary calls type-check as
+  before.
 
 ## [0.1.4] - 2026-07-07
 
