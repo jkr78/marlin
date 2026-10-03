@@ -96,6 +96,21 @@ def test_turn_direction_values() -> None:
     assert TurnDirection.RIGHT != TurnDirection.LEFT
 
 
+def test_ais_enums_are_hashable() -> None:
+    # The stubs declare __hash__ on every int-backed enum; pin it at
+    # runtime so the enums work as set members and dict keys.
+    members = {
+        NavStatus.MOORED,
+        ManeuverIndicator.SPECIAL,
+        TurnDirection.LEFT,
+        EpfdType.GALILEO,
+        AisVersion.ITU1371V5,
+    }
+    assert len(members) == 5
+    assert NavStatus.MOORED in members
+    assert hash(NavStatus.MOORED) == hash(NavStatus.MOORED)
+
+
 def test_epfd_type_values() -> None:
     # Same sparse-discriminant rationale as NavStatus: upstream reserves
     # 9..=14 as EpfdType::Reserved(u8) payload, so InternalGnss jumps to 15.

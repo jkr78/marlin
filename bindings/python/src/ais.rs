@@ -29,8 +29,8 @@ use crate::errors::ais_err;
 
 /// Navigation status (mirrors `NavStatus`). Wire values 0..8, 14, 15;
 /// `Reserved(u8)` for 9..=13 collapses to `NOT_DEFINED`.
-#[pyclass(name = "NavStatus", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "NavStatus", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyNavStatus {
     #[pyo3(name = "UNDERWAY_USING_ENGINE")]
     UnderwayUsingEngine = 0,
@@ -91,8 +91,15 @@ impl From<RustNavStatus> for PyNavStatus {
 /// `AisVersion::Future`). The compile-failure-as-audit-signal strategy
 /// used elsewhere in the repo doesn't apply here because the wildcard
 /// is mandatory, not optional.
-#[pyclass(name = "ManeuverIndicator", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "ManeuverIndicator",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.ais"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyManeuverIndicator {
     #[pyo3(name = "NOT_AVAILABLE")]
     NotAvailable = 0,
@@ -132,8 +139,15 @@ impl From<RustManeuverIndicator> for PyManeuverIndicator {
 /// wire codes: on the wire the statuses are the raw ROT bytes `+127` and
 /// `−127`. The Rust enum is exhaustive, so the `From` impl needs no
 /// wildcard.
-#[pyclass(name = "TurnDirection", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "TurnDirection",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.ais"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyTurnDirection {
     #[pyo3(name = "RIGHT")]
     Right = 0,
@@ -155,8 +169,8 @@ impl From<RustTurnDirection> for PyTurnDirection {
 /// Electronic Position-Fixing Device type (mirrors `EpfdType`). Wire
 /// values 0..8 and 15; `Reserved(u8)` for 9..=14 collapses to
 /// `UNDEFINED`.
-#[pyclass(name = "EpfdType", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "EpfdType", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyEpfdType {
     #[pyo3(name = "UNDEFINED")]
     Undefined = 0,
@@ -207,8 +221,8 @@ impl From<RustEpfdType> for PyEpfdType {
 /// AIS protocol version indicator (mirrors `AisVersion`). Rust type is
 /// `#[non_exhaustive]`; defensive wildcard collapses future variants
 /// onto `FUTURE`.
-#[pyclass(name = "AisVersion", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "AisVersion", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyAisVersion {
     #[pyo3(name = "ITU1371V1")]
     Itu1371v1 = 0,

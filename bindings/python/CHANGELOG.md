@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Every int-backed enum in `marlin.ais` and `marlin.nmea` (`NavStatus`,
+  `ManeuverIndicator`, `TurnDirection`, `EpfdType`, `AisVersion`,
+  `GgaFixQuality`, `VtgMode`, `DataStatus`, `RmcNavStatus`, `TargetStatus`,
+  `AngleReference`, `DistanceUnits`, `AcquisitionType`, `PsxnSlot`,
+  `PrdidDialect`) is now hashable, so members work as set members and
+  dict keys. The stubs always declared `__hash__`; at runtime `hash()`
+  raised `TypeError`.
 - Two multi-sentence AIS messages sharing a sequential id on channels A
   and B both decode. Previously the second channel's continuation
   fragment raised `ReassemblyError` and both messages were lost
