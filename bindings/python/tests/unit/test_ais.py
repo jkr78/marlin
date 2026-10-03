@@ -7,10 +7,12 @@ from unittest.mock import patch
 import pytest
 
 from marlin.ais import (
+    AidToNavigationReport,
     AisMessage,
     AisParser,
     AisVersion,
     AltitudeSensor,
+    AtonType,
     BitReader,
     Dimensions,
     EpfdType,
@@ -34,6 +36,8 @@ from .ais_vectors import (
     AIVDM_TYPE1_ROT_MINUS_127,
     AIVDM_TYPE1_ROT_PLUS_127,
     AIVDM_TYPE9_GPSD_T9_2,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG1,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG2,
     AIVDM_TYPE24B_AUXILIARY_CRAFT,
     aivdm,
 )
@@ -79,6 +83,19 @@ def test_altitude_sensor_values() -> None:
     assert AltitudeSensor.GNSS != AltitudeSensor.BAROMETRIC
 
 
+def test_aton_type_values() -> None:
+    # Wire codes of the 5-bit Table 74 field: 0..=31, all 32 named.
+    assert int(AtonType.NOT_SPECIFIED) == 0
+    assert int(AtonType.LIGHT_WITHOUT_SECTORS) == 5
+    assert int(AtonType.BEACON_SPECIAL_MARK) == 19
+    assert int(AtonType.CARDINAL_MARK_NORTH) == 20
+    assert int(AtonType.LIGHT_VESSEL) == 31
+    members = [getattr(AtonType, n) for n in dir(AtonType) if n.isupper()]
+    assert sorted(int(m) for m in members if isinstance(m, AtonType)) == list(
+        range(32)
+    )
+
+
 def test_ais_enums_are_hashable() -> None:
     # The stubs declare __hash__ on every int-backed enum; pin it at
     # runtime so the enums work as set members and dict keys.
@@ -87,10 +104,11 @@ def test_ais_enums_are_hashable() -> None:
         ManeuverIndicator.SPECIAL,
         TurnDirection.LEFT,
         AltitudeSensor.BAROMETRIC,
+        AtonType.LIGHT_VESSEL,
         EpfdType.GALILEO,
         AisVersion.ITU1371V5,
     }
-    assert len(members) == 6
+    assert len(members) == 7
     assert NavStatus.MOORED in members
     assert hash(NavStatus.MOORED) == hash(NavStatus.MOORED)
 
@@ -297,6 +315,53 @@ def test_extended_position_report_b_shape() -> None:
     assert p.epfd == EpfdType.GLONASS
     assert p.timestamp == 60
     assert p.assigned_flag is False
+
+
+def test_aid_to_navigation_report_shape() -> None:
+    p = AidToNavigationReport(
+        mmsi=992471234,
+        aton_type=AtonType.PORT_HAND_MARK,
+        name="RED BUOY 7",
+        latitude_deg=-4.8,
+        longitude_deg=11.0,
+        dimensions=Dimensions(to_bow_m=3, to_stern_m=4, to_port_m=1, to_starboard_m=2),
+        epfd=EpfdType.GPS,
+        timestamp=42,
+        off_position=True,
+        aton_status=0xA5,
+        virtual_aton=True,
+    )
+    assert p.mmsi == 992471234
+    assert p.aton_type == AtonType.PORT_HAND_MARK
+    assert p.name == "RED BUOY 7"
+    assert p.latitude_deg == pytest.approx(-4.8)
+    assert p.longitude_deg == pytest.approx(11.0)
+    assert p.dimensions.to_bow_m == 3
+    assert p.dimensions.to_starboard_m == 2
+    assert p.epfd == EpfdType.GPS
+    assert p.timestamp == 42
+    assert p.off_position is True
+    assert p.aton_status == 0xA5
+    assert p.virtual_aton is True
+    # Defaults fire for unset fields:
+    assert p.position_accuracy is False
+    assert p.raim is False
+    assert p.assigned_flag is False
+    # No speed, course or heading exists on Type 21.
+    assert not hasattr(p, "speed_over_ground")
+    assert not hasattr(p, "course_over_ground")
+    assert not hasattr(p, "true_heading")
+
+
+def test_aid_to_navigation_report_all_defaults() -> None:
+    p = AidToNavigationReport()
+    assert p.mmsi == 0
+    assert p.aton_type == AtonType.NOT_SPECIFIED
+    assert p.name is None
+    assert p.dimensions == Dimensions()
+    assert p.epfd == EpfdType.UNDEFINED
+    assert p.timestamp == 60
+    assert p.aton_status == 0
 
 
 def test_static_data_b24a_shape() -> None:
@@ -540,6 +605,36 @@ def test_sar_aircraft_position_report_gpsd_t9_2() -> None:
     assert body.assigned_flag is False
     assert body.raim is False
     assert body.radio_status == 0x8270
+
+
+def test_aid_to_navigation_report_gpsd_t21_1() -> None:
+    # A two-fragment Type 21 payload (346 bits, misaligned fill) decodes to
+    # AidToNavigationReport with type_tag "type21". Expected values are the
+    # gpsd .chk entries for T21-1; the 12-character name extension ends in
+    # a trailing @ that the trim removes.
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE21_GPSD_T21_1_FRAG1 + AIVDM_TYPE21_GPSD_T21_1_FRAG2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert msgs[0].type_tag == "type21"
+    body = msgs[0].body
+    assert isinstance(body, AidToNavigationReport)
+    assert body.mmsi == 123456789
+    assert body.aton_type == AtonType.CARDINAL_MARK_NORTH
+    assert body.name == "CHINA ROSE MURPHY EXPRESS ALERT"
+    assert body.position_accuracy is False
+    assert body.longitude_deg == pytest.approx(-122.698592, abs=1e-6)
+    assert body.latitude_deg == pytest.approx(47.920618, abs=1e-6)
+    assert body.dimensions == Dimensions(
+        to_bow_m=5, to_stern_m=5, to_port_m=5, to_starboard_m=5
+    )
+    assert body.epfd == EpfdType.GPS
+    assert body.timestamp == 50
+    assert body.off_position is False
+    assert body.aton_status == 165
+    assert body.raim is False
+    assert body.virtual_aton is False
+    assert body.assigned_flag is False
 
 
 def test_ais_auto_clock_reads_time() -> None:

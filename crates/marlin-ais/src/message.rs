@@ -22,11 +22,11 @@ use alloc::vec::Vec;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::{
-    armor, decode_extended_position_report_b, decode_position_report_a, decode_position_report_b,
-    decode_sar_aircraft_position_report, decode_static_and_voyage_a, decode_static_data_b,
-    parse_aivdm_wrapper, AisError, BitReader, ExtendedPositionReportB, PositionReportA,
-    PositionReportB, SarAircraftPositionReport, StaticAndVoyageA, StaticDataB, StaticDataB24A,
-    StaticDataB24B,
+    armor, decode_aid_to_navigation_report, decode_extended_position_report_b,
+    decode_position_report_a, decode_position_report_b, decode_sar_aircraft_position_report,
+    decode_static_and_voyage_a, decode_static_data_b, parse_aivdm_wrapper, AidToNavigationReport,
+    AisError, BitReader, ExtendedPositionReportB, PositionReportA, PositionReportB,
+    SarAircraftPositionReport, StaticAndVoyageA, StaticDataB, StaticDataB24A, StaticDataB24B,
 };
 
 /// A fully decoded AIS message with envelope metadata.
@@ -50,8 +50,8 @@ pub struct AisMessage {
 
 /// The decoded AIS payload, dispatched on the 6-bit `msg_type` field.
 ///
-/// `#[non_exhaustive]` so additional message types (Type 4, Type 21,
-/// Type 27, ...) can be added as typed variants in minor versions
+/// `#[non_exhaustive]` so additional message types (Type 4, Type 27,
+/// ...) can be added as typed variants in minor versions
 /// without a breaking change. Types this crate does not yet decode
 /// are surfaced as [`Self::Other`] with the raw bit buffer preserved.
 ///
@@ -74,6 +74,9 @@ pub enum AisMessageBody {
     /// Type 19 — Class B extended position report (Type 18 plus the
     /// Class A static tail: vessel name, ship type, dimensions, EPFD).
     Type19(ExtendedPositionReportB),
+    /// Type 21 — aid-to-navigation report (variable length: 272 bits
+    /// plus an optional name extension).
+    Type21(AidToNavigationReport),
     /// Type 24 Part A — Class B static, vessel name.
     Type24A(StaticDataB24A),
     /// Type 24 Part B — Class B static, ship type + call sign + extent
@@ -135,6 +138,7 @@ pub fn decode_message(
         9 => AisMessageBody::Type9(decode_sar_aircraft_position_report(bits, total_bits)?),
         18 => AisMessageBody::Type18(decode_position_report_b(bits, total_bits)?),
         19 => AisMessageBody::Type19(decode_extended_position_report_b(bits, total_bits)?),
+        21 => AisMessageBody::Type21(decode_aid_to_navigation_report(bits, total_bits)?),
         24 => match decode_static_data_b(bits, total_bits)? {
             StaticDataB::PartA(a) => AisMessageBody::Type24A(a),
             StaticDataB::PartB(b) => AisMessageBody::Type24B(b),
@@ -302,6 +306,27 @@ mod tests {
         w.finish()
     }
 
+    /// Build a `total_bits` payload with only `msg_type` and `mmsi` set;
+    /// every other bit is zero. Enough for routing tests, which only
+    /// check which variant a type lands in.
+    fn build_min_payload(
+        msg_type: u8,
+        mmsi: u32,
+        total_bits: usize,
+    ) -> (alloc::vec::Vec<u8>, usize) {
+        let mut w = BitWriter::new();
+        w.u(6, u64::from(msg_type));
+        w.u(2, 0); // repeat
+        w.u(30, u64::from(mmsi));
+        let mut remaining = total_bits - 38;
+        while remaining > 0 {
+            let n = remaining.min(64);
+            w.u(n, 0);
+            remaining -= n;
+        }
+        w.finish()
+    }
+
     // -----------------------------------------------------------------
     // Dispatcher routes each known type to the right variant
     // -----------------------------------------------------------------
@@ -429,6 +454,29 @@ mod tests {
     fn type_19_short_payload_is_rejected() {
         // 168 bits is enough for Type 18 but not Type 19 (needs 312).
         let (bits, total) = build_unknown(19);
+        match decode_message(&bits, total, false) {
+            Err(AisError::PayloadTooShort) => {}
+            other => panic!("expected PayloadTooShort, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Type 21 routes to its typed variant
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn routes_type_21_to_type21_variant() {
+        let (bits, total) = build_min_payload(21, 992_000_021, 272);
+        match decode_message(&bits, total, false).unwrap().body {
+            AisMessageBody::Type21(aton) => assert_eq!(aton.mmsi, 992_000_021),
+            other => panic!("expected Type21, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn type_21_short_payload_is_rejected() {
+        // 271 bits is one short of the 272-bit fixed part.
+        let (bits, total) = build_min_payload(21, 992_000_021, 271);
         match decode_message(&bits, total, false) {
             Err(AisError::PayloadTooShort) => {}
             other => panic!("expected PayloadTooShort, got {other:?}"),

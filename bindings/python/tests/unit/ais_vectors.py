@@ -66,3 +66,24 @@ AIVDM_TYPE9_GPSD_T9_2 = b"!AIVDM,1,1,,B,91b55wi;hbOS@OdQAC062Ch2089h,0*30\r\n"
 # `part_b_auxiliary_craft_payload_armors_to_known_string` in
 # crates/marlin-ais/src/static_data_b.rs.
 AIVDM_TYPE24B_AUXILIARY_CRAFT = b"!AIVDM,1,1,,A,H>eq`dDUF>4ijkl3Chhi00<Tqds4,0*3A\r\n"
+
+# Type 21 aid-to-navigation report: gpsd test/sample.aivdm T21-1
+# (BSD-2-Clause), two fragments, 346 bits. Its .chk file gives mmsi
+# 123456789, aid type 20 (cardinal mark N), name "CHINA ROSE MURPHY
+# EXPRESS ALERT" (20 + 12 characters), 122.698592°W 47.920618°N, dims
+# 5/5/5/5, EPFD GPS, second 50, status 165.
+AIVDM_TYPE21_GPSD_T21_1_FRAG1 = (
+    b"!AIVDM,2,1,5,B,E1mg=5J1T4W0h97aRh6ba84<h2d;W:Te=eLvH50```q,0*46\r\n"
+)
+AIVDM_TYPE21_GPSD_T21_1_FRAG2 = b"!AIVDM,2,2,5,B,:D44QDlp0C1DU00,2*36\r\n"
+
+# Type 21 gpsd T21-2 (BSD-2-Clause), two fragments, 368 bits: over the
+# 360-bit maximum, with a 16-character all-@ extension. mmsi 4000003, aid
+# type 30 (special mark); the decoder keeps the embedded @ and yields
+# name "IBC G BUOY@?????????" where gpsd stops at the first @.
+AIVDM_TYPE21_GPSD_T21_2_FRAG1 = (
+    b"!AIVDM,2,1,8,B,"
+    b"E03l90w4Q1h3h1:WdPOwwwwwwwwlQdn`:e55020@@@gP0000000000000000,"
+    b"0*47\r\n"
+)
+AIVDM_TYPE21_GPSD_T21_2_FRAG2 = b"!AIVDM,2,2,8,B,00,4*19\r\n"

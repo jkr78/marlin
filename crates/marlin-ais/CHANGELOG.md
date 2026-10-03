@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `decode_sar_aircraft_position_report`, `AltitudeSensor`,
   `SarAircraftPositionReport` and `SAR_AIRCRAFT_POSITION_REPORT_BITS`
   are re-exported from the crate root.
+- Type 21 (aid-to-navigation report) decodes to `AidToNavigationReport`
+  via `AisMessageBody::Type21` instead of landing in `Other` (ITU-R
+  M.1371-5 Annex 8 §3.19, Tables 73 and 74). The crate's first
+  variable-length decoder: the 20-character name joins the optional
+  extension (`min(14, (total_bits − 272) / 6)` characters, alignment
+  spare ignored) and is trimmed of trailing `@` / spaces into
+  `name: Option<String>`; an embedded `@` is kept. Payloads over 360 bits
+  are tolerated, under 272 are `PayloadTooShort`. `AtonType` names all
+  32 Table 74 codes with `code()`, `is_fixed()` (5–19) and
+  `is_floating()` (20–31); `dimensions` reuses `Dimensions` (all-`None`
+  for virtual AtoN); the off-position, virtual, assigned and RAIM flags
+  and the raw 8-bit `aton_status` are exposed.
+  `decode_aid_to_navigation_report`, `AidToNavigationReport`, `AtonType`
+  and `AID_TO_NAVIGATION_REPORT_BITS` are re-exported from the crate root.
 
 ### Fixed
 

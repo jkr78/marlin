@@ -13,6 +13,8 @@ from .ais_vectors import (
     AIVDM_TYPE5_FRAG1,
     AIVDM_TYPE5_FRAG2,
     AIVDM_TYPE9_GPSD_T9_2,
+    AIVDM_TYPE21_GPSD_T21_2_FRAG1,
+    AIVDM_TYPE21_GPSD_T21_2_FRAG2,
     AIVDM_TYPE24B_AUXILIARY_CRAFT,
 )
 
@@ -331,6 +333,38 @@ def test_ais_sar_aircraft_position_report_round_trip() -> None:
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
     assert d["body"]["radio_status"] == 0x8270
+
+
+def test_ais_aid_to_navigation_report_round_trip() -> None:
+    from marlin.ais import AidToNavigationReport, AisParser, AtonType, EpfdType
+    from marlin.dataclasses import (
+        AidToNavigationReport as DCAidToNavigationReport,
+    )
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE21_GPSD_T21_2_FRAG1 + AIVDM_TYPE21_GPSD_T21_2_FRAG2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert isinstance(msgs[0].body, AidToNavigationReport)
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCAidToNavigationReport)
+    assert dc.type_tag == "type21"
+    assert dc.body.mmsi == 4000003
+    # The mirror stores the AtonType and EpfdType wire values as int.
+    assert dc.body.aton_type == int(AtonType.SPECIAL_MARK) == 30
+    assert dc.body.epfd == int(EpfdType.GPS)
+    # Trailing-trim policy: the embedded @ survives (gpsd would stop there).
+    assert dc.body.name == "IBC G BUOY@?????????"
+    assert dc.body.dimensions.to_bow_m == 2
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+    assert d["body"]["aton_status"] == 0
+    assert d["body"]["dimensions"]["to_port_m"] == 2
 
 
 def test_ais_static_data_b24b_mothership_round_trip() -> None:

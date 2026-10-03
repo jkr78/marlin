@@ -37,6 +37,7 @@
 
 extern crate alloc;
 
+mod aid_to_navigation_report;
 mod aivdm;
 pub mod armor;
 mod bit_reader;
@@ -55,6 +56,9 @@ mod static_voyage_a;
 #[cfg(test)]
 pub(crate) mod testing;
 
+pub use aid_to_navigation_report::{
+    decode_aid_to_navigation_report, AidToNavigationReport, AtonType, AID_TO_NAVIGATION_REPORT_BITS,
+};
 pub use aivdm::{parse_aivdm_wrapper, AivdmHeader};
 pub use bit_reader::BitReader;
 pub use error::AisError;

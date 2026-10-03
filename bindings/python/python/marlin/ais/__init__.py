@@ -8,6 +8,7 @@ ReassemblyError: type[Exception] = _core.ReassemblyError
 # Data enums
 AisVersion = _core.ais.AisVersion
 AltitudeSensor = _core.ais.AltitudeSensor
+AtonType = _core.ais.AtonType
 EpfdType = _core.ais.EpfdType
 ManeuverIndicator = _core.ais.ManeuverIndicator
 NavStatus = _core.ais.NavStatus
@@ -21,6 +22,7 @@ Eta = _core.ais.Eta
 BitReader = _core.ais.BitReader
 
 # Message variants
+AidToNavigationReport = _core.ais.AidToNavigationReport
 ExtendedPositionReportB = _core.ais.ExtendedPositionReportB
 Other = _core.ais.Other
 PositionReportA = _core.ais.PositionReportA
@@ -37,11 +39,13 @@ AisMessage = _core.ais.AisMessage
 AisParser = _core.ais.AisParser
 
 __all__ = [
+    "AidToNavigationReport",
     "AisError",
     "AisMessage",
     "AisParser",
     "AisVersion",
     "AltitudeSensor",
+    "AtonType",
     "BitReader",
     "Dimensions",
     "EpfdType",

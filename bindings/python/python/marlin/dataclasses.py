@@ -410,6 +410,31 @@ class ExtendedPositionReportB:
 
 
 @dataclass(frozen=True)
+class AidToNavigationReport:
+    """Mirror of marlin.ais.AidToNavigationReport (Type 21).
+
+    `aton_type` and `epfd` are stored as int (wire values). `name` is the
+    joined and trimmed 20 + up to 14 character name; `dimensions` is
+    always present (all-None for virtual AtoN and reference points).
+    """
+
+    mmsi: int
+    aton_type: int
+    name: Optional[str]
+    position_accuracy: bool
+    longitude_deg: Optional[float]
+    latitude_deg: Optional[float]
+    dimensions: Dimensions
+    epfd: int
+    timestamp: int
+    off_position: bool
+    aton_status: int
+    raim: bool
+    virtual_aton: bool
+    assigned_flag: bool
+
+
+@dataclass(frozen=True)
 class StaticDataB24A:
     """Mirror of marlin.ais.StaticDataB24A (Type 24 Part A)."""
 
@@ -451,6 +476,7 @@ AisMessageBody = Union[
     SarAircraftPositionReport,
     PositionReportB,
     ExtendedPositionReportB,
+    AidToNavigationReport,
     StaticDataB24A,
     StaticDataB24B,
     Other,
@@ -626,6 +652,8 @@ def to_dataclass(msg: object) -> object:
         return _convert_position_report_b(msg)
     if isinstance(msg, _ais.ExtendedPositionReportB):
         return _convert_extended_position_report_b(msg)
+    if isinstance(msg, _ais.AidToNavigationReport):
+        return _convert_aid_to_navigation_report(msg)
     if isinstance(msg, _ais.StaticDataB24A):
         return StaticDataB24A(mmsi=msg.mmsi, vessel_name=msg.vessel_name)
     if isinstance(msg, _ais.StaticDataB24B):
@@ -842,6 +870,29 @@ def _convert_extended_position_report_b(msg: object) -> ExtendedPositionReportB:
     )
 
 
+def _convert_aid_to_navigation_report(msg: object) -> AidToNavigationReport:
+    import marlin.ais as _ais
+
+    if not isinstance(msg, _ais.AidToNavigationReport):
+        raise TypeError(f"expected AidToNavigationReport, got {type(msg)!r}")
+    return AidToNavigationReport(
+        mmsi=msg.mmsi,
+        aton_type=int(msg.aton_type),
+        name=msg.name,
+        position_accuracy=msg.position_accuracy,
+        longitude_deg=msg.longitude_deg,
+        latitude_deg=msg.latitude_deg,
+        dimensions=_convert_dimensions(msg.dimensions),
+        epfd=int(msg.epfd),
+        timestamp=msg.timestamp,
+        off_position=msg.off_position,
+        aton_status=msg.aton_status,
+        raim=msg.raim,
+        virtual_aton=msg.virtual_aton,
+        assigned_flag=msg.assigned_flag,
+    )
+
+
 def _convert_static_data_b24b(msg: object) -> StaticDataB24B:
     import marlin.ais as _ais
 
@@ -873,6 +924,8 @@ def _convert_ais_body(body: object) -> AisMessageBody:
         return _convert_position_report_b(body)
     if isinstance(body, _ais.ExtendedPositionReportB):
         return _convert_extended_position_report_b(body)
+    if isinstance(body, _ais.AidToNavigationReport):
+        return _convert_aid_to_navigation_report(body)
     if isinstance(body, _ais.StaticDataB24A):
         return StaticDataB24A(mmsi=body.mmsi, vessel_name=body.vessel_name)
     if isinstance(body, _ais.StaticDataB24B):
@@ -889,6 +942,7 @@ def _convert_ais_body(body: object) -> AisMessageBody:
 
 
 __all__ = [
+    "AidToNavigationReport",
     "AisMessage",
     "AisMessageBody",
     "Dimensions",

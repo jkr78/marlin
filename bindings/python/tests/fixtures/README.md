@@ -18,13 +18,17 @@ different layer of the parsing stack against the same input.
 ## `ais/`
 
 AIS-only vectors read by `tests/golden/test_ais_fixtures.py` alone. Each
-file holds one or more public test sentences from the gpsd project's
-`test/sample.aivdm`; the expected values in the matching golden JSON were
-checked against gpsd's `test/sample.aivdm.chk` when the file was added.
+file holds one or more public test sentences, by default from the gpsd
+project's `test/sample.aivdm`; the expected values in the matching golden
+JSON were checked against gpsd's `test/sample.aivdm.chk` when the file
+was added. The source column names any other origin.
 
 | file | source | contents |
 |------|--------|----------|
 | `01_type9_gpsd.nmea` | gpsd `test/sample.aivdm` | Type 9 SAR aircraft position reports T9-1 (MMSI 111265591) and T9-2 (MMSI 111232511) |
+| `02_type21_gpsd_extension.nmea` | gpsd `test/sample.aivdm` | Type 21 AtoN report T21-1 (MMSI 123456789), two fragments, 346 bits, 12-character name extension |
+| `03_type21_gpsd_overlong.nmea` | gpsd `test/sample.aivdm` | Type 21 AtoN report T21-2 (MMSI 4000003), two fragments, 368 bits (over the 360-bit maximum); the decoder keeps the embedded `@` in the name |
+| `04_type21_short.nmea` | nexus `ais_sample.nmea:8` | 246-bit Type 21, below the 272-bit minimum; rejected, so the golden is `[]` |
 
 The gpsd test data is distributed under the BSD-2-Clause licence. gpsd's
 `COPYING` states: "Compilation copyright is held by the GPSD project. All

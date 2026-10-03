@@ -60,6 +60,47 @@ class AltitudeSensor:
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
 
+class AtonType:
+    """Type of aid to navigation (Type 21, ITU-R M.1371-5 Table 74).
+    Int values are the 5-bit wire codes 0..=31; codes 5-19 are fixed AtoN,
+    20-31 floating AtoN, 0-4 neither."""
+
+    NOT_SPECIFIED: AtonType
+    REFERENCE_POINT: AtonType
+    RACON: AtonType
+    FIXED_STRUCTURE_OFFSHORE: AtonType
+    EMERGENCY_WRECK_MARKING_BUOY: AtonType
+    LIGHT_WITHOUT_SECTORS: AtonType
+    LIGHT_WITH_SECTORS: AtonType
+    LEADING_LIGHT_FRONT: AtonType
+    LEADING_LIGHT_REAR: AtonType
+    BEACON_CARDINAL_NORTH: AtonType
+    BEACON_CARDINAL_EAST: AtonType
+    BEACON_CARDINAL_SOUTH: AtonType
+    BEACON_CARDINAL_WEST: AtonType
+    BEACON_PORT_HAND: AtonType
+    BEACON_STARBOARD_HAND: AtonType
+    BEACON_PREFERRED_CHANNEL_PORT_HAND: AtonType
+    BEACON_PREFERRED_CHANNEL_STARBOARD_HAND: AtonType
+    BEACON_ISOLATED_DANGER: AtonType
+    BEACON_SAFE_WATER: AtonType
+    BEACON_SPECIAL_MARK: AtonType
+    CARDINAL_MARK_NORTH: AtonType
+    CARDINAL_MARK_EAST: AtonType
+    CARDINAL_MARK_SOUTH: AtonType
+    CARDINAL_MARK_WEST: AtonType
+    PORT_HAND_MARK: AtonType
+    STARBOARD_HAND_MARK: AtonType
+    PREFERRED_CHANNEL_PORT_HAND: AtonType
+    PREFERRED_CHANNEL_STARBOARD_HAND: AtonType
+    ISOLATED_DANGER: AtonType
+    SAFE_WATER: AtonType
+    SPECIAL_MARK: AtonType
+    LIGHT_VESSEL: AtonType
+    def __int__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
 class EpfdType:
     UNDEFINED: EpfdType
     GPS: EpfdType
@@ -360,6 +401,61 @@ class ExtendedPositionReportB:
     @property
     def assigned_flag(self) -> bool: ...
 
+class AidToNavigationReport:
+    """Type 21 aid-to-navigation report.
+
+    `name` joins the 20-character name with the optional extension (up to
+    14 more characters) and trims trailing `@` / spaces; an `@` inside the
+    name is kept. `dimensions` is all-None for virtual AtoN and reference
+    points. `aton_status` is the raw 8-bit field.
+    """
+
+    def __init__(
+        self,
+        mmsi: int = ...,
+        aton_type: AtonType = ...,
+        name: str | None = ...,
+        position_accuracy: bool = ...,
+        longitude_deg: float | None = ...,
+        latitude_deg: float | None = ...,
+        dimensions: Dimensions | None = ...,
+        epfd: EpfdType = ...,
+        timestamp: int = ...,
+        off_position: bool = ...,
+        aton_status: int = ...,
+        raim: bool = ...,
+        virtual_aton: bool = ...,
+        assigned_flag: bool = ...,
+    ) -> None: ...
+    @property
+    def mmsi(self) -> int: ...
+    @property
+    def aton_type(self) -> AtonType: ...
+    @property
+    def name(self) -> str | None: ...
+    @property
+    def position_accuracy(self) -> bool: ...
+    @property
+    def longitude_deg(self) -> float | None: ...
+    @property
+    def latitude_deg(self) -> float | None: ...
+    @property
+    def dimensions(self) -> Dimensions: ...
+    @property
+    def epfd(self) -> EpfdType: ...
+    @property
+    def timestamp(self) -> int: ...
+    @property
+    def off_position(self) -> bool: ...
+    @property
+    def aton_status(self) -> int: ...
+    @property
+    def raim(self) -> bool: ...
+    @property
+    def virtual_aton(self) -> bool: ...
+    @property
+    def assigned_flag(self) -> bool: ...
+
 class StaticDataB24A:
     def __init__(
         self,
@@ -417,6 +513,7 @@ AisMessageBody: TypeAlias = Union[
     SarAircraftPositionReport,
     PositionReportB,
     ExtendedPositionReportB,
+    AidToNavigationReport,
     StaticDataB24A,
     StaticDataB24B,
     Other,
@@ -476,12 +573,14 @@ class BitReader:
     def remaining(self) -> int: ...
 
 __all__ = [
+    "AidToNavigationReport",
     "AisError",
     "AisMessage",
     "AisMessageBody",
     "AisParser",
     "AisVersion",
     "AltitudeSensor",
+    "AtonType",
     "BitReader",
     "ClockMode",
     "Dimensions",

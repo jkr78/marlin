@@ -617,6 +617,47 @@ class _AisModule:
         def __eq__(self, other: object) -> bool: ...
         def __hash__(self) -> int: ...
 
+    class AtonType:
+        """Type of aid to navigation (Type 21, ITU-R M.1371-5 Table 74).
+        Int values are the 5-bit wire codes 0..=31; codes 5-19 are fixed AtoN,
+        20-31 floating AtoN, 0-4 neither."""
+
+        NOT_SPECIFIED: "_AisModule.AtonType"
+        REFERENCE_POINT: "_AisModule.AtonType"
+        RACON: "_AisModule.AtonType"
+        FIXED_STRUCTURE_OFFSHORE: "_AisModule.AtonType"
+        EMERGENCY_WRECK_MARKING_BUOY: "_AisModule.AtonType"
+        LIGHT_WITHOUT_SECTORS: "_AisModule.AtonType"
+        LIGHT_WITH_SECTORS: "_AisModule.AtonType"
+        LEADING_LIGHT_FRONT: "_AisModule.AtonType"
+        LEADING_LIGHT_REAR: "_AisModule.AtonType"
+        BEACON_CARDINAL_NORTH: "_AisModule.AtonType"
+        BEACON_CARDINAL_EAST: "_AisModule.AtonType"
+        BEACON_CARDINAL_SOUTH: "_AisModule.AtonType"
+        BEACON_CARDINAL_WEST: "_AisModule.AtonType"
+        BEACON_PORT_HAND: "_AisModule.AtonType"
+        BEACON_STARBOARD_HAND: "_AisModule.AtonType"
+        BEACON_PREFERRED_CHANNEL_PORT_HAND: "_AisModule.AtonType"
+        BEACON_PREFERRED_CHANNEL_STARBOARD_HAND: "_AisModule.AtonType"
+        BEACON_ISOLATED_DANGER: "_AisModule.AtonType"
+        BEACON_SAFE_WATER: "_AisModule.AtonType"
+        BEACON_SPECIAL_MARK: "_AisModule.AtonType"
+        CARDINAL_MARK_NORTH: "_AisModule.AtonType"
+        CARDINAL_MARK_EAST: "_AisModule.AtonType"
+        CARDINAL_MARK_SOUTH: "_AisModule.AtonType"
+        CARDINAL_MARK_WEST: "_AisModule.AtonType"
+        PORT_HAND_MARK: "_AisModule.AtonType"
+        STARBOARD_HAND_MARK: "_AisModule.AtonType"
+        PREFERRED_CHANNEL_PORT_HAND: "_AisModule.AtonType"
+        PREFERRED_CHANNEL_STARBOARD_HAND: "_AisModule.AtonType"
+        ISOLATED_DANGER: "_AisModule.AtonType"
+        SAFE_WATER: "_AisModule.AtonType"
+        SPECIAL_MARK: "_AisModule.AtonType"
+        LIGHT_VESSEL: "_AisModule.AtonType"
+        def __int__(self) -> int: ...
+        def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
+
     class EpfdType:
         UNDEFINED: "_AisModule.EpfdType"
         GPS: "_AisModule.EpfdType"
@@ -912,6 +953,61 @@ class _AisModule:
         @property
         def assigned_flag(self) -> bool: ...
 
+    class AidToNavigationReport:
+        """Type 21 aid-to-navigation report.
+
+        `name` joins the 20-character name with the optional extension (up to
+        14 more characters) and trims trailing `@` / spaces; an `@` inside the
+        name is kept. `dimensions` is all-None for virtual AtoN and reference
+        points. `aton_status` is the raw 8-bit field.
+        """
+
+        def __init__(
+            self,
+            mmsi: int = ...,
+            aton_type: "_AisModule.AtonType" = ...,
+            name: str | None = ...,
+            position_accuracy: bool = ...,
+            longitude_deg: float | None = ...,
+            latitude_deg: float | None = ...,
+            dimensions: "_AisModule.Dimensions" | None = ...,
+            epfd: "_AisModule.EpfdType" = ...,
+            timestamp: int = ...,
+            off_position: bool = ...,
+            aton_status: int = ...,
+            raim: bool = ...,
+            virtual_aton: bool = ...,
+            assigned_flag: bool = ...,
+        ) -> None: ...
+        @property
+        def mmsi(self) -> int: ...
+        @property
+        def aton_type(self) -> "_AisModule.AtonType": ...
+        @property
+        def name(self) -> str | None: ...
+        @property
+        def position_accuracy(self) -> bool: ...
+        @property
+        def longitude_deg(self) -> float | None: ...
+        @property
+        def latitude_deg(self) -> float | None: ...
+        @property
+        def dimensions(self) -> "_AisModule.Dimensions": ...
+        @property
+        def epfd(self) -> "_AisModule.EpfdType": ...
+        @property
+        def timestamp(self) -> int: ...
+        @property
+        def off_position(self) -> bool: ...
+        @property
+        def aton_status(self) -> int: ...
+        @property
+        def raim(self) -> bool: ...
+        @property
+        def virtual_aton(self) -> bool: ...
+        @property
+        def assigned_flag(self) -> bool: ...
+
     class StaticDataB24A:
         def __init__(
             self,
@@ -1011,7 +1107,7 @@ class _AisModule:
             self,
             is_own_ship: bool,
             type_tag: str,
-            body: "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.SarAircraftPositionReport | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other",
+            body: "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.SarAircraftPositionReport | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.AidToNavigationReport | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other",
         ) -> None: ...
         @property
         def is_own_ship(self) -> bool: ...
@@ -1020,7 +1116,7 @@ class _AisModule:
         @property
         def body(
             self,
-        ) -> "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.SarAircraftPositionReport | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other": ...
+        ) -> "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.SarAircraftPositionReport | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.AidToNavigationReport | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other": ...
 
 ais: _AisModule
 

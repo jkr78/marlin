@@ -31,6 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `altitude_sensor` as `int`. New golden fixture directory
   `tests/fixtures/ais/` holds the gpsd T9-1 / T9-2 vectors
   (BSD-2-Clause, attributed in `tests/fixtures/README.md`).
+- `marlin.ais.AidToNavigationReport` (`type_tag == "type21"`) and the
+  `AtonType` enum (32 members, `NOT_SPECIFIED = 0` … `LIGHT_VESSEL = 31`,
+  wire codes of ITU-R M.1371-5 Table 74): Type 21 aid-to-navigation
+  reports now decode instead of surfacing as `Other(msg_type=21)`. `name`
+  joins the 20-character name with the optional extension of up to 14
+  more characters and trims trailing `@` / spaces (an embedded `@` is
+  kept); `dimensions` reuses `Dimensions` and is all-`None` for virtual
+  AtoN; the off-position, virtual, assigned and RAIM flags and the raw
+  8-bit `aton_status` are exposed. Payloads over 360 bits are tolerated,
+  under 272 raise `AisError`. `marlin.dataclasses.AidToNavigationReport`
+  mirrors it with `aton_type` and `epfd` as `int`. Golden fixtures
+  `02_type21_gpsd_extension`, `03_type21_gpsd_overlong` (gpsd T21-1 and
+  T21-2) and `04_type21_short` (246 bits, decodes to nothing).
 
 ### Fixed
 

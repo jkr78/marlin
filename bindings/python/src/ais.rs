@@ -11,8 +11,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyModule};
 
 use marlin_ais::{
-    AisFragmentParser, AisMessageBody, AisReassembler, AisVersion as RustAisVersion,
-    AltitudeSensor as RustAltitudeSensor, BitReader as RustBitReader, Dimensions as RustDimensions,
+    AidToNavigationReport as RustAidToNavigationReport, AisFragmentParser, AisMessageBody,
+    AisReassembler, AisVersion as RustAisVersion, AltitudeSensor as RustAltitudeSensor,
+    AtonType as RustAtonType, BitReader as RustBitReader, Dimensions as RustDimensions,
     EpfdType as RustEpfdType, Eta as RustEta,
     ExtendedPositionReportB as RustExtendedPositionReportB,
     ManeuverIndicator as RustManeuverIndicator, NavStatus as RustNavStatus,
@@ -193,6 +194,121 @@ impl From<RustAltitudeSensor> for PyAltitudeSensor {
         match v {
             RustAltitudeSensor::Gnss => Self::Gnss,
             RustAltitudeSensor::Barometric => Self::Barometric,
+        }
+    }
+}
+
+// ---------- AtonType ----------
+
+/// Type of aid to navigation (mirrors `AtonType`, ITU-R M.1371-5 Table
+/// 74). The int values are the 5-bit wire codes 0..=31. The Rust enum
+/// names all 32 codes, so the `From` impl is exhaustive with no wildcard.
+#[pyclass(name = "AtonType", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyAtonType {
+    #[pyo3(name = "NOT_SPECIFIED")]
+    NotSpecified = 0,
+    #[pyo3(name = "REFERENCE_POINT")]
+    ReferencePoint = 1,
+    #[pyo3(name = "RACON")]
+    Racon = 2,
+    #[pyo3(name = "FIXED_STRUCTURE_OFFSHORE")]
+    FixedStructureOffshore = 3,
+    #[pyo3(name = "EMERGENCY_WRECK_MARKING_BUOY")]
+    EmergencyWreckMarkingBuoy = 4,
+    #[pyo3(name = "LIGHT_WITHOUT_SECTORS")]
+    LightWithoutSectors = 5,
+    #[pyo3(name = "LIGHT_WITH_SECTORS")]
+    LightWithSectors = 6,
+    #[pyo3(name = "LEADING_LIGHT_FRONT")]
+    LeadingLightFront = 7,
+    #[pyo3(name = "LEADING_LIGHT_REAR")]
+    LeadingLightRear = 8,
+    #[pyo3(name = "BEACON_CARDINAL_NORTH")]
+    BeaconCardinalNorth = 9,
+    #[pyo3(name = "BEACON_CARDINAL_EAST")]
+    BeaconCardinalEast = 10,
+    #[pyo3(name = "BEACON_CARDINAL_SOUTH")]
+    BeaconCardinalSouth = 11,
+    #[pyo3(name = "BEACON_CARDINAL_WEST")]
+    BeaconCardinalWest = 12,
+    #[pyo3(name = "BEACON_PORT_HAND")]
+    BeaconPortHand = 13,
+    #[pyo3(name = "BEACON_STARBOARD_HAND")]
+    BeaconStarboardHand = 14,
+    #[pyo3(name = "BEACON_PREFERRED_CHANNEL_PORT_HAND")]
+    BeaconPreferredChannelPortHand = 15,
+    #[pyo3(name = "BEACON_PREFERRED_CHANNEL_STARBOARD_HAND")]
+    BeaconPreferredChannelStarboardHand = 16,
+    #[pyo3(name = "BEACON_ISOLATED_DANGER")]
+    BeaconIsolatedDanger = 17,
+    #[pyo3(name = "BEACON_SAFE_WATER")]
+    BeaconSafeWater = 18,
+    #[pyo3(name = "BEACON_SPECIAL_MARK")]
+    BeaconSpecialMark = 19,
+    #[pyo3(name = "CARDINAL_MARK_NORTH")]
+    CardinalMarkNorth = 20,
+    #[pyo3(name = "CARDINAL_MARK_EAST")]
+    CardinalMarkEast = 21,
+    #[pyo3(name = "CARDINAL_MARK_SOUTH")]
+    CardinalMarkSouth = 22,
+    #[pyo3(name = "CARDINAL_MARK_WEST")]
+    CardinalMarkWest = 23,
+    #[pyo3(name = "PORT_HAND_MARK")]
+    PortHandMark = 24,
+    #[pyo3(name = "STARBOARD_HAND_MARK")]
+    StarboardHandMark = 25,
+    #[pyo3(name = "PREFERRED_CHANNEL_PORT_HAND")]
+    PreferredChannelPortHand = 26,
+    #[pyo3(name = "PREFERRED_CHANNEL_STARBOARD_HAND")]
+    PreferredChannelStarboardHand = 27,
+    #[pyo3(name = "ISOLATED_DANGER")]
+    IsolatedDanger = 28,
+    #[pyo3(name = "SAFE_WATER")]
+    SafeWater = 29,
+    #[pyo3(name = "SPECIAL_MARK")]
+    SpecialMark = 30,
+    #[pyo3(name = "LIGHT_VESSEL")]
+    LightVessel = 31,
+}
+
+impl From<RustAtonType> for PyAtonType {
+    fn from(v: RustAtonType) -> Self {
+        match v {
+            RustAtonType::NotSpecified => Self::NotSpecified,
+            RustAtonType::ReferencePoint => Self::ReferencePoint,
+            RustAtonType::Racon => Self::Racon,
+            RustAtonType::FixedStructureOffshore => Self::FixedStructureOffshore,
+            RustAtonType::EmergencyWreckMarkingBuoy => Self::EmergencyWreckMarkingBuoy,
+            RustAtonType::LightWithoutSectors => Self::LightWithoutSectors,
+            RustAtonType::LightWithSectors => Self::LightWithSectors,
+            RustAtonType::LeadingLightFront => Self::LeadingLightFront,
+            RustAtonType::LeadingLightRear => Self::LeadingLightRear,
+            RustAtonType::BeaconCardinalNorth => Self::BeaconCardinalNorth,
+            RustAtonType::BeaconCardinalEast => Self::BeaconCardinalEast,
+            RustAtonType::BeaconCardinalSouth => Self::BeaconCardinalSouth,
+            RustAtonType::BeaconCardinalWest => Self::BeaconCardinalWest,
+            RustAtonType::BeaconPortHand => Self::BeaconPortHand,
+            RustAtonType::BeaconStarboardHand => Self::BeaconStarboardHand,
+            RustAtonType::BeaconPreferredChannelPortHand => Self::BeaconPreferredChannelPortHand,
+            RustAtonType::BeaconPreferredChannelStarboardHand => {
+                Self::BeaconPreferredChannelStarboardHand
+            }
+            RustAtonType::BeaconIsolatedDanger => Self::BeaconIsolatedDanger,
+            RustAtonType::BeaconSafeWater => Self::BeaconSafeWater,
+            RustAtonType::BeaconSpecialMark => Self::BeaconSpecialMark,
+            RustAtonType::CardinalMarkNorth => Self::CardinalMarkNorth,
+            RustAtonType::CardinalMarkEast => Self::CardinalMarkEast,
+            RustAtonType::CardinalMarkSouth => Self::CardinalMarkSouth,
+            RustAtonType::CardinalMarkWest => Self::CardinalMarkWest,
+            RustAtonType::PortHandMark => Self::PortHandMark,
+            RustAtonType::StarboardHandMark => Self::StarboardHandMark,
+            RustAtonType::PreferredChannelPortHand => Self::PreferredChannelPortHand,
+            RustAtonType::PreferredChannelStarboardHand => Self::PreferredChannelStarboardHand,
+            RustAtonType::IsolatedDanger => Self::IsolatedDanger,
+            RustAtonType::SafeWater => Self::SafeWater,
+            RustAtonType::SpecialMark => Self::SpecialMark,
+            RustAtonType::LightVessel => Self::LightVessel,
         }
     }
 }
@@ -1031,6 +1147,135 @@ impl From<RustExtendedPositionReportB> for PyExtendedPositionReportB {
     }
 }
 
+// ---------- AidToNavigationReport (Type 21) ----------
+
+/// Aid-to-navigation report payload (Type 21).
+///
+/// `name` is the 20-character name joined with the optional extension
+/// (up to 14 more characters) and trimmed of trailing `@` / spaces; an
+/// `@` inside the name is kept. `dimensions` is all-`None` for virtual
+/// AtoN and reference points; `aton_status` is the raw 8-bit field.
+// 5 bools (`position_accuracy`, `off_position`, `raim`, `virtual_aton`,
+// `assigned_flag`) are ITU-R M.1371 wire-format flags — the wire reality.
+#[allow(clippy::struct_excessive_bools)]
+#[pyclass(name = "AidToNavigationReport", frozen, module = "marlin.ais")]
+#[derive(Clone, Debug)]
+pub struct PyAidToNavigationReport {
+    #[pyo3(get)]
+    mmsi: u32,
+    #[pyo3(get)]
+    aton_type: PyAtonType,
+    #[pyo3(get)]
+    name: Option<String>,
+    #[pyo3(get)]
+    position_accuracy: bool,
+    #[pyo3(get)]
+    longitude_deg: Option<f64>,
+    #[pyo3(get)]
+    latitude_deg: Option<f64>,
+    #[pyo3(get)]
+    dimensions: PyDimensions,
+    #[pyo3(get)]
+    epfd: PyEpfdType,
+    #[pyo3(get)]
+    timestamp: u8,
+    #[pyo3(get)]
+    off_position: bool,
+    #[pyo3(get)]
+    aton_status: u8,
+    #[pyo3(get)]
+    raim: bool,
+    #[pyo3(get)]
+    virtual_aton: bool,
+    #[pyo3(get)]
+    assigned_flag: bool,
+}
+
+#[pymethods]
+impl PyAidToNavigationReport {
+    #[new]
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+    #[pyo3(signature = (
+        mmsi = 0,
+        aton_type = PyAtonType::NotSpecified,
+        name = None,
+        position_accuracy = false,
+        longitude_deg = None,
+        latitude_deg = None,
+        dimensions = None,
+        epfd = PyEpfdType::Undefined,
+        timestamp = 60,
+        off_position = false,
+        aton_status = 0,
+        raim = false,
+        virtual_aton = false,
+        assigned_flag = false,
+    ))]
+    fn new(
+        mmsi: u32,
+        aton_type: PyAtonType,
+        name: Option<String>,
+        position_accuracy: bool,
+        longitude_deg: Option<f64>,
+        latitude_deg: Option<f64>,
+        dimensions: Option<PyDimensions>,
+        epfd: PyEpfdType,
+        timestamp: u8,
+        off_position: bool,
+        aton_status: u8,
+        raim: bool,
+        virtual_aton: bool,
+        assigned_flag: bool,
+    ) -> Self {
+        let dimensions =
+            dimensions.unwrap_or_else(|| PyDimensions::from(RustDimensions::default()));
+        Self {
+            mmsi,
+            aton_type,
+            name,
+            position_accuracy,
+            longitude_deg,
+            latitude_deg,
+            dimensions,
+            epfd,
+            timestamp,
+            off_position,
+            aton_status,
+            raim,
+            virtual_aton,
+            assigned_flag,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AidToNavigationReport(mmsi={}, aton_type={:?}, name={:?}, lat={:?}, lon={:?})",
+            self.mmsi, self.aton_type, self.name, self.latitude_deg, self.longitude_deg,
+        )
+    }
+}
+
+impl From<RustAidToNavigationReport> for PyAidToNavigationReport {
+    fn from(d: RustAidToNavigationReport) -> Self {
+        Self {
+            mmsi: d.mmsi,
+            aton_type: d.aton_type.into(),
+            name: d.name,
+            position_accuracy: d.position_accuracy,
+            longitude_deg: d.longitude_deg,
+            latitude_deg: d.latitude_deg,
+            dimensions: d.dimensions.into(),
+            epfd: d.epfd.into(),
+            timestamp: d.timestamp,
+            off_position: d.off_position,
+            aton_status: d.aton_status,
+            raim: d.raim,
+            virtual_aton: d.virtual_aton,
+            assigned_flag: d.assigned_flag,
+        }
+    }
+}
+
 // ---------- StaticDataB24A (Type 24 Part A) ----------
 
 /// Class B static data Part A payload (Type 24A).
@@ -1216,6 +1461,7 @@ pub(crate) fn message_body_to_py(py: Python<'_>, body: AisMessageBody) -> PyResu
         }
         AisMessageBody::Type18(d) => Py::new(py, PyPositionReportB::from(d))?.into_any(),
         AisMessageBody::Type19(d) => Py::new(py, PyExtendedPositionReportB::from(d))?.into_any(),
+        AisMessageBody::Type21(d) => Py::new(py, PyAidToNavigationReport::from(d))?.into_any(),
         AisMessageBody::Type24A(d) => Py::new(py, PyStaticDataB24A::from(d))?.into_any(),
         AisMessageBody::Type24B(d) => Py::new(py, PyStaticDataB24B::from(d))?.into_any(),
         AisMessageBody::Other {
@@ -1318,6 +1564,7 @@ impl PyAisMessage {
             AisMessageBody::Type9(_) => "type9",
             AisMessageBody::Type18(_) => "type18",
             AisMessageBody::Type19(_) => "type19",
+            AisMessageBody::Type21(_) => "type21",
             AisMessageBody::Type24A(_) => "type24a",
             AisMessageBody::Type24B(_) => "type24b",
             AisMessageBody::Other { .. } => "other",
@@ -1652,6 +1899,7 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     m.add_class::<PyManeuverIndicator>()?;
     m.add_class::<PyTurnDirection>()?;
     m.add_class::<PyAltitudeSensor>()?;
+    m.add_class::<PyAtonType>()?;
     m.add_class::<PyEpfdType>()?;
     m.add_class::<PyAisVersion>()?;
     m.add_class::<PyDimensions>()?;
@@ -1662,6 +1910,7 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     m.add_class::<PySarAircraftPositionReport>()?;
     m.add_class::<PyPositionReportB>()?;
     m.add_class::<PyExtendedPositionReportB>()?;
+    m.add_class::<PyAidToNavigationReport>()?;
     m.add_class::<PyStaticDataB24A>()?;
     m.add_class::<PyStaticDataB24B>()?;
     m.add_class::<PyOther>()?;

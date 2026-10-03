@@ -58,11 +58,13 @@ pub(crate) const MINUTES_FRAC_PER_DEGREE: f64 = 600_000.0;
 
 /// Extent of a station from its position-reference point, as emitted
 /// in Type 5 (Class A static), Type 19 (Class B extended position
-/// report) and Type 24 Part B (Class B static part B).
+/// report), Type 21 (aid-to-navigation report) and Type 24 Part B
+/// (Class B static part B).
 ///
 /// The four fields measure the distances from the position-reference
 /// point (typically the antenna) to the bow, stern, port, and
-/// starboard edges of the vessel, in metres. `0` is the "not
+/// starboard edges of the vessel, in metres. On a Type 21 they are the
+/// extent of the aid; virtual AtoN and reference points send all zeros. `0` is the "not
 /// available" sentinel and maps to `None`; the maximum of each field
 /// (511 m or 63 m) means "this value or greater" and is kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -81,7 +83,8 @@ pub struct Dimensions {
     pub to_starboard_m: Option<u8>,
 }
 
-/// Electronic Position-Fixing Device type — 4-bit field in Types 5 and 19.
+/// Electronic Position-Fixing Device type — 4-bit field in Types 5, 19,
+/// 21 and 24 Part B.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum EpfdType {
