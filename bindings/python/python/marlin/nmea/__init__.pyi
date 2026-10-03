@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Literal, Union
+from typing import Literal, Union, final
 
 from typing_extensions import TypeAlias
 
@@ -12,6 +12,7 @@ from ..envelope import RawSentence
 
 class DecodeError(MarlinError): ...
 
+@final
 class GgaFixQuality:
     INVALID: GgaFixQuality
     GPS_FIX: GgaFixQuality
@@ -23,9 +24,10 @@ class GgaFixQuality:
     MANUAL_INPUT: GgaFixQuality
     SIMULATOR: GgaFixQuality
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class VtgMode:
     NOT_VALID: VtgMode
     AUTONOMOUS: VtgMode
@@ -34,25 +36,28 @@ class VtgMode:
     MANUAL: VtgMode
     SIMULATOR: VtgMode
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class DataStatus:
     ACTIVE: DataStatus
     VOID: DataStatus
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class RmcNavStatus:
     SAFE: RmcNavStatus
     CAUTION: RmcNavStatus
     UNSAFE: RmcNavStatus
     NOT_VALID: RmcNavStatus
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class PsxnSlot:
     ROLL: PsxnSlot
     PITCH: PsxnSlot
@@ -61,60 +66,67 @@ class PsxnSlot:
     PITCH_SINE_ENCODED: PsxnSlot
     IGNORED: PsxnSlot
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class PrdidDialect:
     UNKNOWN: PrdidDialect
     PITCH_ROLL_HEADING: PrdidDialect
     ROLL_PITCH_HEADING: PrdidDialect
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class TargetStatus:
     LOST: TargetStatus
     QUERY: TargetStatus
     TRACKING: TargetStatus
     UNKNOWN: TargetStatus
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class AngleReference:
     TRUE: AngleReference
     RELATIVE: AngleReference
     UNKNOWN: AngleReference
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class DistanceUnits:
     NAUTICAL: DistanceUnits
     KILOMETERS: DistanceUnits
     STATUTE: DistanceUnits
     UNKNOWN: DistanceUnits
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class AcquisitionType:
     AUTOMATIC: AcquisitionType
     MANUAL: AcquisitionType
     REPORTED: AcquisitionType
     UNKNOWN: AcquisitionType
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class PsxnLayout:
     @staticmethod
     def from_str(s: str) -> PsxnLayout: ...
 
+@final
 class UtcTime:
-    def __init__(
-        self, hour: int, minute: int, second: int, millisecond: int
-    ) -> None: ...
+    def __new__(
+        cls, hour: int, minute: int, second: int, millisecond: int
+    ) -> UtcTime: ...
     @property
     def hour(self) -> int: ...
     @property
@@ -124,8 +136,9 @@ class UtcTime:
     @property
     def millisecond(self) -> int: ...
 
+@final
 class UtcDate:
-    def __init__(self, day: int, month: int, year_yy: int) -> None: ...
+    def __new__(cls, day: int, month: int, year_yy: int) -> UtcDate: ...
     @property
     def day(self) -> int: ...
     @property
@@ -133,10 +146,10 @@ class UtcDate:
     @property
     def year_yy(self) -> int: ...
 
+@final
 class Gga:
-    def __init__(
-        self,
-        *,
+    def __new__(
+        cls,
         talker: bytes | None,
         utc: UtcTime | None,
         latitude_deg: float | None,
@@ -148,7 +161,7 @@ class Gga:
         geoid_separation_m: float | None,
         dgps_age_s: float | None,
         dgps_station_id: int | None,
-    ) -> None: ...
+    ) -> Gga: ...
     @property
     def talker(self) -> bytes | None: ...
     @property
@@ -172,17 +185,17 @@ class Gga:
     @property
     def dgps_station_id(self) -> int | None: ...
 
+@final
 class Vtg:
-    def __init__(
-        self,
-        *,
+    def __new__(
+        cls,
         talker: bytes | None,
         course_true_deg: float | None,
         course_magnetic_deg: float | None,
         speed_knots: float | None,
         speed_kmh: float | None,
         mode: VtgMode | None,
-    ) -> None: ...
+    ) -> Vtg: ...
     @property
     def talker(self) -> bytes | None: ...
     @property
@@ -196,26 +209,27 @@ class Vtg:
     @property
     def mode(self) -> VtgMode | None: ...
 
+@final
 class Hdt:
-    def __init__(
-        self,
-        *,
+    def __new__(
+        cls,
         talker: bytes | None,
         heading_true_deg: float | None,
-    ) -> None: ...
+    ) -> Hdt: ...
     @property
     def talker(self) -> bytes | None: ...
     @property
     def heading_true_deg(self) -> float | None: ...
 
+@final
 class Hdg:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         talker: bytes | None,
         heading_magnetic_deg: float | None,
         deviation_deg: float | None,
         variation_deg: float | None,
-    ) -> None: ...
+    ) -> Hdg: ...
     @property
     def talker(self) -> bytes | None: ...
     @property
@@ -225,6 +239,7 @@ class Hdg:
     @property
     def variation_deg(self) -> float | None: ...
 
+@final
 class Ttm:
     @property
     def talker(self) -> bytes | None: ...
@@ -259,6 +274,7 @@ class Ttm:
     @property
     def acquisition(self) -> AcquisitionType | None: ...
 
+@final
 class Tll:
     @property
     def talker(self) -> bytes | None: ...
@@ -277,9 +293,10 @@ class Tll:
     @property
     def reference_target(self) -> bool: ...
 
+@final
 class Rmc:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         talker: bytes | None,
         utc: UtcTime | None,
         status: DataStatus,
@@ -291,7 +308,7 @@ class Rmc:
         magnetic_variation_deg: float | None,
         mode: VtgMode | None,
         nav_status: RmcNavStatus | None,
-    ) -> None: ...
+    ) -> Rmc: ...
     @property
     def talker(self) -> bytes | None: ...
     @property
@@ -315,16 +332,17 @@ class Rmc:
     @property
     def nav_status(self) -> RmcNavStatus | None: ...
 
+@final
 class Gll:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         talker: bytes | None,
         latitude_deg: float | None,
         longitude_deg: float | None,
         utc: UtcTime | None,
         status: DataStatus,
         mode: VtgMode | None,
-    ) -> None: ...
+    ) -> Gll: ...
     @property
     def talker(self) -> bytes | None: ...
     @property
@@ -338,24 +356,26 @@ class Gll:
     @property
     def mode(self) -> VtgMode | None: ...
 
+@final
 class Unknown:
-    def __init__(
-        self, *, talker: bytes | None, sentence_type: str
-    ) -> None: ...
+    def __new__(
+        cls, talker: bytes | None, sentence_type: str
+    ) -> Unknown: ...
     @property
     def talker(self) -> bytes | None: ...
     @property
     def sentence_type(self) -> str: ...
 
+@final
 class Psxn:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         id: int | None = ...,
         token: bytes | None = ...,
         roll_deg: float | None = ...,
         pitch_deg: float | None = ...,
         heave_m: float | None = ...,
-    ) -> None: ...
+    ) -> Psxn: ...
     @property
     def id(self) -> int | None: ...
     @property
@@ -367,13 +387,14 @@ class Psxn:
     @property
     def heave_m(self) -> float | None: ...
 
+@final
 class PrdidPitchRollHeading:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         pitch_deg: float | None = ...,
         roll_deg: float | None = ...,
         heading_deg: float | None = ...,
-    ) -> None: ...
+    ) -> PrdidPitchRollHeading: ...
     @property
     def pitch_deg(self) -> float | None: ...
     @property
@@ -381,13 +402,14 @@ class PrdidPitchRollHeading:
     @property
     def heading_deg(self) -> float | None: ...
 
+@final
 class PrdidRollPitchHeading:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         roll_deg: float | None = ...,
         pitch_deg: float | None = ...,
         heading_deg: float | None = ...,
-    ) -> None: ...
+    ) -> PrdidRollPitchHeading: ...
     @property
     def roll_deg(self) -> float | None: ...
     @property
@@ -395,11 +417,13 @@ class PrdidRollPitchHeading:
     @property
     def heading_deg(self) -> float | None: ...
 
+@final
 class PrdidRaw:
-    def __init__(self, fields: list[bytes]) -> None: ...
+    def __new__(cls, fields: list[bytes]) -> PrdidRaw: ...
     @property
     def fields(self) -> tuple[bytes, ...]: ...
 
+@final
 class Prdid:
     @staticmethod
     def pitch_roll_heading(
@@ -426,8 +450,9 @@ Nmea0183Message: TypeAlias = Union[
     Gga, Gll, Hdt, Rmc, Vtg, Hdg, Ttm, Tll, Psxn, Prdid, Unknown
 ]
 
+@final
 class DecodeOptions:
-    def __init__(self) -> None: ...
+    def __new__(cls) -> DecodeOptions: ...
     def with_psxn_layout(self, layout: PsxnLayout) -> DecodeOptions: ...
     def with_prdid_dialect(self, dialect: PrdidDialect) -> DecodeOptions: ...
 
@@ -435,6 +460,7 @@ class _NmeaIterator:
     def __iter__(self) -> _NmeaIterator: ...
     def __next__(self) -> Nmea0183Message: ...
 
+@final
 class Nmea0183Parser:
     @staticmethod
     def one_shot(options: DecodeOptions | None = ...) -> Nmea0183Parser: ...

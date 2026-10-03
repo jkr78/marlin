@@ -100,6 +100,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   only place a class is declared. Code that imported from `marlin._core`
   directly loses its type information and should import from
   `marlin.envelope`, `marlin.nmea`, `marlin.ais`, or `marlin.klv`.
+- Every binding class is marked `@final` in the stubs, matching the
+  runtime: subclassing one always raised `TypeError`, and a type checker
+  now reports it.
+- The stubs declare constructors as `__new__`, which is what the
+  extension classes define, and `__eq__` on the enums and `RawSentence`
+  takes its argument positional-only. Calls type-check as before.
+- The stubs for `marlin.nmea.Gga`, `Vtg`, `Hdt`, and `Unknown` no longer
+  mark the constructor parameters keyword-only. The runtime always
+  accepted them positionally, like every other message class.
+- `mypy.stubtest` now checks the stubs against the built extension in
+  `just py-type-check` and in CI.
 
 ## [0.1.4] - 2026-07-07
 

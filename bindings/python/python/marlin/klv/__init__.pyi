@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from typing import final
+
 from .. import MarlinError
 
 class KlvError(MarlinError): ...
 
+@final
 class St0601:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         timestamp_us: int = ...,
         version: int | None = ...,
-    ) -> None: ...
+    ) -> St0601: ...
     # Framing / mandatory fields.
     timestamp_us: int
     version: int | None
@@ -122,6 +125,7 @@ class St0601:
     @property
     def unknown(self) -> list[tuple[int, bytes]]: ...
 
+@final
 class TagInfo:
     """Read-only metadata for one typed ST 0601 tag: wire number, field base
     name (e.g. ``sensor_latitude``), and engineering unit (``None`` if none)."""

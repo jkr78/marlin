@@ -92,6 +92,11 @@ jobs:
       - name: Run pyright
         working-directory: bindings/python
         run: pyright
+      # Compares the public stubs with the built extension: signatures,
+      # @final, positional-only. Same command as `just py-type-check`.
+      - name: Run stubtest
+        working-directory: bindings/python
+        run: python -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt --ignore-unused-allowlist
 
   sdist:
     name: Source distribution
