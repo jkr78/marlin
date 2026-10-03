@@ -7,34 +7,16 @@ import json
 
 import pytest
 
+from .ais_vectors import (
+    AIVDM_TYPE1,
+    AIVDM_TYPE1_ROT_PLUS_127,
+    AIVDM_TYPE5_FRAG1,
+    AIVDM_TYPE5_FRAG2,
+    AIVDM_TYPE9_GPSD_T9_2,
+    AIVDM_TYPE24B_AUXILIARY_CRAFT,
+)
+
 GGA = b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
-AIVDM_TYPE1 = b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*23\r\n"
-# Synthetic Type 1 with raw ROT +127; armored string pinned by the Rust
-# test `rate_of_turn_no_indicator_payloads_armor_to_known_strings`
-# (crates/marlin-ais/src/position_report_a.rs). Same payload as the
-# `_AIVDM_TYPE1_ROT_PLUS_127` constant in test_ais.py.
-AIVDM_TYPE1_ROT_PLUS_127 = b"!AIVDM,1,1,,A,11mg=5@Oh0000000000000000000,0*73\r\n"
-
-# Synthetic Type 24 Part B from auxiliary-craft MMSI 987654321 carrying
-# mother-ship MMSI 211000123, pinned by the Rust BitWriter test
-# `part_b_auxiliary_craft_payload_armors_to_known_string`
-# (crates/marlin-ais/src/static_data_b.rs). Same payload as the
-# `_AIVDM_TYPE24B_AUXILIARY_CRAFT` constant in test_ais.py.
-AIVDM_TYPE24B_AUXILIARY_CRAFT = (
-    b"!AIVDM,1,1,,A,H>eq`dDUF>4ijkl3Chhi00<Tqds4,0*3A\r\n"
-)
-
-# Type 9 SAR aircraft position report: gpsd test/sample.aivdm T9-2
-# (BSD-2-Clause). Same sentence as `_AIVDM_TYPE9_GPSD_T9_2` in test_ais.py.
-AIVDM_TYPE9_GPSD_T9_2 = b"!AIVDM,1,1,,B,91b55wi;hbOS@OdQAC062Ch2089h,0*30\r\n"
-
-# Type 5 two-fragment message (same corpus as test_aio.py).
-_TYPE5_FRAG1 = (
-    b"!AIVDM,2,1,3,A,"
-    b"55P5TL01VIaAL@7WKO@mBplU@<PDhh000000001S;AJ::4A80?4i@E53,"
-    b"0*3D\r\n"
-)
-_TYPE5_FRAG2 = b"!AIVDM,2,2,3,A,1CQWBDhH888888888880,2*4D\r\n"
 
 
 def _json_default(v: object) -> object:
@@ -303,7 +285,7 @@ def test_ais_static_and_voyage_a_round_trip() -> None:
     from marlin.dataclasses import to_dataclass
 
     p = AisParser.streaming()
-    p.feed(_TYPE5_FRAG1 + _TYPE5_FRAG2)
+    p.feed(AIVDM_TYPE5_FRAG1 + AIVDM_TYPE5_FRAG2)
     msgs = list(p)
     assert len(msgs) == 1
     assert isinstance(msgs[0].body, StaticAndVoyageA)

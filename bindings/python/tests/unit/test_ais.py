@@ -29,54 +29,14 @@ from marlin.ais import (
     TurnDirection,
 )
 
-
-def _aivdm(
-    frag_count: int,
-    frag_num: int,
-    seq_id: int | None,
-    channel: str | None,
-    payload: bytes,
-    fill_bits: int,
-) -> bytes:
-    # Mirror of marlin_ais::testing::build_aivdm. Computes the XOR
-    # envelope checksum over `AIVDM,<fields>` and wraps with !...*hh\r\n.
-    parts = [b"AIVDM", str(frag_count).encode(), str(frag_num).encode()]
-    parts.append(b"" if seq_id is None else str(seq_id).encode())
-    parts.append(b"" if channel is None else channel.encode())
-    parts.append(payload)
-    parts.append(str(fill_bits).encode())
-    body = b",".join(parts)
-    x = 0
-    for b in body:
-        x ^= b
-    return b"!" + body + b"*%02X\r\n" % x
-
-
-# Known-good Type 1 (position report A) payload from the Rust crate's
-# tests. Same payload appears at crates/marlin-ais/src/parser.rs:476.
-_AIVDM_TYPE1 = _aivdm(1, 1, None, "A", b"13aGmP0P00PD;88MD5MTDww@2<0L", 0)
-
-# Synthetic Type 1 payloads (MMSI 123456789, every other field zero) with
-# raw rate of turn +127 and -127. There is no Python-side bit packer; the
-# armored strings are pinned by the Rust BitWriter test
-# `rate_of_turn_no_indicator_payloads_armor_to_known_strings` in
-# crates/marlin-ais/src/position_report_a.rs.
-_AIVDM_TYPE1_ROT_PLUS_127 = _aivdm(1, 1, None, "A", b"11mg=5@Oh0000000000000000000", 0)
-_AIVDM_TYPE1_ROT_MINUS_127 = _aivdm(1, 1, None, "A", b"11mg=5@P@0000000000000000000", 0)
-
-# Synthetic Type 24 Part B from auxiliary-craft MMSI 987654321 (ship type
-# 37, vendor "VND1234", call sign "CS001", EPFD GPS) whose 30 extent bits
-# hold the mother-ship MMSI 211000123. Pinned by the Rust BitWriter test
-# `part_b_auxiliary_craft_payload_armors_to_known_string` in
-# crates/marlin-ais/src/static_data_b.rs.
-_AIVDM_TYPE24B_AUXILIARY_CRAFT = _aivdm(
-    1, 1, None, "A", b"H>eq`dDUF>4ijkl3Chhi00<Tqds4", 0
+from .ais_vectors import (
+    AIVDM_TYPE1,
+    AIVDM_TYPE1_ROT_MINUS_127,
+    AIVDM_TYPE1_ROT_PLUS_127,
+    AIVDM_TYPE9_GPSD_T9_2,
+    AIVDM_TYPE24B_AUXILIARY_CRAFT,
+    aivdm,
 )
-
-# Type 9 SAR aircraft position report: gpsd test/sample.aivdm T9-2
-# (BSD-2-Clause). Its .chk file gives mmsi 111232511, altitude 303 m,
-# SOG 42 kn, 6.27884°W 58.144°N, COG 154.5°, second 15, DTE 1, radio 0x8270.
-_AIVDM_TYPE9_GPSD_T9_2 = b"!AIVDM,1,1,,B,91b55wi;hbOS@OdQAC062Ch2089h,0*30\r\n"
 
 
 def test_nav_status_values() -> None:
@@ -493,7 +453,7 @@ def test_bit_reader_read_across_byte_boundary() -> None:
 
 def test_ais_streaming_single_fragment() -> None:
     p = AisParser.streaming()
-    p.feed(_AIVDM_TYPE1)
+    p.feed(AIVDM_TYPE1)
     messages = list(p)
     assert len(messages) == 1
     assert isinstance(messages[0], AisMessage)
@@ -505,7 +465,7 @@ def test_ais_classic_type1_rate_of_turn_is_not_available() -> None:
     # The classic Annex 5 fixture carries raw ROT -128 (not available):
     # both flattened attributes are None (ADR-0003).
     p = AisParser.streaming()
-    p.feed(_AIVDM_TYPE1)
+    p.feed(AIVDM_TYPE1)
     body = list(p)[0].body
     assert isinstance(body, PositionReportA)
     assert body.rate_of_turn is None
@@ -515,8 +475,8 @@ def test_ais_classic_type1_rate_of_turn_is_not_available() -> None:
 @pytest.mark.parametrize(
     ("sentence", "expected"),
     [
-        (_AIVDM_TYPE1_ROT_PLUS_127, TurnDirection.RIGHT),
-        (_AIVDM_TYPE1_ROT_MINUS_127, TurnDirection.LEFT),
+        (AIVDM_TYPE1_ROT_PLUS_127, TurnDirection.RIGHT),
+        (AIVDM_TYPE1_ROT_MINUS_127, TurnDirection.LEFT),
     ],
     ids=["plus_127_right", "minus_127_left"],
 )
@@ -542,7 +502,7 @@ def test_static_data_b24b_mothership_mmsi() -> None:
     # in the 30 bits that otherwise hold dimensions (ADR-0002); the sum
     # type flattens to `dimensions` / `mothership_mmsi` (ADR-0003).
     p = AisParser.streaming()
-    p.feed(_AIVDM_TYPE24B_AUXILIARY_CRAFT)
+    p.feed(AIVDM_TYPE24B_AUXILIARY_CRAFT)
     msgs = list(p)
     assert len(msgs) == 1
     body = msgs[0].body
@@ -561,7 +521,7 @@ def test_sar_aircraft_position_report_gpsd_t9_2() -> None:
     # type_tag "type9" instead of landing in Other. Expected values are
     # the gpsd .chk entries for T9-2; lon/lat converted to degrees.
     p = AisParser.streaming()
-    p.feed(_AIVDM_TYPE9_GPSD_T9_2)
+    p.feed(AIVDM_TYPE9_GPSD_T9_2)
     msgs = list(p)
     assert len(msgs) == 1
     assert msgs[0].type_tag == "type9"
@@ -587,7 +547,7 @@ def test_ais_auto_clock_reads_time() -> None:
     # and assert the parser calls it.
     with patch("time.monotonic_ns", return_value=0) as mock_now:
         p = AisParser.streaming(timeout_ms=60_000)  # clock="auto" default
-        p.feed(_AIVDM_TYPE1)
+        p.feed(AIVDM_TYPE1)
         list(p)
         assert mock_now.called
 
@@ -599,7 +559,7 @@ def test_ais_manual_clock_never_reads_time() -> None:
     with patch("time.monotonic_ns") as mock_now:
         p = AisParser.streaming(timeout_ms=60_000, clock="manual")
         p.tick(now_ms=1_000_000)
-        p.feed(_AIVDM_TYPE1)
+        p.feed(AIVDM_TYPE1)
         list(p)
         mock_now.assert_not_called()
 
@@ -614,7 +574,7 @@ def test_ais_reassembly_out_of_order_raises() -> None:
     # Feed part 2 of a 2-fragment message without part 1 — the
     # reassembler emits ReassemblyError (subclass of AisError). Strict
     # iteration surfaces it; lenient would swallow.
-    frag2 = _aivdm(2, 2, 1, "A", b"XXXXXXX", 0)
+    frag2 = aivdm(2, 2, 1, "A", b"XXXXXXX", 0)
     p = AisParser.streaming()
     p.feed(frag2)
     with pytest.raises(ReassemblyError):
