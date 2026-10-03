@@ -73,7 +73,8 @@ pub enum AisMessageBody {
     Type19(ExtendedPositionReportB),
     /// Type 24 Part A — Class B static, vessel name.
     Type24A(StaticDataB24A),
-    /// Type 24 Part B — Class B static, ship type + dimensions + callsign.
+    /// Type 24 Part B — Class B static, ship type + call sign + extent
+    /// (dimensions or mother-ship MMSI) + EPFD type.
     Type24B(StaticDataB24B),
     /// Any message type this crate does not yet decode. The raw bit
     /// buffer is preserved so callers can plug in their own decoder or

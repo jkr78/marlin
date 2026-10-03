@@ -33,7 +33,8 @@ pub const STATIC_DATA_B_24B_BITS: usize = 168;
 pub enum Type24Part {
     /// Part A — vessel name.
     A,
-    /// Part B — ship type, vendor ID, call sign, dimensions.
+    /// Part B — ship type, vendor ID, call sign, extent (dimensions or
+    /// mother-ship MMSI), EPFD type.
     B,
     /// Reserved part codes (2 or 3); raw code preserved.
     Reserved(u8),
@@ -221,7 +222,6 @@ pub fn decode_static_data_b_24b(
 mod tests {
     use super::*;
     use crate::testing::{armor_encode, write_ais_str, BitWriter};
-    use crate::EpfdType;
 
     fn build_part_a(mmsi: u32, name: &[u8]) -> (alloc::vec::Vec<u8>, usize) {
         let mut w = BitWriter::new();
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn part_b_decodes_epfd() {
-        let (bits, total) = build_part_b(1, 0, b"", b"", 0, 8);
+        let (bits, total) = build_part_b(1, 0, b"", b"", 0, EpfdType::Galileo.code());
         let msg = decode_static_data_b_24b(&bits, total).unwrap();
         assert_eq!(msg.epfd, EpfdType::Galileo);
     }

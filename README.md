@@ -61,7 +61,7 @@ Typed decoders for these ITU-R M.1371 message types:
   ship type + dimensions)
 - **Type 24 part A** — Class B static data: vessel name
 - **Type 24 part B** — Class B static data: callsign, ship type,
-  vendor ID, dimensions
+  vendor ID, dimensions (or mother-ship MMSI for an auxiliary craft), EPFD
 
 Multi-fragment messages reassemble across `!AIVDM` line pairs. Other
 types surface as `Other` carrying the raw bit buffer for downstream
