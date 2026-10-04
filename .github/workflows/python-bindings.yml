@@ -67,8 +67,20 @@ jobs:
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+      # The `dev` extra in bindings/python/pyproject.toml is the one list of
+      # tools, shared with `just py-setup`. Read it here; installing the
+      # extra itself (`pip install -e '.[dev]'`) would also compile the
+      # extension, which a later step does in release mode.
       - name: Install test deps
-        run: pip install 'maturin>=1.7,<2.0' pytest hypothesis 'mypy>=1.8' 'pyright>=1.1'
+        run: |
+          python - > "$RUNNER_TEMP/dev-requirements.txt" <<'EOF'
+          import tomllib
+
+          with open("bindings/python/pyproject.toml", "rb") as f:
+              extras = tomllib.load(f)["project"]["optional-dependencies"]
+          print("\n".join(extras["dev"]))
+          EOF
+          pip install -r "$RUNNER_TEMP/dev-requirements.txt"
       # The bindings crate is excluded from the Cargo workspace, so the main
       # CI's `just fmt-check` / `just lint` never see its Rust. Gate it here.
       - name: cargo fmt --check (bindings Rust)
@@ -92,6 +104,11 @@ jobs:
       - name: Run pyright
         working-directory: bindings/python
         run: pyright
+      # Compares the public stubs with the built extension: signatures,
+      # @final, positional-only. Same command as `just py-type-check`.
+      - name: Run stubtest
+        working-directory: bindings/python
+        run: python -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt --ignore-unused-allowlist
 
   sdist:
     name: Source distribution

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Literal, Union
+from typing import Literal, Union, final
 
 from typing_extensions import TypeAlias
 
@@ -12,6 +12,7 @@ from .. import MarlinError
 class AisError(MarlinError): ...
 class ReassemblyError(AisError): ...
 
+@final
 class NavStatus:
     UNDERWAY_USING_ENGINE: NavStatus
     AT_ANCHOR: NavStatus
@@ -25,18 +26,20 @@ class NavStatus:
     AIS_SART_ACTIVE: NavStatus
     NOT_DEFINED: NavStatus
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class ManeuverIndicator:
     NOT_AVAILABLE: ManeuverIndicator
     NO_SPECIAL: ManeuverIndicator
     SPECIAL: ManeuverIndicator
     RESERVED: ManeuverIndicator
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class TurnDirection:
     """Direction of a ±127 "no turn indicator" rate-of-turn status.
 
@@ -47,9 +50,10 @@ class TurnDirection:
     RIGHT: TurnDirection
     LEFT: TurnDirection
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class AltitudeSensor:
     """Source of a SAR aircraft's altitude (Type 9). Int values are the
     wire codes: GNSS = 0, BAROMETRIC = 1."""
@@ -57,9 +61,10 @@ class AltitudeSensor:
     GNSS: AltitudeSensor
     BAROMETRIC: AltitudeSensor
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class AtonType:
     """Type of aid to navigation (Type 21, ITU-R M.1371-5 Table 74).
     Int values are the 5-bit wire codes 0..=31; codes 5-19 are fixed AtoN,
@@ -98,9 +103,10 @@ class AtonType:
     SPECIAL_MARK: AtonType
     LIGHT_VESSEL: AtonType
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class EpfdType:
     UNDEFINED: EpfdType
     GPS: EpfdType
@@ -113,26 +119,28 @@ class EpfdType:
     GALILEO: EpfdType
     INTERNAL_GNSS: EpfdType
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class AisVersion:
     ITU1371V1: AisVersion
     ITU1371V3: AisVersion
     ITU1371V5: AisVersion
     FUTURE: AisVersion
     def __int__(self) -> int: ...
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
+@final
 class Dimensions:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         to_bow_m: int | None = ...,
         to_stern_m: int | None = ...,
         to_port_m: int | None = ...,
         to_starboard_m: int | None = ...,
-    ) -> None: ...
+    ) -> Dimensions: ...
     @property
     def to_bow_m(self) -> int | None: ...
     @property
@@ -142,14 +150,15 @@ class Dimensions:
     @property
     def to_starboard_m(self) -> int | None: ...
 
+@final
 class Eta:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         month: int | None = ...,
         day: int | None = ...,
         hour: int | None = ...,
         minute: int | None = ...,
-    ) -> None: ...
+    ) -> Eta: ...
     @property
     def month(self) -> int | None: ...
     @property
@@ -159,9 +168,10 @@ class Eta:
     @property
     def minute(self) -> int | None: ...
 
+@final
 class PositionReportA:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         navigation_status: NavStatus = ...,
         rate_of_turn: float | None = ...,
@@ -176,7 +186,7 @@ class PositionReportA:
         special_maneuver: ManeuverIndicator = ...,
         raim: bool = ...,
         radio_status: int = ...,
-    ) -> None: ...
+    ) -> PositionReportA: ...
     @property
     def mmsi(self) -> int: ...
     @property
@@ -206,9 +216,10 @@ class PositionReportA:
     @property
     def radio_status(self) -> int: ...
 
+@final
 class StaticAndVoyageA:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         ais_version: AisVersion = ...,
         imo_number: int | None = ...,
@@ -221,7 +232,7 @@ class StaticAndVoyageA:
         draught_m: float | None = ...,
         destination: str | None = ...,
         dte: bool = ...,
-    ) -> None: ...
+    ) -> StaticAndVoyageA: ...
     @property
     def mmsi(self) -> int: ...
     @property
@@ -247,6 +258,7 @@ class StaticAndVoyageA:
     @property
     def dte(self) -> bool: ...
 
+@final
 class SarAircraftPositionReport:
     """Type 9 standard SAR aircraft position report.
 
@@ -255,8 +267,8 @@ class SarAircraftPositionReport:
     pass through. No heading, rate of turn or navigational status exists.
     """
 
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         altitude_m: int | None = ...,
         speed_over_ground: int | None = ...,
@@ -270,7 +282,7 @@ class SarAircraftPositionReport:
         assigned_flag: bool = ...,
         raim: bool = ...,
         radio_status: int = ...,
-    ) -> None: ...
+    ) -> SarAircraftPositionReport: ...
     @property
     def mmsi(self) -> int: ...
     @property
@@ -298,9 +310,10 @@ class SarAircraftPositionReport:
     @property
     def radio_status(self) -> int: ...
 
+@final
 class PositionReportB:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         speed_over_ground: float | None = ...,
         position_accuracy: bool = ...,
@@ -317,7 +330,7 @@ class PositionReportB:
         assigned_flag: bool = ...,
         raim: bool = ...,
         radio_status: int = ...,
-    ) -> None: ...
+    ) -> PositionReportB: ...
     @property
     def mmsi(self) -> int: ...
     @property
@@ -351,9 +364,10 @@ class PositionReportB:
     @property
     def radio_status(self) -> int: ...
 
+@final
 class ExtendedPositionReportB:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         speed_over_ground: float | None = ...,
         position_accuracy: bool = ...,
@@ -369,7 +383,7 @@ class ExtendedPositionReportB:
         raim: bool = ...,
         dte: bool = ...,
         assigned_flag: bool = ...,
-    ) -> None: ...
+    ) -> ExtendedPositionReportB: ...
     @property
     def mmsi(self) -> int: ...
     @property
@@ -401,6 +415,7 @@ class ExtendedPositionReportB:
     @property
     def assigned_flag(self) -> bool: ...
 
+@final
 class AidToNavigationReport:
     """Type 21 aid-to-navigation report.
 
@@ -410,8 +425,8 @@ class AidToNavigationReport:
     points. `aton_status` is the raw 8-bit field.
     """
 
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         aton_type: AtonType = ...,
         name: str | None = ...,
@@ -426,7 +441,7 @@ class AidToNavigationReport:
         raim: bool = ...,
         virtual_aton: bool = ...,
         assigned_flag: bool = ...,
-    ) -> None: ...
+    ) -> AidToNavigationReport: ...
     @property
     def mmsi(self) -> int: ...
     @property
@@ -456,20 +471,22 @@ class AidToNavigationReport:
     @property
     def assigned_flag(self) -> bool: ...
 
+@final
 class StaticDataB24A:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         vessel_name: str | None = ...,
-    ) -> None: ...
+    ) -> StaticDataB24A: ...
     @property
     def mmsi(self) -> int: ...
     @property
     def vessel_name(self) -> str | None: ...
 
+@final
 class StaticDataB24B:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         mmsi: int = ...,
         ship_type: int = ...,
         vendor_id: str | None = ...,
@@ -477,7 +494,7 @@ class StaticDataB24B:
         dimensions: Dimensions | None = ...,
         mothership_mmsi: int | None = ...,
         epfd: EpfdType = ...,
-    ) -> None: ...
+    ) -> StaticDataB24B: ...
     @property
     def mmsi(self) -> int: ...
     @property
@@ -493,13 +510,14 @@ class StaticDataB24B:
     @property
     def epfd(self) -> EpfdType: ...
 
+@final
 class Other:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         msg_type: int = ...,
         raw_payload: bytes | None = ...,
         total_bits: int = ...,
-    ) -> None: ...
+    ) -> Other: ...
     @property
     def msg_type(self) -> int: ...
     @property
@@ -521,13 +539,14 @@ AisMessageBody: TypeAlias = Union[
 
 ClockMode: TypeAlias = Literal["auto", "manual"]
 
+@final
 class AisMessage:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         is_own_ship: bool,
         type_tag: str,
         body: AisMessageBody,
-    ) -> None: ...
+    ) -> AisMessage: ...
     @property
     def is_own_ship(self) -> bool: ...
     @property
@@ -535,10 +554,12 @@ class AisMessage:
     @property
     def body(self) -> AisMessageBody: ...
 
+@final
 class _AisIterator:
     def __iter__(self) -> _AisIterator: ...
     def __next__(self) -> AisMessage: ...
 
+@final
 class AisParser:
     @staticmethod
     def one_shot(
@@ -564,8 +585,9 @@ class AisParser:
         exc_tb: TracebackType | None,
     ) -> Literal[False]: ...
 
+@final
 class BitReader:
-    def __init__(self, data: bytes, total_bits: int) -> None: ...
+    def __new__(cls, data: bytes, total_bits: int) -> BitReader: ...
     def u(self, n: int) -> int: ...
     def i(self, n: int) -> int: ...
     def b(self) -> bool: ...

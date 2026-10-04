@@ -426,3 +426,92 @@ def test_to_dataclass_type_error_on_plain_string() -> None:
 
     with pytest.raises(TypeError):
         to_dataclass("not a marlin message")
+
+
+def test_to_dataclass_type_error_on_enum() -> None:
+    from marlin.ais import NavStatus
+    from marlin.dataclasses import to_dataclass
+
+    with pytest.raises(TypeError, match="unrecognised marlin message type"):
+        to_dataclass(NavStatus.AT_ANCHOR)
+
+
+def test_to_dataclass_type_error_on_a_dataclass_mirror() -> None:
+    from marlin.dataclasses import Hdt, to_dataclass
+
+    already_converted = Hdt(talker=b"IN", heading_true_deg=180.25)
+
+    with pytest.raises(TypeError, match="unrecognised marlin message type"):
+        to_dataclass(already_converted)
+
+
+def test_to_dataclass_converts_a_value_type_on_its_own() -> None:
+    import marlin.ais
+    import marlin.dataclasses
+    from marlin.dataclasses import to_dataclass
+
+    dimensions = marlin.ais.Dimensions(
+        to_bow_m=10, to_stern_m=20, to_port_m=3, to_starboard_m=4
+    )
+
+    assert to_dataclass(dimensions) == marlin.dataclasses.Dimensions(
+        to_bow_m=10, to_stern_m=20, to_port_m=3, to_starboard_m=4
+    )
+
+
+def test_hand_built_message_with_no_dimensions_converts_to_all_none() -> None:
+    import marlin.ais
+    import marlin.dataclasses
+    from marlin.dataclasses import to_dataclass
+
+    dc = to_dataclass(marlin.ais.StaticAndVoyageA(mmsi=123456789))
+
+    assert isinstance(dc, marlin.dataclasses.StaticAndVoyageA)
+    assert dc.dimensions == marlin.dataclasses.Dimensions(
+        to_bow_m=None, to_stern_m=None, to_port_m=None, to_starboard_m=None
+    )
+    assert dc.eta == marlin.dataclasses.Eta(
+        month=None, day=None, hour=None, minute=None
+    )
+
+
+def test_binding_class_rejects_a_wrong_typed_nested_value() -> None:
+    # `to_dataclass` needs no fallback for a wrong-typed value field, because
+    # no such message can be built. `AisMessage.body` is the one untyped field.
+    import marlin.ais
+
+    with pytest.raises(TypeError):
+        marlin.ais.StaticAndVoyageA(dimensions="not dimensions")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["junk", None, 5],
+    ids=["str", "none", "int"],
+)
+def test_to_dataclass_type_error_on_hand_built_wrapper_with_a_non_body(
+    body: object,
+) -> None:
+    import marlin.ais
+    from marlin.dataclasses import to_dataclass
+
+    wrapper = marlin.ais.AisMessage(False, "type1", body)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="unrecognised AIS body type"):
+        to_dataclass(wrapper)
+
+
+def test_to_dataclass_type_error_on_wrapper_holding_a_non_body_binding_value() -> None:
+    import marlin.ais
+    import marlin.nmea
+    from marlin.dataclasses import to_dataclass
+
+    enum_member = marlin.ais.NavStatus.AT_ANCHOR
+    nmea_message = marlin.nmea.Hdt(talker=b"IN", heading_true_deg=1.0)
+    enum_as_body = marlin.ais.AisMessage(False, "type1", enum_member)  # type: ignore[arg-type]
+    nmea_as_body = marlin.ais.AisMessage(False, "type1", nmea_message)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="unrecognised AIS body type"):
+        to_dataclass(enum_as_body)
+    with pytest.raises(TypeError, match="unrecognised AIS body type"):
+        to_dataclass(nmea_as_body)

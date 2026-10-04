@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `Literal["auto", "manual"]`, and `Nmea0183Message` is the `Union` of
   the eleven NMEA message classes. `marlin.dataclasses.AisMessageBody`
   is a different alias, the union of the dataclass mirrors.
+- `marlin.dataclasses.to_dataclass` also converts a value type passed on
+  its own (`UtcTime`, `UtcDate`, `Dimensions`, `Eta`, and the three
+  `Prdid` bodies), which used to raise `TypeError`. Messages convert
+  exactly as before.
 
 ### Fixed
 
@@ -72,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The package docstring, `marlin.dataclasses.to_dataclass` docstring,
   README, and GUIDE now list every typed NMEA sentence (GLL, RMC, HDG,
   TTM, and TLL were missing) and the AIS Type 9 and Type 21 classes.
+- The stubs for `marlin.nmea.Gga`, `Vtg`, `Hdt`, and `Unknown` no longer
+  mark the constructor parameters keyword-only. The runtime always
+  accepted them positionally, like every other message class.
 
 ### Changed (BREAKING)
 
@@ -100,6 +107,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   only place a class is declared. Code that imported from `marlin._core`
   directly loses its type information and should import from
   `marlin.envelope`, `marlin.nmea`, `marlin.ais`, or `marlin.klv`.
+- Every binding class is marked `@final` in the stubs, matching the
+  runtime: subclassing one always raised `TypeError`, and a type checker
+  now reports it.
+- The stubs declare constructors as `__new__`, which is what the
+  extension classes define, and `__eq__` on the enums and `RawSentence`
+  takes its argument positional-only. Ordinary calls type-check as
+  before.
 
 ## [0.1.4] - 2026-07-07
 

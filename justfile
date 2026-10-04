@@ -52,7 +52,11 @@ doc-open:
 
 # Run everything CI runs, in order. Use before pushing. Includes the
 # workspace-excluded fuzz crate's fmt + clippy (stable — see below).
-ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint
+ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint todo-check
+
+# Check the mechanical TODO.md card rules (title length, DONE format).
+todo-check:
+    python3 scripts/check_todo.py TODO.md
 
 # ---------------------------------------------------------------------------
 # Fuzzing (requires nightly + cargo-fuzz)
@@ -124,19 +128,39 @@ release:
     cargo build --workspace --release
 
 # --- Python bindings ---
+#
+# Every recipe runs its tools from one virtualenv, so nothing has to be
+# activated or on PATH. Default: `.venv` at the repo root, the one CI and
+# `bindings/python/pyrightconfig.json` use. `just py-setup` creates and fills
+# it. Another interpreter: `just py_venv=/abs/path/to/venv py-ci`.
+py_venv := justfile_directory() / ".venv"
+py := py_venv / "bin/python"
+
+# The dev tools are the `dev` extra: maturin, pytest, hypothesis, mypy, pyright.
+# Create the Python virtualenv if missing and install the dev tools into it.
+py-setup:
+    test -x {{py}} || python3 -m venv {{py_venv}}
+    {{py}} -m pip install --quiet --upgrade pip
+    {{py}} -m pip install --quiet -e 'bindings/python[dev]'
 
 py-dev:
-    cd bindings/python && maturin develop --release
+    cd bindings/python && VIRTUAL_ENV={{py_venv}} {{py}} -m maturin develop --release
 
 py-build:
-    cd bindings/python && maturin build --release
+    cd bindings/python && {{py}} -m maturin build --release
 
 py-test: py-dev
-    cd bindings/python && python -m pytest tests/ -v
+    cd bindings/python && {{py}} -m pytest tests/ -v
 
+# stubtest compares the public stubs with the built extension, so run
+# `just py-dev` first. Needs mypy >= 1.19, which the dev extra and CI
+# require (verified with 1.19.1 on Python 3.9, 2.4.0 on 3.12 and 1.20.2 on
+# 3.13). Findings that are not stub bugs live in
+# bindings/python/stubtest-allowlist.txt.
 py-type-check:
-    cd bindings/python && python -m mypy --strict .
-    cd bindings/python && pyright
+    cd bindings/python && {{py}} -m mypy --strict .
+    cd bindings/python && {{py}} -m pyright
+    cd bindings/python && {{py}} -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt --ignore-unused-allowlist
 
 # Check formatting of the bindings crate Rust. The crate is workspace-
 # excluded, so `just fmt-check` never sees it.
@@ -150,6 +174,7 @@ py-lint:
     cd bindings/python && cargo clippy --all-targets -- -D warnings
 
 py-golden-regenerate: py-dev
-    cd bindings/python && MARLIN_REGENERATE_GOLDENS=1 python -m pytest tests/golden -v
+    cd bindings/python && MARLIN_REGENERATE_GOLDENS=1 {{py}} -m pytest tests/golden -v
 
+# Everything the Python bindings CI job checks. Run `just py-setup` once first.
 py-ci: py-fmt-check py-lint py-dev py-test py-type-check

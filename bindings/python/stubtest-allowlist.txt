@@ -1,0 +1,15 @@
+# Findings `python -m mypy.stubtest marlin` reports that are not stub bugs.
+# One regex per line, matched against the full name. Run by
+# `just py-type-check` with --ignore-unused-allowlist, because the second
+# entry applies to one interpreter only; the cost is that a stale entry
+# here is not reported.
+
+# The stub and the runtime both say Literal["auto", "manual"]. mypy holds a
+# multi-value Literal as a Union, the runtime object is a Literal, and
+# stubtest reports "is not a Union".
+marlin\.ais\.ClockMode
+
+# Python 3.9 only. `marlin.aio` has no stub, so stubtest checks the names it
+# imports; on 3.9 `typing.AsyncIterator` is an alias object, not a class, and
+# stubtest reports "is not a type". Not reported on 3.13.
+marlin\.aio\.AsyncIterator

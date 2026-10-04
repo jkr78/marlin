@@ -8,32 +8,70 @@ track deliverables (not conversational state).
 
 ## New tasks
 
-- [ ] Declare each Python message mirror once
-  Adding one message type to `bindings/python` means about 17 hand-edit sites,
-  and each field name is written 11 times, across the PyO3 class, the public
-  stub, the package re-export, and the `marlin.dataclasses` mirror. Candidate 1
-  of the 2026-10-03 architecture review. Needs grilling before code: what the
-  one declaration is, and whether the saving justifies generating the rest,
-  are both open.
-  Ticket `.scratch/py-single-stub/issues/01` removed only the second stub
-  copy (`marlin/_core.pyi`). [py][draft]
-- [ ] Gate the Python stubs with mypy.stubtest
-  `tests/unit/test_stub_agreement.py` compares only `__all__` names and the
-  members of the `Union` / `Literal` type aliases between each public stub and
-  its runtime module. `mypy.stubtest` compares signatures too, and is not run
-  anywhere. Run from `bindings/python/python`,
-  `python -m mypy.stubtest marlin --ignore-missing-stub` reported 477 findings
-  before ticket `.scratch/py-single-stub/issues/01` and 475 after it (Python
-  3.13, mypy 1.20.2): 346 for a stub `__init__` where the PyO3 runtime has
-  `__new__` (173 pairs), 55 classes missing `@final`, 55
-  missing `@disjoint_base`, 18 parameters that should be positional-only, and
-  1 for `marlin.ais.ClockMode` ("is not a Union": the runtime alias is a
-  two-value `Literal`, which looks like a stubtest quirk and probably belongs
-  in an allowlist). The 3 names missing at runtime are fixed. Counts depend on
-  the interpreter: Python 3.9 with mypy 1.19.1 reports 299. Fix the stubs or
-  allowlist each kind, then add the command to `just py-type-check`. The
-  "declare each Python message mirror once" card may change most of what this
-  checks, so decide that one first or accept redoing the stub fixes. [py]
+- [ ] Settle what "wrapper" means in the Python bindings
+  The word appears 14 times in `bindings/python/src/` with two meanings. The
+  four module headers ("Python wrappers for `marlin-ais`", and the same in
+  `nmea.rs`, `envelope.rs`, `klv.rs`) mean binding classes, and `GLOSSARY.md`
+  lists "wrapper class" as a term to avoid for that. Elsewhere "the
+  `AisMessage` wrapper" means the outer message that holds a body; the
+  `marlin.dataclasses` docstring and `tests/unit/test_dataclasses.py` use it
+  that way too, and the glossary has no term for it. Decide the term for the
+  outer message first (keep "wrapper" with a glossary entry, or pick another),
+  then reword. Only the four module headers are clear misuses today, so this
+  may need no more than those four lines. Found by the py-field-once ticket 03
+  review. [docs][draft]
+- [ ] Generate each binding class from one field list
+  A field of a binding class is written 5 times in `bindings/python/src/ais.rs`
+  and `src/nmea.rs`: the `#[pyclass]` struct, the `#[pyo3(signature = ...)]`
+  list, the `#[new]` parameters, the `Self { ... }` body, and the `From<Rust…>`
+  impl. One `macro_rules!` invocation listing each field once can generate all
+  of it; tried 2026-10-03 on `SarAircraftPositionReport`, clean under the
+  crate's clippy lints, same behaviour on Python 3.9 and 3.13. Defaults must be
+  captured as `$($default:tt)::+`, not `$default:expr`, or the Python text
+  signature shows `...`; a default like `-1` needs another form. Untried on the
+  classes ADR-0003 flattens (`PositionReportA`, `StaticDataB24B`). May not be
+  worth doing: the compiler already catches a field missing from the struct
+  literal or the `From` impl, so this saves typing, not drift. Revisit when a
+  batch of new message types arrives. Split from the card below. [py][draft]
+- [ ] Give the parser iterator classes one name in stubs and runtime
+  The public stubs declare `_AisIterator`, `_NmeaIterator`, and
+  `_EnvelopeIterator` as what `__iter__` returns. At runtime the classes are
+  `marlin.ais.PyAisIterator`, `marlin.nmea.PyNmeaIterator`, and
+  `marlin.envelope.PyEnvelopeIterator`: the `#[pyclass]` attributes in
+  `bindings/python/src/` set no Python name, and the package modules do not
+  re-export them. `mypy.stubtest` does not report this, because the stub names
+  are private and absent at runtime. May not need fixing: users iterate these
+  objects and never name them, so nothing breaks today. A fix picks the
+  Python-visible name in `#[pyclass(name = ...)]`, matches the stubs to it, and
+  rebuilds the extension. Found by the py-field-once ticket 01 review. [py][draft]
+- [x] Write each Python message field once per layer **DONE 2026-10-03**
+  Candidate 1 of the 2026-10-03 architecture review; spec and tickets in
+  `.scratch/py-field-once/`. A field was written about 11 times across three
+  layers. What landed: the public stubs are checked against the runtime by
+  `mypy.stubtest` (ticket 01, card below); `marlin.dataclasses` converts with
+  one generic converter that pairs a binding class with the dataclass mirror
+  of the same name, guarded by
+  `bindings/python/tests/unit/test_dataclass_agreement.py`, so adding a message
+  there is one dataclass and one `__all__` entry (ticket 02); docs and comments
+  say "binding class" and "dataclass mirror" (ticket 03). Not done: the binding
+  class still writes each field 5 times (card above), and the stubs stay
+  hand-written because no stub generator fits (PyO3's is experimental and
+  rejects function-declared modules, `pyo3-stub-gen` needs Python 3.10 against
+  our `abi3-py39`). [py]
+- [x] Gate the Python stubs with mypy.stubtest **DONE 2026-10-03**
+  `just py-type-check` and the CI type-check job run
+  `python -m mypy.stubtest marlin --ignore-missing-stub` with
+  `bindings/python/stubtest-allowlist.txt`. Of the 475 findings (Python 3.13,
+  mypy 1.20.2), 346 went by declaring constructors as `__new__`, 55 by marking
+  every binding class `@final` (which also cleared the 55 `@disjoint_base`
+  findings), and 18 by making `__eq__` positional-only. Removing the `__init__`
+  noise exposed one real disagreement: the stubs for `Gga`, `Vtg`, `Hdt`, and
+  `Unknown` marked constructor parameters keyword-only where the runtime takes
+  them positionally; the stubs now follow the runtime. The allowlist has two
+  entries: `marlin.ais.ClockMode` (a two-value `Literal` alias reported as "is
+  not a Union") and, on Python 3.9 only, `marlin.aio.AsyncIterator`. The second
+  forces `--ignore-unused-allowlist`, so a stale entry is not reported. Ticket:
+  `.scratch/py-field-once/issues/01`. [py]
 - [ ] Give the supported sentence and message lists one source
   The NMEA sentence list (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)
   is written out by hand in about twelve places and the AIS type list in about
@@ -57,14 +95,17 @@ track deliverables (not conversational state).
   test names only what it varies, no allow needed) and convert the siblings
   when their tests are next touched. Raised by the ticket 05 Standards review.
   [ais][ready]
-- [ ] Make `just py-ci` self-sufficient: add maturin and pyright to the venv
-  `py-dev` runs `maturin develop` and `py-type-check` runs `pyright` from PATH;
-  `bindings/python/.venv` (uv) has neither, so the recipe fails at `py-dev` on a
-  fresh checkout. `pyproject.toml` `dev` extras list pyright but not maturin, and
-  the venv was created without the extras. Add `maturin` to `dev`, document
-  `uv sync --extra dev` (or have the recipe use `uv run`), so the recipe runs as
-  written. Workaround used 2026-10-02: `uvx maturin develop --release` and
-  `uvx pyright` with `VIRTUAL_ENV` pointed at the venv.
+- [x] Make `just py-ci` self-sufficient **DONE 2026-10-04**
+  `just py-ci` failed on a fresh checkout: `maturin` and `pyright` came from
+  PATH and the virtualenv had neither. Every Python recipe now runs its tools
+  as `{{py}} -m <tool>` from one virtualenv, `.venv` at the repo root by
+  default (the one CI and `pyrightconfig.json` use), and `just py-setup`
+  creates it and installs the `dev` extra, which now includes `maturin`.
+  Another interpreter: `just py_venv=/abs/path py-setup py-ci`; run that way
+  on Python 3.9 and 3.13. `bindings/python/.venv` (uv, no pip) is no longer
+  used by any recipe. The CI workflow installs the same `dev` extra list,
+  read from `pyproject.toml`; it still runs its steps inline, not through
+  `just py-ci`.
 - [ ] Simplify the three-step lookup in `AisReassembler::append_to_partial`
   `position` → `get(idx)` → `get_mut(idx)` with three identical
   `else { return Err(ReassemblyOutOfOrder) }` fallbacks exists only to dodge
@@ -102,14 +143,16 @@ track deliverables (not conversational state).
   never constructed: dispatch uses `StaticDataB::{PartA, PartB, Reserved}`.
   Removal is breaking; the 0.2.0 window (Type 9/21 release) was declined on
   2026-10-02 in favour of this card, so it waits for the next breaking release.
-- [x] Fix pre-existing marlin-py stub/export gaps (found during radar-sentence review) **DONE 2026-07-07**
+- [x] Fix pre-existing marlin-py stub/export gaps **DONE 2026-07-07**
+  Found during the radar-sentence review.
   Two unrelated pre-existing drifts surfaced while adding HDG/TTM/TLL:
   (1) `bindings/python/python/marlin/_core.pyi` `Nmea0183Parser.next_message`
   return-type union omits `Gll` and `Rmc` (present on `__next__` and the public
   alias, missing only here). (2) `bindings/python/python/marlin/dataclasses.py`
   `__all__` omits `Gll`, `Rmc`, and `UtcDate` (classes exist and are used but
   aren't exported). Both are latent-only (no runtime break today). Small fix.
-- [ ] Add a present-field enumeration view to marlin-klv St0601 (klv-inspect G2)
+- [ ] Add a present-field enumeration view to marlin-klv St0601
+  klv-inspect G2.
   Ergonomic convenience only, no wire semantics: a `present()` / `items()`
   view yielding the tags a decoded set actually carries, so consumers stop
   reflecting over `raw_*` attribute names. Deferred — not codec territory and
@@ -118,7 +161,8 @@ track deliverables (not conversational state).
   the same way the AIS parser helpers exist for ergonomics. Once the G1 tag
   registry landed, consumers can already enumerate against the authoritative
   table instead of a naming convention.
-- [ ] Add a checksum-free KLV structural reader if faulty senders appear (klv-inspect G3)
+- [ ] Add a checksum-free KLV structural reader if faulty senders appear
+  klv-inspect G3.
   Only if real streams arrive with absent/bad BCC or foreign framing that
   strict `decode` rejects: a clearly-named, separate reader (Rust first, then
   a Python binding) that walks UL + BER-TLV and yields raw `(tag, value)`
