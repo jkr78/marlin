@@ -15,17 +15,18 @@
 //!   is single-fragment (`fragment_count == 1`); multi-fragment inputs
 //!   will typically produce [`AisError::PayloadTooShort`] because the
 //!   partial payload is too short for its declared type. Multi-sentence
-//!   reassembly is the job of the (future) `AisFragmentParser`.
+//!   reassembly is the job of [`AisFragmentParser`](crate::AisFragmentParser).
 
 use alloc::vec::Vec;
 
 use marlin_nmea_envelope::RawSentence;
 
 use crate::{
-    armor, decode_extended_position_report_b, decode_position_report_a, decode_position_report_b,
-    decode_static_and_voyage_a, decode_static_data_b, parse_aivdm_wrapper, AisError, BitReader,
-    ExtendedPositionReportB, PositionReportA, PositionReportB, StaticAndVoyageA, StaticDataB,
-    StaticDataB24A, StaticDataB24B,
+    armor, decode_aid_to_navigation_report, decode_extended_position_report_b,
+    decode_position_report_a, decode_position_report_b, decode_sar_aircraft_position_report,
+    decode_static_and_voyage_a, decode_static_data_b, parse_aivdm_wrapper, AidToNavigationReport,
+    AisError, BitReader, ExtendedPositionReportB, PositionReportA, PositionReportB,
+    SarAircraftPositionReport, StaticAndVoyageA, StaticDataB, StaticDataB24A, StaticDataB24B,
 };
 
 /// A fully decoded AIS message with envelope metadata.
@@ -34,8 +35,8 @@ use crate::{
 /// `!AIVDO` distinction from the envelope (PRD §A7). The split exists
 /// because the two pieces have different sources — `body` is
 /// bit-level decode, `is_own_ship` is a wrapper-tag boolean — and
-/// because future reassembly metadata (channel, fragment count) would
-/// naturally live alongside `is_own_ship` if it were ever exposed.
+/// because any other envelope metadata (channel, fragment count)
+/// would sit alongside `is_own_ship` if it were ever exposed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AisMessage {
     /// `true` if the source sentence was `!AIVDO` (own-ship loopback),
@@ -49,8 +50,8 @@ pub struct AisMessage {
 
 /// The decoded AIS payload, dispatched on the 6-bit `msg_type` field.
 ///
-/// `#[non_exhaustive]` so additional message types (Type 19, Type 4,
-/// Type 21, ...) can be added as typed variants in minor versions
+/// `#[non_exhaustive]` so additional message types (Type 4, Type 27,
+/// ...) can be added as typed variants in minor versions
 /// without a breaking change. Types this crate does not yet decode
 /// are surfaced as [`Self::Other`] with the raw bit buffer preserved.
 ///
@@ -66,14 +67,20 @@ pub enum AisMessageBody {
     Type3(PositionReportA),
     /// Type 5 — Class A static and voyage data.
     Type5(StaticAndVoyageA),
+    /// Type 9 — standard SAR aircraft position report.
+    Type9(SarAircraftPositionReport),
     /// Type 18 — Class B CS position report.
     Type18(PositionReportB),
     /// Type 19 — Class B extended position report (Type 18 plus the
     /// Class A static tail: vessel name, ship type, dimensions, EPFD).
     Type19(ExtendedPositionReportB),
+    /// Type 21 — aid-to-navigation report (variable length: 272 bits
+    /// plus an optional name extension).
+    Type21(AidToNavigationReport),
     /// Type 24 Part A — Class B static, vessel name.
     Type24A(StaticDataB24A),
-    /// Type 24 Part B — Class B static, ship type + dimensions + callsign.
+    /// Type 24 Part B — Class B static, ship type + call sign + extent
+    /// (dimensions or mother-ship MMSI) + EPFD type.
     Type24B(StaticDataB24B),
     /// Any message type this crate does not yet decode. The raw bit
     /// buffer is preserved so callers can plug in their own decoder or
@@ -128,8 +135,10 @@ pub fn decode_message(
         2 => AisMessageBody::Type2(decode_position_report_a(bits, total_bits)?),
         3 => AisMessageBody::Type3(decode_position_report_a(bits, total_bits)?),
         5 => AisMessageBody::Type5(decode_static_and_voyage_a(bits, total_bits)?),
+        9 => AisMessageBody::Type9(decode_sar_aircraft_position_report(bits, total_bits)?),
         18 => AisMessageBody::Type18(decode_position_report_b(bits, total_bits)?),
         19 => AisMessageBody::Type19(decode_extended_position_report_b(bits, total_bits)?),
+        21 => AisMessageBody::Type21(decode_aid_to_navigation_report(bits, total_bits)?),
         24 => match decode_static_data_b(bits, total_bits)? {
             StaticDataB::PartA(a) => AisMessageBody::Type24A(a),
             StaticDataB::PartB(b) => AisMessageBody::Type24B(b),
@@ -148,7 +157,7 @@ pub fn decode_message(
 /// Multi-fragment inputs are not rejected explicitly — their partial
 /// payload usually decodes to [`AisError::PayloadTooShort`] because
 /// the per-type decoders require a specific minimum bit count. Use
-/// the reassembly parser (landing in a later commit) to handle
+/// [`AisFragmentParser`](crate::AisFragmentParser) to handle
 /// multi-fragment messages correctly.
 ///
 /// # Errors
@@ -265,7 +274,7 @@ mod tests {
         for _ in 0..15 {
             w.u(8, 0);
         }
-        // Header (40) + name (120) = 160 bits per ITU-R M.1371-5 §5.3.24.1.
+        // Header (40) + name (120) = 160 bits per ITU-R M.1371-5 Annex 8 §3.22, Table 78.
         w.finish()
     }
 
@@ -294,6 +303,27 @@ mod tests {
             w.u(64, 0);
         }
         w.u(32, 0);
+        w.finish()
+    }
+
+    /// Build a `total_bits` payload with only `msg_type` and `mmsi` set;
+    /// every other bit is zero. Enough for routing tests, which only
+    /// check which variant a type lands in.
+    fn build_min_payload(
+        msg_type: u8,
+        mmsi: u32,
+        total_bits: usize,
+    ) -> (alloc::vec::Vec<u8>, usize) {
+        let mut w = BitWriter::new();
+        w.u(6, u64::from(msg_type));
+        w.u(2, 0); // repeat
+        w.u(30, u64::from(mmsi));
+        let mut remaining = total_bits - 38;
+        while remaining > 0 {
+            let n = remaining.min(64);
+            w.u(n, 0);
+            remaining -= n;
+        }
         w.finish()
     }
 
@@ -367,6 +397,37 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
+    // Type 9 routes to its typed variant
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn routes_type_9_to_type9_variant() {
+        // 168 bits with just msg_type + mmsi set; everything else zero.
+        let mut w = BitWriter::new();
+        w.u(6, 9);
+        w.u(2, 0);
+        w.u(30, 111_000_009);
+        // Pad remaining 130 bits.
+        w.u(64, 0);
+        w.u(64, 0);
+        w.u(2, 0);
+        let (bits, total) = w.finish();
+        match decode_message(&bits, total, false).unwrap().body {
+            AisMessageBody::Type9(sar) => assert_eq!(sar.mmsi, 111_000_009),
+            other => panic!("expected Type9, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn type_9_short_payload_is_rejected() {
+        let (bits, _) = build_unknown(9);
+        match decode_message(&bits, 167, false) {
+            Err(AisError::PayloadTooShort) => {}
+            other => panic!("expected PayloadTooShort, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------
     // Type 19 routes to its typed variant
     // -----------------------------------------------------------------
 
@@ -393,6 +454,29 @@ mod tests {
     fn type_19_short_payload_is_rejected() {
         // 168 bits is enough for Type 18 but not Type 19 (needs 312).
         let (bits, total) = build_unknown(19);
+        match decode_message(&bits, total, false) {
+            Err(AisError::PayloadTooShort) => {}
+            other => panic!("expected PayloadTooShort, got {other:?}"),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Type 21 routes to its typed variant
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn routes_type_21_to_type21_variant() {
+        let (bits, total) = build_min_payload(21, 992_000_021, 272);
+        match decode_message(&bits, total, false).unwrap().body {
+            AisMessageBody::Type21(aton) => assert_eq!(aton.mmsi, 992_000_021),
+            other => panic!("expected Type21, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn type_21_short_payload_is_rejected() {
+        // 271 bits is one short of the 272-bit fixed part.
+        let (bits, total) = build_min_payload(21, 992_000_021, 271);
         match decode_message(&bits, total, false) {
             Err(AisError::PayloadTooShort) => {}
             other => panic!("expected PayloadTooShort, got {other:?}"),

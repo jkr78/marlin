@@ -7,9 +7,12 @@ from unittest.mock import patch
 import pytest
 
 from marlin.ais import (
+    AidToNavigationReport,
     AisMessage,
     AisParser,
     AisVersion,
+    AltitudeSensor,
+    AtonType,
     BitReader,
     Dimensions,
     EpfdType,
@@ -21,37 +24,23 @@ from marlin.ais import (
     PositionReportA,
     PositionReportB,
     ReassemblyError,
+    SarAircraftPositionReport,
     StaticAndVoyageA,
     StaticDataB24A,
     StaticDataB24B,
+    TurnDirection,
 )
 
-
-def _aivdm(
-    frag_count: int,
-    frag_num: int,
-    seq_id: int | None,
-    channel: str | None,
-    payload: bytes,
-    fill_bits: int,
-) -> bytes:
-    # Mirror of marlin_ais::testing::build_aivdm. Computes the XOR
-    # envelope checksum over `AIVDM,<fields>` and wraps with !...*hh\r\n.
-    parts = [b"AIVDM", str(frag_count).encode(), str(frag_num).encode()]
-    parts.append(b"" if seq_id is None else str(seq_id).encode())
-    parts.append(b"" if channel is None else channel.encode())
-    parts.append(payload)
-    parts.append(str(fill_bits).encode())
-    body = b",".join(parts)
-    x = 0
-    for b in body:
-        x ^= b
-    return b"!" + body + b"*%02X\r\n" % x
-
-
-# Known-good Type 1 (position report A) payload from the Rust crate's
-# tests. Same payload appears at crates/marlin-ais/src/parser.rs:476.
-_AIVDM_TYPE1 = _aivdm(1, 1, None, "A", b"13aGmP0P00PD;88MD5MTDww@2<0L", 0)
+from .ais_vectors import (
+    AIVDM_TYPE1,
+    AIVDM_TYPE1_ROT_MINUS_127,
+    AIVDM_TYPE1_ROT_PLUS_127,
+    AIVDM_TYPE9_GPSD_T9_2,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG1,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG2,
+    AIVDM_TYPE24B_AUXILIARY_CRAFT,
+    aivdm,
+)
 
 
 def test_nav_status_values() -> None:
@@ -78,6 +67,50 @@ def test_maneuver_indicator_values() -> None:
     assert int(ManeuverIndicator.NO_SPECIAL) == 1
     assert int(ManeuverIndicator.SPECIAL) == 2
     assert int(ManeuverIndicator.RESERVED) == 3
+
+
+def test_turn_direction_values() -> None:
+    # Enum discriminants, not wire codes: the wire carries raw ROT ±127.
+    assert int(TurnDirection.RIGHT) == 0
+    assert int(TurnDirection.LEFT) == 1
+    assert TurnDirection.RIGHT != TurnDirection.LEFT
+
+
+def test_altitude_sensor_values() -> None:
+    # Wire codes of the one-bit Table 59 altitude-sensor field.
+    assert int(AltitudeSensor.GNSS) == 0
+    assert int(AltitudeSensor.BAROMETRIC) == 1
+    assert AltitudeSensor.GNSS != AltitudeSensor.BAROMETRIC
+
+
+def test_aton_type_values() -> None:
+    # Wire codes of the 5-bit Table 74 field: 0..=31, all 32 named.
+    assert int(AtonType.NOT_SPECIFIED) == 0
+    assert int(AtonType.LIGHT_WITHOUT_SECTORS) == 5
+    assert int(AtonType.BEACON_SPECIAL_MARK) == 19
+    assert int(AtonType.CARDINAL_MARK_NORTH) == 20
+    assert int(AtonType.LIGHT_VESSEL) == 31
+    members = [getattr(AtonType, n) for n in dir(AtonType) if n.isupper()]
+    assert sorted(int(m) for m in members if isinstance(m, AtonType)) == list(
+        range(32)
+    )
+
+
+def test_ais_enums_are_hashable() -> None:
+    # The stubs declare __hash__ on every int-backed enum; pin it at
+    # runtime so the enums work as set members and dict keys.
+    members = {
+        NavStatus.MOORED,
+        ManeuverIndicator.SPECIAL,
+        TurnDirection.LEFT,
+        AltitudeSensor.BAROMETRIC,
+        AtonType.LIGHT_VESSEL,
+        EpfdType.GALILEO,
+        AisVersion.ITU1371V5,
+    }
+    assert len(members) == 7
+    assert NavStatus.MOORED in members
+    assert hash(NavStatus.MOORED) == hash(NavStatus.MOORED)
 
 
 def test_epfd_type_values() -> None:
@@ -171,6 +204,7 @@ def test_position_report_a_shape() -> None:
     assert p.true_heading == 90
     # Defaults fire for unset fields:
     assert p.rate_of_turn is None
+    assert p.turn_direction is None
     assert p.position_accuracy is False
     assert p.special_maneuver == ManeuverIndicator.NOT_AVAILABLE
     assert p.timestamp == 60
@@ -205,6 +239,45 @@ def test_static_and_voyage_a_shape() -> None:
     assert s.draught_m == pytest.approx(8.5)
     assert s.destination == "HAMBURG"
     assert s.dte is False
+
+
+def test_sar_aircraft_position_report_shape() -> None:
+    p = SarAircraftPositionReport(
+        mmsi=111222333,
+        altitude_m=1500,
+        speed_over_ground=120,
+        latitude_deg=58.1,
+        longitude_deg=-6.2,
+        altitude_sensor=AltitudeSensor.BAROMETRIC,
+        dte=True,
+    )
+    assert p.mmsi == 111222333
+    assert p.altitude_m == 1500
+    assert p.speed_over_ground == 120
+    assert p.latitude_deg == pytest.approx(58.1)
+    assert p.longitude_deg == pytest.approx(-6.2)
+    assert p.altitude_sensor == AltitudeSensor.BAROMETRIC
+    assert p.dte is True
+    # Defaults fire for unset fields:
+    assert p.position_accuracy is False
+    assert p.course_over_ground is None
+    assert p.timestamp == 60
+    assert p.assigned_flag is False
+    assert p.raim is False
+    assert p.radio_status == 0
+    # No heading, rate of turn or navigational status exists on Type 9.
+    assert not hasattr(p, "true_heading")
+    assert not hasattr(p, "rate_of_turn")
+    assert not hasattr(p, "navigation_status")
+
+
+def test_sar_aircraft_position_report_all_defaults() -> None:
+    p = SarAircraftPositionReport()
+    assert p.mmsi == 0
+    assert p.altitude_m is None
+    assert p.speed_over_ground is None
+    assert p.altitude_sensor == AltitudeSensor.GNSS
+    assert p.timestamp == 60
 
 
 def test_position_report_b_shape() -> None:
@@ -244,6 +317,53 @@ def test_extended_position_report_b_shape() -> None:
     assert p.assigned_flag is False
 
 
+def test_aid_to_navigation_report_shape() -> None:
+    p = AidToNavigationReport(
+        mmsi=992471234,
+        aton_type=AtonType.PORT_HAND_MARK,
+        name="RED BUOY 7",
+        latitude_deg=-4.8,
+        longitude_deg=11.0,
+        dimensions=Dimensions(to_bow_m=3, to_stern_m=4, to_port_m=1, to_starboard_m=2),
+        epfd=EpfdType.GPS,
+        timestamp=42,
+        off_position=True,
+        aton_status=0xA5,
+        virtual_aton=True,
+    )
+    assert p.mmsi == 992471234
+    assert p.aton_type == AtonType.PORT_HAND_MARK
+    assert p.name == "RED BUOY 7"
+    assert p.latitude_deg == pytest.approx(-4.8)
+    assert p.longitude_deg == pytest.approx(11.0)
+    assert p.dimensions.to_bow_m == 3
+    assert p.dimensions.to_starboard_m == 2
+    assert p.epfd == EpfdType.GPS
+    assert p.timestamp == 42
+    assert p.off_position is True
+    assert p.aton_status == 0xA5
+    assert p.virtual_aton is True
+    # Defaults fire for unset fields:
+    assert p.position_accuracy is False
+    assert p.raim is False
+    assert p.assigned_flag is False
+    # No speed, course or heading exists on Type 21.
+    assert not hasattr(p, "speed_over_ground")
+    assert not hasattr(p, "course_over_ground")
+    assert not hasattr(p, "true_heading")
+
+
+def test_aid_to_navigation_report_all_defaults() -> None:
+    p = AidToNavigationReport()
+    assert p.mmsi == 0
+    assert p.aton_type == AtonType.NOT_SPECIFIED
+    assert p.name is None
+    assert p.dimensions == Dimensions()
+    assert p.epfd == EpfdType.UNDEFINED
+    assert p.timestamp == 60
+    assert p.aton_status == 0
+
+
 def test_static_data_b24a_shape() -> None:
     s = StaticDataB24A(mmsi=222333444, vessel_name="NAMED")
     assert s.mmsi == 222333444
@@ -257,17 +377,31 @@ def test_static_data_b24b_shape() -> None:
         vendor_id="VND1",
         call_sign="CS1",
         dimensions=Dimensions(to_bow_m=12),
+        epfd=EpfdType.GALILEO,
     )
     assert s.mmsi == 222333444
     assert s.ship_type == 37
     assert s.vendor_id == "VND1"
     assert s.call_sign == "CS1"
+    assert s.dimensions is not None
     assert s.dimensions.to_bow_m == 12
+    assert s.mothership_mmsi is None
+    assert s.epfd == EpfdType.GALILEO
+
+
+def test_static_data_b24b_defaults() -> None:
+    # Both flattened extent attributes default to None (ADR-0003); the
+    # constructor does not validate that exactly one is set.
+    s = StaticDataB24B()
+    assert s.dimensions is None
+    assert s.mothership_mmsi is None
+    assert s.epfd == EpfdType.UNDEFINED
 
 
 def test_other_shape() -> None:
-    o = Other(msg_type=9, raw_payload=b"\x01\x02\x03", total_bits=24)
-    assert o.msg_type == 9
+    # Type 8 (binary broadcast) is not decoded, so it is a realistic Other.
+    o = Other(msg_type=8, raw_payload=b"\x01\x02\x03", total_bits=24)
+    assert o.msg_type == 8
     assert o.raw_payload == b"\x01\x02\x03"
     assert o.total_bits == 24
 
@@ -306,11 +440,11 @@ def test_ais_message_construct_own_ship() -> None:
 
 
 def test_ais_message_body_with_other_variant() -> None:
-    body = Other(msg_type=9, raw_payload=b"\x01\x02", total_bits=16)
+    body = Other(msg_type=8, raw_payload=b"\x01\x02", total_bits=16)
     msg = AisMessage(is_own_ship=False, type_tag="other", body=body)
     assert msg.type_tag == "other"
     assert isinstance(msg.body, Other)
-    assert msg.body.msg_type == 9
+    assert msg.body.msg_type == 8
 
 
 def test_ais_message_repr() -> None:
@@ -384,7 +518,7 @@ def test_bit_reader_read_across_byte_boundary() -> None:
 
 def test_ais_streaming_single_fragment() -> None:
     p = AisParser.streaming()
-    p.feed(_AIVDM_TYPE1)
+    p.feed(AIVDM_TYPE1)
     messages = list(p)
     assert len(messages) == 1
     assert isinstance(messages[0], AisMessage)
@@ -392,12 +526,123 @@ def test_ais_streaming_single_fragment() -> None:
     assert messages[0].type_tag == "type1"
 
 
+def test_ais_classic_type1_rate_of_turn_is_not_available() -> None:
+    # The classic Annex 5 fixture carries raw ROT -128 (not available):
+    # both flattened attributes are None (ADR-0003).
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE1)
+    body = list(p)[0].body
+    assert isinstance(body, PositionReportA)
+    assert body.rate_of_turn is None
+    assert body.turn_direction is None
+
+
+@pytest.mark.parametrize(
+    ("sentence", "expected"),
+    [
+        (AIVDM_TYPE1_ROT_PLUS_127, TurnDirection.RIGHT),
+        (AIVDM_TYPE1_ROT_MINUS_127, TurnDirection.LEFT),
+    ],
+    ids=["plus_127_right", "minus_127_left"],
+)
+def test_position_report_a_turn_direction(
+    sentence: bytes, expected: TurnDirection
+) -> None:
+    # Raw ROT ±127 is the "turning faster than 5°/30 s, no turn indicator"
+    # status: it surfaces as turn_direction and rate_of_turn stays None
+    # rather than becoming a fabricated ±720 °/min.
+    p = AisParser.streaming()
+    p.feed(sentence)
+    msgs = list(p)
+    assert len(msgs) == 1
+    body = msgs[0].body
+    assert isinstance(body, PositionReportA)
+    assert body.mmsi == 123456789
+    assert body.rate_of_turn is None
+    assert body.turn_direction == expected
+
+
+def test_static_data_b24b_mothership_mmsi() -> None:
+    # An auxiliary-craft MMSI (98MIDxxxx) carries the mother ship's MMSI
+    # in the 30 bits that otherwise hold dimensions (ADR-0002); the sum
+    # type flattens to `dimensions` / `mothership_mmsi` (ADR-0003).
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE24B_AUXILIARY_CRAFT)
+    msgs = list(p)
+    assert len(msgs) == 1
+    body = msgs[0].body
+    assert isinstance(body, StaticDataB24B)
+    assert body.mmsi == 987654321
+    assert body.ship_type == 37
+    assert body.vendor_id == "VND1234"
+    assert body.call_sign == "CS001"
+    assert body.dimensions is None
+    assert body.mothership_mmsi == 211000123
+    assert body.epfd == EpfdType.GPS
+
+
+def test_sar_aircraft_position_report_gpsd_t9_2() -> None:
+    # A Type 9 payload decodes to SarAircraftPositionReport with
+    # type_tag "type9" instead of landing in Other. Expected values are
+    # the gpsd .chk entries for T9-2; lon/lat converted to degrees.
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE9_GPSD_T9_2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert msgs[0].type_tag == "type9"
+    body = msgs[0].body
+    assert isinstance(body, SarAircraftPositionReport)
+    assert body.mmsi == 111232511
+    assert body.altitude_m == 303
+    assert body.speed_over_ground == 42
+    assert body.position_accuracy is False
+    assert body.longitude_deg == pytest.approx(-6.278843, abs=1e-6)
+    assert body.latitude_deg == pytest.approx(58.144, abs=1e-6)
+    assert body.course_over_ground == pytest.approx(154.5, abs=1e-4)
+    assert body.timestamp == 15
+    assert body.altitude_sensor == AltitudeSensor.GNSS
+    assert body.dte is True
+    assert body.assigned_flag is False
+    assert body.raim is False
+    assert body.radio_status == 0x8270
+
+
+def test_aid_to_navigation_report_gpsd_t21_1() -> None:
+    # A two-fragment Type 21 payload (346 bits, misaligned fill) decodes to
+    # AidToNavigationReport with type_tag "type21". Expected values are the
+    # gpsd .chk entries for T21-1; the 12-character name extension ends in
+    # a trailing @ that the trim removes.
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE21_GPSD_T21_1_FRAG1 + AIVDM_TYPE21_GPSD_T21_1_FRAG2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert msgs[0].type_tag == "type21"
+    body = msgs[0].body
+    assert isinstance(body, AidToNavigationReport)
+    assert body.mmsi == 123456789
+    assert body.aton_type == AtonType.CARDINAL_MARK_NORTH
+    assert body.name == "CHINA ROSE MURPHY EXPRESS ALERT"
+    assert body.position_accuracy is False
+    assert body.longitude_deg == pytest.approx(-122.698592, abs=1e-6)
+    assert body.latitude_deg == pytest.approx(47.920618, abs=1e-6)
+    assert body.dimensions == Dimensions(
+        to_bow_m=5, to_stern_m=5, to_port_m=5, to_starboard_m=5
+    )
+    assert body.epfd == EpfdType.GPS
+    assert body.timestamp == 50
+    assert body.off_position is False
+    assert body.aton_status == 165
+    assert body.raim is False
+    assert body.virtual_aton is False
+    assert body.assigned_flag is False
+
+
 def test_ais_auto_clock_reads_time() -> None:
     # timeout_ms triggers the "auto" clock path. Patch time.monotonic_ns
     # and assert the parser calls it.
     with patch("time.monotonic_ns", return_value=0) as mock_now:
         p = AisParser.streaming(timeout_ms=60_000)  # clock="auto" default
-        p.feed(_AIVDM_TYPE1)
+        p.feed(AIVDM_TYPE1)
         list(p)
         assert mock_now.called
 
@@ -409,7 +654,7 @@ def test_ais_manual_clock_never_reads_time() -> None:
     with patch("time.monotonic_ns") as mock_now:
         p = AisParser.streaming(timeout_ms=60_000, clock="manual")
         p.tick(now_ms=1_000_000)
-        p.feed(_AIVDM_TYPE1)
+        p.feed(AIVDM_TYPE1)
         list(p)
         mock_now.assert_not_called()
 
@@ -424,7 +669,7 @@ def test_ais_reassembly_out_of_order_raises() -> None:
     # Feed part 2 of a 2-fragment message without part 1 — the
     # reassembler emits ReassemblyError (subclass of AisError). Strict
     # iteration surfaces it; lenient would swallow.
-    frag2 = _aivdm(2, 2, 1, "A", b"XXXXXXX", 0)
+    frag2 = aivdm(2, 2, 1, "A", b"XXXXXXX", 0)
     p = AisParser.streaming()
     p.feed(frag2)
     with pytest.raises(ReassemblyError):

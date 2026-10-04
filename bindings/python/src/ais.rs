@@ -11,13 +11,17 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyModule};
 
 use marlin_ais::{
-    AisFragmentParser, AisMessageBody, AisReassembler, AisVersion as RustAisVersion,
-    BitReader as RustBitReader, Dimensions as RustDimensions, EpfdType as RustEpfdType,
-    Eta as RustEta, ExtendedPositionReportB as RustExtendedPositionReportB,
+    AidToNavigationReport as RustAidToNavigationReport, AisFragmentParser, AisMessageBody,
+    AisReassembler, AisVersion as RustAisVersion, AltitudeSensor as RustAltitudeSensor,
+    AtonType as RustAtonType, BitReader as RustBitReader, Dimensions as RustDimensions,
+    EpfdType as RustEpfdType, Eta as RustEta,
+    ExtendedPositionReportB as RustExtendedPositionReportB,
     ManeuverIndicator as RustManeuverIndicator, NavStatus as RustNavStatus,
     PositionReportA as RustPositionReportA, PositionReportB as RustPositionReportB,
+    RateOfTurn as RustRateOfTurn, SarAircraftPositionReport as RustSarAircraftPositionReport,
     StaticAndVoyageA as RustStaticAndVoyageA, StaticDataB24A as RustStaticDataB24A,
-    StaticDataB24B as RustStaticDataB24B, DEFAULT_MAX_PARTIALS,
+    StaticDataB24B as RustStaticDataB24B, TurnDirection as RustTurnDirection,
+    Type24BExtent as RustType24BExtent, DEFAULT_MAX_PARTIALS,
 };
 use marlin_nmea_envelope::{OneShot, Streaming};
 
@@ -28,8 +32,8 @@ use crate::errors::ais_err;
 
 /// Navigation status (mirrors `NavStatus`). Wire values 0..8, 14, 15;
 /// `Reserved(u8)` for 9..=13 collapses to `NOT_DEFINED`.
-#[pyclass(name = "NavStatus", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "NavStatus", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyNavStatus {
     #[pyo3(name = "UNDERWAY_USING_ENGINE")]
     UnderwayUsingEngine = 0,
@@ -90,8 +94,15 @@ impl From<RustNavStatus> for PyNavStatus {
 /// `AisVersion::Future`). The compile-failure-as-audit-signal strategy
 /// used elsewhere in the repo doesn't apply here because the wildcard
 /// is mandatory, not optional.
-#[pyclass(name = "ManeuverIndicator", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "ManeuverIndicator",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.ais"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyManeuverIndicator {
     #[pyo3(name = "NOT_AVAILABLE")]
     NotAvailable = 0,
@@ -120,13 +131,195 @@ impl From<RustManeuverIndicator> for PyManeuverIndicator {
     }
 }
 
+// ---------- TurnDirection ----------
+
+/// Direction of turn when a Type 1/2/3 report carries the "turning
+/// right/left at more than 5° per 30 s, no turn indicator" status
+/// (mirrors `TurnDirection`). Exposed on `PositionReportA.turn_direction`
+/// per ADR-0003; `rate_of_turn` is `None` whenever this is set.
+///
+/// The int values (`RIGHT = 0`, `LEFT = 1`) are enum discriminants, not
+/// wire codes: on the wire the statuses are the raw ROT bytes `+127` and
+/// `−127`. The Rust enum is exhaustive, so the `From` impl needs no
+/// wildcard.
+#[pyclass(
+    name = "TurnDirection",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.ais"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyTurnDirection {
+    #[pyo3(name = "RIGHT")]
+    Right = 0,
+    #[pyo3(name = "LEFT")]
+    Left = 1,
+}
+
+impl From<RustTurnDirection> for PyTurnDirection {
+    fn from(v: RustTurnDirection) -> Self {
+        match v {
+            RustTurnDirection::Right => Self::Right,
+            RustTurnDirection::Left => Self::Left,
+        }
+    }
+}
+
+// ---------- AltitudeSensor ----------
+
+/// Source of a SAR aircraft's reported altitude (mirrors
+/// `AltitudeSensor`, ITU-R M.1371-5 Table 59 bit 134). The int values
+/// are the wire codes: `GNSS = 0`, `BAROMETRIC = 1`. The Rust enum is
+/// exhaustive (a one-bit field), so the `From` impl needs no wildcard.
+#[pyclass(
+    name = "AltitudeSensor",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.ais"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyAltitudeSensor {
+    #[pyo3(name = "GNSS")]
+    Gnss = 0,
+    #[pyo3(name = "BAROMETRIC")]
+    Barometric = 1,
+}
+
+impl From<RustAltitudeSensor> for PyAltitudeSensor {
+    fn from(v: RustAltitudeSensor) -> Self {
+        match v {
+            RustAltitudeSensor::Gnss => Self::Gnss,
+            RustAltitudeSensor::Barometric => Self::Barometric,
+        }
+    }
+}
+
+// ---------- AtonType ----------
+
+/// Type of aid to navigation (mirrors `AtonType`, ITU-R M.1371-5 Table
+/// 74). The int values are the 5-bit wire codes 0..=31. The Rust enum
+/// names all 32 codes, so the `From` impl is exhaustive with no wildcard.
+#[pyclass(name = "AtonType", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyAtonType {
+    #[pyo3(name = "NOT_SPECIFIED")]
+    NotSpecified = 0,
+    #[pyo3(name = "REFERENCE_POINT")]
+    ReferencePoint = 1,
+    #[pyo3(name = "RACON")]
+    Racon = 2,
+    #[pyo3(name = "FIXED_STRUCTURE_OFFSHORE")]
+    FixedStructureOffshore = 3,
+    #[pyo3(name = "EMERGENCY_WRECK_MARKING_BUOY")]
+    EmergencyWreckMarkingBuoy = 4,
+    #[pyo3(name = "LIGHT_WITHOUT_SECTORS")]
+    LightWithoutSectors = 5,
+    #[pyo3(name = "LIGHT_WITH_SECTORS")]
+    LightWithSectors = 6,
+    #[pyo3(name = "LEADING_LIGHT_FRONT")]
+    LeadingLightFront = 7,
+    #[pyo3(name = "LEADING_LIGHT_REAR")]
+    LeadingLightRear = 8,
+    #[pyo3(name = "BEACON_CARDINAL_NORTH")]
+    BeaconCardinalNorth = 9,
+    #[pyo3(name = "BEACON_CARDINAL_EAST")]
+    BeaconCardinalEast = 10,
+    #[pyo3(name = "BEACON_CARDINAL_SOUTH")]
+    BeaconCardinalSouth = 11,
+    #[pyo3(name = "BEACON_CARDINAL_WEST")]
+    BeaconCardinalWest = 12,
+    #[pyo3(name = "BEACON_PORT_HAND")]
+    BeaconPortHand = 13,
+    #[pyo3(name = "BEACON_STARBOARD_HAND")]
+    BeaconStarboardHand = 14,
+    #[pyo3(name = "BEACON_PREFERRED_CHANNEL_PORT_HAND")]
+    BeaconPreferredChannelPortHand = 15,
+    #[pyo3(name = "BEACON_PREFERRED_CHANNEL_STARBOARD_HAND")]
+    BeaconPreferredChannelStarboardHand = 16,
+    #[pyo3(name = "BEACON_ISOLATED_DANGER")]
+    BeaconIsolatedDanger = 17,
+    #[pyo3(name = "BEACON_SAFE_WATER")]
+    BeaconSafeWater = 18,
+    #[pyo3(name = "BEACON_SPECIAL_MARK")]
+    BeaconSpecialMark = 19,
+    #[pyo3(name = "CARDINAL_MARK_NORTH")]
+    CardinalMarkNorth = 20,
+    #[pyo3(name = "CARDINAL_MARK_EAST")]
+    CardinalMarkEast = 21,
+    #[pyo3(name = "CARDINAL_MARK_SOUTH")]
+    CardinalMarkSouth = 22,
+    #[pyo3(name = "CARDINAL_MARK_WEST")]
+    CardinalMarkWest = 23,
+    #[pyo3(name = "PORT_HAND_MARK")]
+    PortHandMark = 24,
+    #[pyo3(name = "STARBOARD_HAND_MARK")]
+    StarboardHandMark = 25,
+    #[pyo3(name = "PREFERRED_CHANNEL_PORT_HAND")]
+    PreferredChannelPortHand = 26,
+    #[pyo3(name = "PREFERRED_CHANNEL_STARBOARD_HAND")]
+    PreferredChannelStarboardHand = 27,
+    #[pyo3(name = "ISOLATED_DANGER")]
+    IsolatedDanger = 28,
+    #[pyo3(name = "SAFE_WATER")]
+    SafeWater = 29,
+    #[pyo3(name = "SPECIAL_MARK")]
+    SpecialMark = 30,
+    #[pyo3(name = "LIGHT_VESSEL")]
+    LightVessel = 31,
+}
+
+impl From<RustAtonType> for PyAtonType {
+    fn from(v: RustAtonType) -> Self {
+        match v {
+            RustAtonType::NotSpecified => Self::NotSpecified,
+            RustAtonType::ReferencePoint => Self::ReferencePoint,
+            RustAtonType::Racon => Self::Racon,
+            RustAtonType::FixedStructureOffshore => Self::FixedStructureOffshore,
+            RustAtonType::EmergencyWreckMarkingBuoy => Self::EmergencyWreckMarkingBuoy,
+            RustAtonType::LightWithoutSectors => Self::LightWithoutSectors,
+            RustAtonType::LightWithSectors => Self::LightWithSectors,
+            RustAtonType::LeadingLightFront => Self::LeadingLightFront,
+            RustAtonType::LeadingLightRear => Self::LeadingLightRear,
+            RustAtonType::BeaconCardinalNorth => Self::BeaconCardinalNorth,
+            RustAtonType::BeaconCardinalEast => Self::BeaconCardinalEast,
+            RustAtonType::BeaconCardinalSouth => Self::BeaconCardinalSouth,
+            RustAtonType::BeaconCardinalWest => Self::BeaconCardinalWest,
+            RustAtonType::BeaconPortHand => Self::BeaconPortHand,
+            RustAtonType::BeaconStarboardHand => Self::BeaconStarboardHand,
+            RustAtonType::BeaconPreferredChannelPortHand => Self::BeaconPreferredChannelPortHand,
+            RustAtonType::BeaconPreferredChannelStarboardHand => {
+                Self::BeaconPreferredChannelStarboardHand
+            }
+            RustAtonType::BeaconIsolatedDanger => Self::BeaconIsolatedDanger,
+            RustAtonType::BeaconSafeWater => Self::BeaconSafeWater,
+            RustAtonType::BeaconSpecialMark => Self::BeaconSpecialMark,
+            RustAtonType::CardinalMarkNorth => Self::CardinalMarkNorth,
+            RustAtonType::CardinalMarkEast => Self::CardinalMarkEast,
+            RustAtonType::CardinalMarkSouth => Self::CardinalMarkSouth,
+            RustAtonType::CardinalMarkWest => Self::CardinalMarkWest,
+            RustAtonType::PortHandMark => Self::PortHandMark,
+            RustAtonType::StarboardHandMark => Self::StarboardHandMark,
+            RustAtonType::PreferredChannelPortHand => Self::PreferredChannelPortHand,
+            RustAtonType::PreferredChannelStarboardHand => Self::PreferredChannelStarboardHand,
+            RustAtonType::IsolatedDanger => Self::IsolatedDanger,
+            RustAtonType::SafeWater => Self::SafeWater,
+            RustAtonType::SpecialMark => Self::SpecialMark,
+            RustAtonType::LightVessel => Self::LightVessel,
+        }
+    }
+}
+
 // ---------- EpfdType ----------
 
 /// Electronic Position-Fixing Device type (mirrors `EpfdType`). Wire
 /// values 0..8 and 15; `Reserved(u8)` for 9..=14 collapses to
 /// `UNDEFINED`.
-#[pyclass(name = "EpfdType", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "EpfdType", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyEpfdType {
     #[pyo3(name = "UNDEFINED")]
     Undefined = 0,
@@ -177,8 +370,8 @@ impl From<RustEpfdType> for PyEpfdType {
 /// AIS protocol version indicator (mirrors `AisVersion`). Rust type is
 /// `#[non_exhaustive]`; defensive wildcard collapses future variants
 /// onto `FUTURE`.
-#[pyclass(name = "AisVersion", eq, eq_int, module = "marlin.ais")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "AisVersion", frozen, eq, eq_int, hash, module = "marlin.ais")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyAisVersion {
     #[pyo3(name = "ITU1371V1")]
     Itu1371v1 = 0,
@@ -320,6 +513,12 @@ impl From<RustEta> for PyEta {
 /// Class A position report payload. Used by Types 1, 2, and 3; the
 /// AIS message-type distinction (1 vs 2 vs 3) is preserved at the
 /// `AisMessage` wrapper level, not here.
+///
+/// The Rust `rate_of_turn: Option<RateOfTurn>` sum type is flattened
+/// into two sibling optionals (ADR-0003): `rate_of_turn` holds a
+/// measured rate in °/min, `turn_direction` holds the ±127
+/// no-turn-indicator status. Parser output sets at most one; both are
+/// `None` for the −128 not-available sentinel.
 #[pyclass(name = "PositionReportA", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyPositionReportA {
@@ -329,6 +528,8 @@ pub struct PyPositionReportA {
     navigation_status: PyNavStatus,
     #[pyo3(get)]
     rate_of_turn: Option<f32>,
+    #[pyo3(get)]
+    turn_direction: Option<PyTurnDirection>,
     #[pyo3(get)]
     speed_over_ground: Option<f32>,
     #[pyo3(get)]
@@ -359,6 +560,7 @@ impl PyPositionReportA {
         mmsi = 0,
         navigation_status = PyNavStatus::NotDefined,
         rate_of_turn = None,
+        turn_direction = None,
         speed_over_ground = None,
         position_accuracy = false,
         longitude_deg = None,
@@ -374,6 +576,7 @@ impl PyPositionReportA {
         mmsi: u32,
         navigation_status: PyNavStatus,
         rate_of_turn: Option<f32>,
+        turn_direction: Option<PyTurnDirection>,
         speed_over_ground: Option<f32>,
         position_accuracy: bool,
         longitude_deg: Option<f64>,
@@ -389,6 +592,7 @@ impl PyPositionReportA {
             mmsi,
             navigation_status,
             rate_of_turn,
+            turn_direction,
             speed_over_ground,
             position_accuracy,
             longitude_deg,
@@ -412,10 +616,16 @@ impl PyPositionReportA {
 
 impl From<RustPositionReportA> for PyPositionReportA {
     fn from(d: RustPositionReportA) -> Self {
+        let (rate_of_turn, turn_direction) = match d.rate_of_turn {
+            Some(RustRateOfTurn::DegPerMin(v)) => (Some(v), None),
+            Some(RustRateOfTurn::NoIndicator(dir)) => (None, Some(dir.into())),
+            None => (None, None),
+        };
         Self {
             mmsi: d.mmsi,
             navigation_status: d.navigation_status.into(),
-            rate_of_turn: d.rate_of_turn,
+            rate_of_turn,
+            turn_direction,
             speed_over_ground: d.speed_over_ground,
             position_accuracy: d.position_accuracy,
             longitude_deg: d.longitude_deg,
@@ -542,6 +752,127 @@ impl From<RustStaticAndVoyageA> for PyStaticAndVoyageA {
             draught_m: d.draught_m,
             destination: d.destination,
             dte: d.dte,
+        }
+    }
+}
+
+// ---------- SarAircraftPositionReport (Type 9) ----------
+
+/// Standard SAR aircraft position report payload (Type 9).
+///
+/// `altitude_m` and `speed_over_ground` are whole metres / whole knots
+/// (not 0.1 kn as on the vessel reports); `None` is the not-available
+/// code, over-range codes (4094 m, 1022 kn) pass through (ADR-0001).
+/// No heading, rate of turn or navigational status exists on Type 9.
+// 4 bools (`position_accuracy`, `dte`, `assigned_flag`, `raim`) are
+// ITU-R M.1371 wire-format flags — the wire reality.
+#[allow(clippy::struct_excessive_bools)]
+#[pyclass(name = "SarAircraftPositionReport", frozen, module = "marlin.ais")]
+#[derive(Clone, Debug)]
+pub struct PySarAircraftPositionReport {
+    #[pyo3(get)]
+    mmsi: u32,
+    #[pyo3(get)]
+    altitude_m: Option<u16>,
+    #[pyo3(get)]
+    speed_over_ground: Option<u16>,
+    #[pyo3(get)]
+    position_accuracy: bool,
+    #[pyo3(get)]
+    longitude_deg: Option<f64>,
+    #[pyo3(get)]
+    latitude_deg: Option<f64>,
+    #[pyo3(get)]
+    course_over_ground: Option<f32>,
+    #[pyo3(get)]
+    timestamp: u8,
+    #[pyo3(get)]
+    altitude_sensor: PyAltitudeSensor,
+    #[pyo3(get)]
+    dte: bool,
+    #[pyo3(get)]
+    assigned_flag: bool,
+    #[pyo3(get)]
+    raim: bool,
+    #[pyo3(get)]
+    radio_status: u32,
+}
+
+#[pymethods]
+impl PySarAircraftPositionReport {
+    #[new]
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+    #[pyo3(signature = (
+        mmsi = 0,
+        altitude_m = None,
+        speed_over_ground = None,
+        position_accuracy = false,
+        longitude_deg = None,
+        latitude_deg = None,
+        course_over_ground = None,
+        timestamp = 60,
+        altitude_sensor = PyAltitudeSensor::Gnss,
+        dte = false,
+        assigned_flag = false,
+        raim = false,
+        radio_status = 0,
+    ))]
+    fn new(
+        mmsi: u32,
+        altitude_m: Option<u16>,
+        speed_over_ground: Option<u16>,
+        position_accuracy: bool,
+        longitude_deg: Option<f64>,
+        latitude_deg: Option<f64>,
+        course_over_ground: Option<f32>,
+        timestamp: u8,
+        altitude_sensor: PyAltitudeSensor,
+        dte: bool,
+        assigned_flag: bool,
+        raim: bool,
+        radio_status: u32,
+    ) -> Self {
+        Self {
+            mmsi,
+            altitude_m,
+            speed_over_ground,
+            position_accuracy,
+            longitude_deg,
+            latitude_deg,
+            course_over_ground,
+            timestamp,
+            altitude_sensor,
+            dte,
+            assigned_flag,
+            raim,
+            radio_status,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SarAircraftPositionReport(mmsi={}, altitude_m={:?}, lat={:?}, lon={:?})",
+            self.mmsi, self.altitude_m, self.latitude_deg, self.longitude_deg,
+        )
+    }
+}
+
+impl From<RustSarAircraftPositionReport> for PySarAircraftPositionReport {
+    fn from(d: RustSarAircraftPositionReport) -> Self {
+        Self {
+            mmsi: d.mmsi,
+            altitude_m: d.altitude_m,
+            speed_over_ground: d.speed_over_ground,
+            position_accuracy: d.position_accuracy,
+            longitude_deg: d.longitude_deg,
+            latitude_deg: d.latitude_deg,
+            course_over_ground: d.course_over_ground,
+            timestamp: d.timestamp,
+            altitude_sensor: d.altitude_sensor.into(),
+            dte: d.dte,
+            assigned_flag: d.assigned_flag,
+            raim: d.raim,
+            radio_status: d.radio_status,
         }
     }
 }
@@ -816,6 +1147,135 @@ impl From<RustExtendedPositionReportB> for PyExtendedPositionReportB {
     }
 }
 
+// ---------- AidToNavigationReport (Type 21) ----------
+
+/// Aid-to-navigation report payload (Type 21).
+///
+/// `name` is the 20-character name joined with the optional extension
+/// (up to 14 more characters) and trimmed of trailing `@` / spaces; an
+/// `@` inside the name is kept. `dimensions` is all-`None` for virtual
+/// AtoN and reference points; `aton_status` is the raw 8-bit field.
+// 5 bools (`position_accuracy`, `off_position`, `raim`, `virtual_aton`,
+// `assigned_flag`) are ITU-R M.1371 wire-format flags — the wire reality.
+#[allow(clippy::struct_excessive_bools)]
+#[pyclass(name = "AidToNavigationReport", frozen, module = "marlin.ais")]
+#[derive(Clone, Debug)]
+pub struct PyAidToNavigationReport {
+    #[pyo3(get)]
+    mmsi: u32,
+    #[pyo3(get)]
+    aton_type: PyAtonType,
+    #[pyo3(get)]
+    name: Option<String>,
+    #[pyo3(get)]
+    position_accuracy: bool,
+    #[pyo3(get)]
+    longitude_deg: Option<f64>,
+    #[pyo3(get)]
+    latitude_deg: Option<f64>,
+    #[pyo3(get)]
+    dimensions: PyDimensions,
+    #[pyo3(get)]
+    epfd: PyEpfdType,
+    #[pyo3(get)]
+    timestamp: u8,
+    #[pyo3(get)]
+    off_position: bool,
+    #[pyo3(get)]
+    aton_status: u8,
+    #[pyo3(get)]
+    raim: bool,
+    #[pyo3(get)]
+    virtual_aton: bool,
+    #[pyo3(get)]
+    assigned_flag: bool,
+}
+
+#[pymethods]
+impl PyAidToNavigationReport {
+    #[new]
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+    #[pyo3(signature = (
+        mmsi = 0,
+        aton_type = PyAtonType::NotSpecified,
+        name = None,
+        position_accuracy = false,
+        longitude_deg = None,
+        latitude_deg = None,
+        dimensions = None,
+        epfd = PyEpfdType::Undefined,
+        timestamp = 60,
+        off_position = false,
+        aton_status = 0,
+        raim = false,
+        virtual_aton = false,
+        assigned_flag = false,
+    ))]
+    fn new(
+        mmsi: u32,
+        aton_type: PyAtonType,
+        name: Option<String>,
+        position_accuracy: bool,
+        longitude_deg: Option<f64>,
+        latitude_deg: Option<f64>,
+        dimensions: Option<PyDimensions>,
+        epfd: PyEpfdType,
+        timestamp: u8,
+        off_position: bool,
+        aton_status: u8,
+        raim: bool,
+        virtual_aton: bool,
+        assigned_flag: bool,
+    ) -> Self {
+        let dimensions =
+            dimensions.unwrap_or_else(|| PyDimensions::from(RustDimensions::default()));
+        Self {
+            mmsi,
+            aton_type,
+            name,
+            position_accuracy,
+            longitude_deg,
+            latitude_deg,
+            dimensions,
+            epfd,
+            timestamp,
+            off_position,
+            aton_status,
+            raim,
+            virtual_aton,
+            assigned_flag,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AidToNavigationReport(mmsi={}, aton_type={:?}, name={:?}, lat={:?}, lon={:?})",
+            self.mmsi, self.aton_type, self.name, self.latitude_deg, self.longitude_deg,
+        )
+    }
+}
+
+impl From<RustAidToNavigationReport> for PyAidToNavigationReport {
+    fn from(d: RustAidToNavigationReport) -> Self {
+        Self {
+            mmsi: d.mmsi,
+            aton_type: d.aton_type.into(),
+            name: d.name,
+            position_accuracy: d.position_accuracy,
+            longitude_deg: d.longitude_deg,
+            latitude_deg: d.latitude_deg,
+            dimensions: d.dimensions.into(),
+            epfd: d.epfd.into(),
+            timestamp: d.timestamp,
+            off_position: d.off_position,
+            aton_status: d.aton_status,
+            raim: d.raim,
+            virtual_aton: d.virtual_aton,
+            assigned_flag: d.assigned_flag,
+        }
+    }
+}
+
 // ---------- StaticDataB24A (Type 24 Part A) ----------
 
 /// Class B static data Part A payload (Type 24A).
@@ -856,6 +1316,11 @@ impl From<RustStaticDataB24A> for PyStaticDataB24A {
 // ---------- StaticDataB24B (Type 24 Part B) ----------
 
 /// Class B static data Part B payload (Type 24B).
+///
+/// The Rust `extent: Type24BExtent` sum type is flattened into two
+/// sibling optionals (ADR-0003): `dimensions` for every other MMSI,
+/// `mothership_mmsi` for an auxiliary craft (`98MIDxxxx`, ADR-0002).
+/// Parser output sets exactly one; the constructor validates nothing.
 #[pyclass(name = "StaticDataB24B", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyStaticDataB24B {
@@ -868,7 +1333,11 @@ pub struct PyStaticDataB24B {
     #[pyo3(get)]
     call_sign: Option<String>,
     #[pyo3(get)]
-    dimensions: PyDimensions,
+    dimensions: Option<PyDimensions>,
+    #[pyo3(get)]
+    mothership_mmsi: Option<u32>,
+    #[pyo3(get)]
+    epfd: PyEpfdType,
 }
 
 #[pymethods]
@@ -880,6 +1349,8 @@ impl PyStaticDataB24B {
         vendor_id = None,
         call_sign = None,
         dimensions = None,
+        mothership_mmsi = None,
+        epfd = PyEpfdType::Undefined,
     ))]
     fn new(
         mmsi: u32,
@@ -887,21 +1358,17 @@ impl PyStaticDataB24B {
         vendor_id: Option<String>,
         call_sign: Option<String>,
         dimensions: Option<PyDimensions>,
+        mothership_mmsi: Option<u32>,
+        epfd: PyEpfdType,
     ) -> Self {
-        let dimensions = dimensions.unwrap_or_else(|| {
-            PyDimensions::from(RustDimensions {
-                to_bow_m: None,
-                to_stern_m: None,
-                to_port_m: None,
-                to_starboard_m: None,
-            })
-        });
         Self {
             mmsi,
             ship_type,
             vendor_id,
             call_sign,
             dimensions,
+            mothership_mmsi,
+            epfd,
         }
     }
 
@@ -915,12 +1382,18 @@ impl PyStaticDataB24B {
 
 impl From<RustStaticDataB24B> for PyStaticDataB24B {
     fn from(d: RustStaticDataB24B) -> Self {
+        let (dimensions, mothership_mmsi) = match d.extent {
+            RustType24BExtent::Dimensions(dims) => (Some(dims.into()), None),
+            RustType24BExtent::MothershipMmsi(mmsi) => (None, Some(mmsi)),
+        };
         Self {
             mmsi: d.mmsi,
             ship_type: d.ship_type,
             vendor_id: d.vendor_id,
             call_sign: d.call_sign,
-            dimensions: d.dimensions.into(),
+            dimensions,
+            mothership_mmsi,
+            epfd: d.epfd.into(),
         }
     }
 }
@@ -983,8 +1456,12 @@ pub(crate) fn message_body_to_py(py: Python<'_>, body: AisMessageBody) -> PyResu
         | AisMessageBody::Type2(d)
         | AisMessageBody::Type3(d) => Py::new(py, PyPositionReportA::from(d))?.into_any(),
         AisMessageBody::Type5(d) => Py::new(py, PyStaticAndVoyageA::from(d))?.into_any(),
+        AisMessageBody::Type9(d) => {
+            Py::new(py, PySarAircraftPositionReport::from(d))?.into_any()
+        }
         AisMessageBody::Type18(d) => Py::new(py, PyPositionReportB::from(d))?.into_any(),
         AisMessageBody::Type19(d) => Py::new(py, PyExtendedPositionReportB::from(d))?.into_any(),
+        AisMessageBody::Type21(d) => Py::new(py, PyAidToNavigationReport::from(d))?.into_any(),
         AisMessageBody::Type24A(d) => Py::new(py, PyStaticDataB24A::from(d))?.into_any(),
         AisMessageBody::Type24B(d) => Py::new(py, PyStaticDataB24B::from(d))?.into_any(),
         AisMessageBody::Other {
@@ -1084,8 +1561,10 @@ impl PyAisMessage {
             AisMessageBody::Type2(_) => "type2",
             AisMessageBody::Type3(_) => "type3",
             AisMessageBody::Type5(_) => "type5",
+            AisMessageBody::Type9(_) => "type9",
             AisMessageBody::Type18(_) => "type18",
             AisMessageBody::Type19(_) => "type19",
+            AisMessageBody::Type21(_) => "type21",
             AisMessageBody::Type24A(_) => "type24a",
             AisMessageBody::Type24B(_) => "type24b",
             AisMessageBody::Other { .. } => "other",
@@ -1418,6 +1897,9 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     // Task 10 enums + value types:
     m.add_class::<PyNavStatus>()?;
     m.add_class::<PyManeuverIndicator>()?;
+    m.add_class::<PyTurnDirection>()?;
+    m.add_class::<PyAltitudeSensor>()?;
+    m.add_class::<PyAtonType>()?;
     m.add_class::<PyEpfdType>()?;
     m.add_class::<PyAisVersion>()?;
     m.add_class::<PyDimensions>()?;
@@ -1425,8 +1907,10 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     // Task 11 message variants:
     m.add_class::<PyPositionReportA>()?;
     m.add_class::<PyStaticAndVoyageA>()?;
+    m.add_class::<PySarAircraftPositionReport>()?;
     m.add_class::<PyPositionReportB>()?;
     m.add_class::<PyExtendedPositionReportB>()?;
+    m.add_class::<PyAidToNavigationReport>()?;
     m.add_class::<PyStaticDataB24A>()?;
     m.add_class::<PyStaticDataB24B>()?;
     m.add_class::<PyOther>()?;

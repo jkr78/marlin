@@ -404,6 +404,22 @@ def test_rmc_nav_status_enum_values() -> None:
     assert int(RmcNavStatus.NOT_VALID) == 3
 
 
+def test_nmea_enums_are_hashable() -> None:
+    # The stubs declare __hash__ on every int-backed enum; pin it at
+    # runtime so the enums work as set members and dict keys.
+    members = {
+        DataStatus.VOID,
+        GgaFixQuality.DGPS_FIX,
+        PrdidDialect.ROLL_PITCH_HEADING,
+        PsxnSlot.ROLL,
+        RmcNavStatus.CAUTION,
+        VtgMode.AUTONOMOUS,
+    }
+    assert len(members) == 6
+    assert DataStatus.VOID in members
+    assert hash(VtgMode.AUTONOMOUS) == hash(VtgMode.AUTONOMOUS)
+
+
 def test_utc_date_construct_and_read() -> None:
     d = UtcDate(23, 3, 94)
     assert d.day == 23 and d.month == 3 and d.year_yy == 94

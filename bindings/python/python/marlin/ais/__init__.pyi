@@ -37,6 +37,70 @@ class ManeuverIndicator:
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
 
+class TurnDirection:
+    """Direction of a ±127 "no turn indicator" rate-of-turn status.
+
+    The int values are enum discriminants (RIGHT = 0, LEFT = 1), not wire
+    codes; on the wire the statuses are raw ROT +127 and −127.
+    """
+
+    RIGHT: TurnDirection
+    LEFT: TurnDirection
+    def __int__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
+class AltitudeSensor:
+    """Source of a SAR aircraft's altitude (Type 9). Int values are the
+    wire codes: GNSS = 0, BAROMETRIC = 1."""
+
+    GNSS: AltitudeSensor
+    BAROMETRIC: AltitudeSensor
+    def __int__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
+class AtonType:
+    """Type of aid to navigation (Type 21, ITU-R M.1371-5 Table 74).
+    Int values are the 5-bit wire codes 0..=31; codes 5-19 are fixed AtoN,
+    20-31 floating AtoN, 0-4 neither."""
+
+    NOT_SPECIFIED: AtonType
+    REFERENCE_POINT: AtonType
+    RACON: AtonType
+    FIXED_STRUCTURE_OFFSHORE: AtonType
+    EMERGENCY_WRECK_MARKING_BUOY: AtonType
+    LIGHT_WITHOUT_SECTORS: AtonType
+    LIGHT_WITH_SECTORS: AtonType
+    LEADING_LIGHT_FRONT: AtonType
+    LEADING_LIGHT_REAR: AtonType
+    BEACON_CARDINAL_NORTH: AtonType
+    BEACON_CARDINAL_EAST: AtonType
+    BEACON_CARDINAL_SOUTH: AtonType
+    BEACON_CARDINAL_WEST: AtonType
+    BEACON_PORT_HAND: AtonType
+    BEACON_STARBOARD_HAND: AtonType
+    BEACON_PREFERRED_CHANNEL_PORT_HAND: AtonType
+    BEACON_PREFERRED_CHANNEL_STARBOARD_HAND: AtonType
+    BEACON_ISOLATED_DANGER: AtonType
+    BEACON_SAFE_WATER: AtonType
+    BEACON_SPECIAL_MARK: AtonType
+    CARDINAL_MARK_NORTH: AtonType
+    CARDINAL_MARK_EAST: AtonType
+    CARDINAL_MARK_SOUTH: AtonType
+    CARDINAL_MARK_WEST: AtonType
+    PORT_HAND_MARK: AtonType
+    STARBOARD_HAND_MARK: AtonType
+    PREFERRED_CHANNEL_PORT_HAND: AtonType
+    PREFERRED_CHANNEL_STARBOARD_HAND: AtonType
+    ISOLATED_DANGER: AtonType
+    SAFE_WATER: AtonType
+    SPECIAL_MARK: AtonType
+    LIGHT_VESSEL: AtonType
+    def __int__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
 class EpfdType:
     UNDEFINED: EpfdType
     GPS: EpfdType
@@ -101,6 +165,7 @@ class PositionReportA:
         mmsi: int = ...,
         navigation_status: NavStatus = ...,
         rate_of_turn: float | None = ...,
+        turn_direction: TurnDirection | None = ...,
         speed_over_ground: float | None = ...,
         position_accuracy: bool = ...,
         longitude_deg: float | None = ...,
@@ -118,6 +183,8 @@ class PositionReportA:
     def navigation_status(self) -> NavStatus: ...
     @property
     def rate_of_turn(self) -> float | None: ...
+    @property
+    def turn_direction(self) -> TurnDirection | None: ...
     @property
     def speed_over_ground(self) -> float | None: ...
     @property
@@ -179,6 +246,57 @@ class StaticAndVoyageA:
     def destination(self) -> str | None: ...
     @property
     def dte(self) -> bool: ...
+
+class SarAircraftPositionReport:
+    """Type 9 standard SAR aircraft position report.
+
+    `altitude_m` and `speed_over_ground` are whole metres / whole knots;
+    None is the not-available code, over-range codes (4094 m, 1022 kn)
+    pass through. No heading, rate of turn or navigational status exists.
+    """
+
+    def __init__(
+        self,
+        mmsi: int = ...,
+        altitude_m: int | None = ...,
+        speed_over_ground: int | None = ...,
+        position_accuracy: bool = ...,
+        longitude_deg: float | None = ...,
+        latitude_deg: float | None = ...,
+        course_over_ground: float | None = ...,
+        timestamp: int = ...,
+        altitude_sensor: AltitudeSensor = ...,
+        dte: bool = ...,
+        assigned_flag: bool = ...,
+        raim: bool = ...,
+        radio_status: int = ...,
+    ) -> None: ...
+    @property
+    def mmsi(self) -> int: ...
+    @property
+    def altitude_m(self) -> int | None: ...
+    @property
+    def speed_over_ground(self) -> int | None: ...
+    @property
+    def position_accuracy(self) -> bool: ...
+    @property
+    def longitude_deg(self) -> float | None: ...
+    @property
+    def latitude_deg(self) -> float | None: ...
+    @property
+    def course_over_ground(self) -> float | None: ...
+    @property
+    def timestamp(self) -> int: ...
+    @property
+    def altitude_sensor(self) -> AltitudeSensor: ...
+    @property
+    def dte(self) -> bool: ...
+    @property
+    def assigned_flag(self) -> bool: ...
+    @property
+    def raim(self) -> bool: ...
+    @property
+    def radio_status(self) -> int: ...
 
 class PositionReportB:
     def __init__(
@@ -283,6 +401,61 @@ class ExtendedPositionReportB:
     @property
     def assigned_flag(self) -> bool: ...
 
+class AidToNavigationReport:
+    """Type 21 aid-to-navigation report.
+
+    `name` joins the 20-character name with the optional extension (up to
+    14 more characters) and trims trailing `@` / spaces; an `@` inside the
+    name is kept. `dimensions` is all-None for virtual AtoN and reference
+    points. `aton_status` is the raw 8-bit field.
+    """
+
+    def __init__(
+        self,
+        mmsi: int = ...,
+        aton_type: AtonType = ...,
+        name: str | None = ...,
+        position_accuracy: bool = ...,
+        longitude_deg: float | None = ...,
+        latitude_deg: float | None = ...,
+        dimensions: Dimensions | None = ...,
+        epfd: EpfdType = ...,
+        timestamp: int = ...,
+        off_position: bool = ...,
+        aton_status: int = ...,
+        raim: bool = ...,
+        virtual_aton: bool = ...,
+        assigned_flag: bool = ...,
+    ) -> None: ...
+    @property
+    def mmsi(self) -> int: ...
+    @property
+    def aton_type(self) -> AtonType: ...
+    @property
+    def name(self) -> str | None: ...
+    @property
+    def position_accuracy(self) -> bool: ...
+    @property
+    def longitude_deg(self) -> float | None: ...
+    @property
+    def latitude_deg(self) -> float | None: ...
+    @property
+    def dimensions(self) -> Dimensions: ...
+    @property
+    def epfd(self) -> EpfdType: ...
+    @property
+    def timestamp(self) -> int: ...
+    @property
+    def off_position(self) -> bool: ...
+    @property
+    def aton_status(self) -> int: ...
+    @property
+    def raim(self) -> bool: ...
+    @property
+    def virtual_aton(self) -> bool: ...
+    @property
+    def assigned_flag(self) -> bool: ...
+
 class StaticDataB24A:
     def __init__(
         self,
@@ -302,6 +475,8 @@ class StaticDataB24B:
         vendor_id: str | None = ...,
         call_sign: str | None = ...,
         dimensions: Dimensions | None = ...,
+        mothership_mmsi: int | None = ...,
+        epfd: EpfdType = ...,
     ) -> None: ...
     @property
     def mmsi(self) -> int: ...
@@ -312,7 +487,11 @@ class StaticDataB24B:
     @property
     def call_sign(self) -> str | None: ...
     @property
-    def dimensions(self) -> Dimensions: ...
+    def dimensions(self) -> Dimensions | None: ...
+    @property
+    def mothership_mmsi(self) -> int | None: ...
+    @property
+    def epfd(self) -> EpfdType: ...
 
 class Other:
     def __init__(
@@ -331,8 +510,10 @@ class Other:
 AisMessageBody: TypeAlias = Union[
     PositionReportA,
     StaticAndVoyageA,
+    SarAircraftPositionReport,
     PositionReportB,
     ExtendedPositionReportB,
+    AidToNavigationReport,
     StaticDataB24A,
     StaticDataB24B,
     Other,
@@ -392,11 +573,14 @@ class BitReader:
     def remaining(self) -> int: ...
 
 __all__ = [
+    "AidToNavigationReport",
     "AisError",
     "AisMessage",
     "AisMessageBody",
     "AisParser",
     "AisVersion",
+    "AltitudeSensor",
+    "AtonType",
     "BitReader",
     "ClockMode",
     "Dimensions",
@@ -409,7 +593,9 @@ __all__ = [
     "PositionReportA",
     "PositionReportB",
     "ReassemblyError",
+    "SarAircraftPositionReport",
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
+    "TurnDirection",
 ]

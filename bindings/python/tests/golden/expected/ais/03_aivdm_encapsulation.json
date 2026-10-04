@@ -21,7 +21,8 @@
       },
       "speed_over_ground": 0.0,
       "timestamp": 40,
-      "true_heading": null
+      "true_heading": null,
+      "turn_direction": null
     },
     "is_own_ship": false,
     "type_tag": "type1"

@@ -5,7 +5,8 @@
 //!
 //! Each character in an AIS payload carries **6 bits** of data, packed
 //! into the printable ASCII range to avoid NMEA-reserved bytes. The
-//! decode rule (ITU-R M.1371-5 §8.2.4):
+//! decode rule (IEC 61162-1, six-bit encapsulation of `!--VDM`/`!--VDO`
+//! payloads; ITU-R M.1371-5 defers the presentation interface to it):
 //!
 //! | ASCII range | Value range |
 //! | --- | --- |

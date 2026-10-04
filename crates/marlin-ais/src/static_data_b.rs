@@ -1,9 +1,10 @@
 //! Class B static data — AIS message Type 24, Parts A and B.
 //!
-//! Per ITU-R M.1371-5 §5.3.24, Type 24 splits into two separate AIS
+//! Per ITU-R M.1371-5 Annex 8 §3.22, Type 24 splits into two separate AIS
 //! messages (not multi-sentence fragments): Part A carries the
-//! vessel name, Part B carries ship type, dimensions, and callsign.
-//! The two parts share an MMSI but may arrive minutes apart.
+//! vessel name, Part B carries ship type, vendor ID, call sign,
+//! dimensions (or a mother-ship MMSI, see [`Type24BExtent`]) and EPFD
+//! type. The two parts share an MMSI but may arrive minutes apart.
 //!
 //! Per PRD §A6, v1 emits [`StaticDataB24A`] and [`StaticDataB24B`] as
 //! independent messages and does **not** pair them. A higher layer
@@ -11,14 +12,18 @@
 
 use alloc::string::String;
 
-use crate::shared_types::{dim_u6, dim_u9, trim_ais_string, Dimensions};
+use crate::shared_types::{
+    is_auxiliary_craft_mmsi, read_dimensions, trim_ais_string, Dimensions, EpfdType,
+};
 use crate::{AisError, BitReader};
 
-/// Spec-canonical bit count for Type 24 Part A (ITU-R M.1371-5 §5.3.24.1):
+/// Spec-canonical bit count for Type 24 Part A (ITU-R M.1371-5 Annex 8
+/// §3.22, Table 78):
 /// 6 `msg_type` + 2 `repeat` + 30 `mmsi` + 2 `part` + 120 `name` = **160**.
 pub const STATIC_DATA_B_24A_BITS: usize = 160;
 
-/// Spec-canonical bit count for Type 24 Part B (ITU-R M.1371-5 §5.3.24.2):
+/// Spec-canonical bit count for Type 24 Part B (ITU-R M.1371-5 Annex 8
+/// §3.22, Table 79):
 /// 40-bit header + 8 `ship_type` + 42 `vendor_id` + 42 `callsign` +
 /// 30 `dimensions` + 4 `EPFD` + 2 spare = **168**.
 pub const STATIC_DATA_B_24B_BITS: usize = 168;
@@ -30,7 +35,8 @@ pub const STATIC_DATA_B_24B_BITS: usize = 168;
 pub enum Type24Part {
     /// Part A — vessel name.
     A,
-    /// Part B — ship type, vendor ID, call sign, dimensions.
+    /// Part B — ship type, vendor ID, call sign, extent (dimensions or
+    /// mother-ship MMSI), EPFD type.
     B,
     /// Reserved part codes (2 or 3); raw code preserved.
     Reserved(u8),
@@ -45,12 +51,31 @@ pub struct StaticDataB24A {
     pub vessel_name: Option<String>,
 }
 
-/// Decoded Type 24 Part B — ship type, vendor, call sign, dimensions.
+/// What the 30-bit extent field of a Type 24 Part B holds, decided by
+/// the MMSI prefix (ADR-0002).
 ///
-/// For auxiliary-craft MMSIs (98XXXXXXX pattern), the 30 bits normally
-/// holding dimensions carry a mothership MMSI instead. This crate
-/// returns the bytes as dimensions regardless; callers interpret based
-/// on the MMSI range if they need to distinguish.
+/// This crate decodes wire fields without interpreting them; this field
+/// is the single exception. For an auxiliary craft (`98MIDxxxx`, see
+/// [`is_auxiliary_craft_mmsi`]) the bits hold the mother ship's MMSI;
+/// read as dimensions they were wrong for every such craft and the
+/// caller could not repair them without re-packing the bits. The rule
+/// is the USCG MMSI-format convention as gpsd implements it;
+/// ITU-R M.1371-5 Table 79 does not state it.
+///
+/// Both arms keep the 30 bits recoverable: `MothershipMmsi` holds them
+/// verbatim and `Dimensions` maps only `0` to `None`. Exhaustive: the
+/// discriminator is a fixed MMSI-prefix rule, so no third arm can
+/// appear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type24BExtent {
+    /// Dimensions A/B/C/D, for every MMSI that is not an auxiliary craft.
+    Dimensions(Dimensions),
+    /// MMSI of the mother ship, for auxiliary-craft MMSIs.
+    MothershipMmsi(u32),
+}
+
+/// Decoded Type 24 Part B — ship type, vendor, call sign, extent
+/// (dimensions or mother-ship MMSI) and EPFD type.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticDataB24B {
     /// Maritime Mobile Service Identity.
@@ -58,15 +83,17 @@ pub struct StaticDataB24B {
     /// Ship and cargo type — ITU-R M.1371-5 Table 53 raw value.
     pub ship_type: u8,
     /// Vendor ID (up to 7 characters). `None` on all-padding. Per
-    /// ITU-R M.1371-5 §5.3.24.2 this is a composite of a 3-char
-    /// vendor ID, 4-bit unit-model code, and 20-bit serial number;
+    /// ITU-R M.1371-5 Annex 8 §3.22, Table 79A this is a composite of a
+    /// 3-char vendor ID, 4-bit unit-model code, and 20-bit serial number;
     /// we surface the entire 7-char string and let callers split.
     pub vendor_id: Option<String>,
     /// Call sign (up to 7 characters). `None` on all-padding.
     pub call_sign: Option<String>,
-    /// Vessel dimensions. For auxiliary craft these bits carry a
-    /// mothership MMSI (see struct-level docs).
-    pub dimensions: Dimensions,
+    /// Vessel dimensions, or the mother ship's MMSI for an auxiliary
+    /// craft. See [`Type24BExtent`].
+    pub extent: Type24BExtent,
+    /// Electronic position-fixing device type (bits 162–165).
+    pub epfd: EpfdType,
 }
 
 /// Dispatch result from [`decode_static_data_b`].
@@ -166,20 +193,20 @@ pub fn decode_static_data_b_24b(
     let ship_type = (r.u(8) & 0xFF) as u8;
     let vendor_id = trim_ais_string(r.string(7));
     let call_sign = trim_ais_string(r.string(7));
-    let dimensions = Dimensions {
-        to_bow_m: dim_u9(r.u(9)),
-        to_stern_m: dim_u9(r.u(9)),
-        to_port_m: dim_u6(r.u(6)),
-        to_starboard_m: dim_u6(r.u(6)),
+    let extent = if is_auxiliary_craft_mmsi(mmsi) {
+        Type24BExtent::MothershipMmsi((r.u(30) & 0xFFFF_FFFF) as u32)
+    } else {
+        Type24BExtent::Dimensions(read_dimensions(&mut r))
     };
-    // Remaining bits (spare + possibly EPFD) ignored — not normative
-    // for the common-case Part B layout.
+    let epfd = EpfdType::from_u4((r.u(4) & 0x0F) as u8);
+    // Trailing 2 bits are spare.
     Ok(StaticDataB24B {
         mmsi,
         ship_type,
         vendor_id,
         call_sign,
-        dimensions,
+        extent,
+        epfd,
     })
 }
 
@@ -192,19 +219,11 @@ pub fn decode_static_data_b_24b(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::cast_possible_truncation
+    clippy::indexing_slicing
 )]
 mod tests {
     use super::*;
-    use crate::testing::BitWriter;
-
-    fn write_ais_str(w: &mut BitWriter, s: &[u8], chars: usize) {
-        for i in 0..chars {
-            let c = s.get(i).copied().unwrap_or(b'@');
-            let v = if c >= 64 { c - 64 } else { c };
-            w.u(6, u64::from(v));
-        }
-    }
+    use crate::testing::{armor_encode, write_ais_str, BitWriter};
 
     fn build_part_a(mmsi: u32, name: &[u8]) -> (alloc::vec::Vec<u8>, usize) {
         let mut w = BitWriter::new();
@@ -213,20 +232,28 @@ mod tests {
         w.u(30, u64::from(mmsi));
         w.u(2, 0); // part A
         write_ais_str(&mut w, name, 20);
-        // Total: 6 + 2 + 30 + 2 + 120 = 160 bits per ITU-R M.1371-5 §5.3.24.1.
+        // Total: 6 + 2 + 30 + 2 + 120 = 160 bits per ITU-R M.1371-5 Annex 8 §3.22, Table 78.
         w.finish()
     }
 
-    #[allow(clippy::too_many_arguments)] // test fixture constructor
+    /// The 30-bit extent field packed as dimensions A/B/C/D in wire
+    /// order (9 + 9 + 6 + 6 bits).
+    fn dimension_bits(bow: u16, stern: u16, port: u8, starboard: u8) -> u64 {
+        (u64::from(bow) << 21)
+            | (u64::from(stern) << 12)
+            | (u64::from(port) << 6)
+            | u64::from(starboard)
+    }
+
+    /// `extent_bits` is the raw 30-bit field: dimensions via
+    /// [`dimension_bits`] or a mother-ship MMSI verbatim.
     fn build_part_b(
         mmsi: u32,
         ship_type: u8,
         vendor: &[u8],
         callsign: &[u8],
-        bow: u16,
-        stern: u16,
-        port: u8,
-        starboard: u8,
+        extent_bits: u64,
+        epfd: u8,
     ) -> (alloc::vec::Vec<u8>, usize) {
         let mut w = BitWriter::new();
         w.u(6, 24);
@@ -236,12 +263,9 @@ mod tests {
         w.u(8, u64::from(ship_type));
         write_ais_str(&mut w, vendor, 7);
         write_ais_str(&mut w, callsign, 7);
-        w.u(9, u64::from(bow));
-        w.u(9, u64::from(stern));
-        w.u(6, u64::from(port));
-        w.u(6, u64::from(starboard));
-        // Spare: pad to 168.
-        w.u(6, 0);
+        w.u(30, extent_bits);
+        w.u(4, u64::from(epfd));
+        w.u(2, 0); // spare; total 168
         w.finish()
     }
 
@@ -255,16 +279,66 @@ mod tests {
 
     #[test]
     fn part_b_decodes_all_fields() {
-        let (bits, total) = build_part_b(123_456_789, 37, b"VND1234", b"CS001", 30, 10, 5, 3);
+        let (bits, total) = build_part_b(
+            123_456_789,
+            37,
+            b"VND1234",
+            b"CS001",
+            dimension_bits(30, 10, 5, 3),
+            0,
+        );
         let msg = decode_static_data_b_24b(&bits, total).unwrap();
         assert_eq!(msg.mmsi, 123_456_789);
         assert_eq!(msg.ship_type, 37);
         assert_eq!(msg.vendor_id.as_deref(), Some("VND1234"));
         assert_eq!(msg.call_sign.as_deref(), Some("CS001"));
-        assert_eq!(msg.dimensions.to_bow_m, Some(30));
-        assert_eq!(msg.dimensions.to_stern_m, Some(10));
-        assert_eq!(msg.dimensions.to_port_m, Some(5));
-        assert_eq!(msg.dimensions.to_starboard_m, Some(3));
+        assert_eq!(
+            msg.extent,
+            Type24BExtent::Dimensions(Dimensions {
+                to_bow_m: Some(30),
+                to_stern_m: Some(10),
+                to_port_m: Some(5),
+                to_starboard_m: Some(3),
+            })
+        );
+        assert_eq!(msg.epfd, EpfdType::Undefined);
+    }
+
+    /// ADR-0002: for a `98MIDxxxx` auxiliary-craft MMSI the 30 extent
+    /// bits are the mother ship's MMSI, surfaced verbatim.
+    #[test]
+    fn part_b_auxiliary_craft_mmsi_yields_mothership_mmsi() {
+        let (bits, total) = build_part_b(987_654_321, 37, b"VND1234", b"CS001", 211_000_123, 0);
+        let msg = decode_static_data_b_24b(&bits, total).unwrap();
+        assert_eq!(msg.extent, Type24BExtent::MothershipMmsi(211_000_123));
+    }
+
+    /// The branch is decided by the MMSI prefix alone: the same 30 bits
+    /// under a non-auxiliary MMSI read as dimensions.
+    #[test]
+    fn part_b_non_auxiliary_mmsi_reads_same_bits_as_dimensions() {
+        let (bits, total) = build_part_b(123_456_789, 37, b"VND1234", b"CS001", 211_000_123, 0);
+        let msg = decode_static_data_b_24b(&bits, total).unwrap();
+        assert!(matches!(msg.extent, Type24BExtent::Dimensions(_)));
+    }
+
+    #[test]
+    fn part_b_decodes_epfd() {
+        let (bits, total) = build_part_b(1, 0, b"", b"", 0, EpfdType::Galileo.code());
+        let msg = decode_static_data_b_24b(&bits, total).unwrap();
+        assert_eq!(msg.epfd, EpfdType::Galileo);
+    }
+
+    /// Pins the armored form of an auxiliary-craft Part B so the Python
+    /// unit test `test_static_data_b24b_mothership_mmsi` (bindings) can
+    /// decode the same bits without a Python-side bit packer. 168 bits
+    /// armor to exactly 28 characters with zero fill bits.
+    #[test]
+    fn part_b_auxiliary_craft_payload_armors_to_known_string() {
+        let (bits, total) = build_part_b(987_654_321, 37, b"VND1234", b"CS001", 211_000_123, 1);
+        let armored = b"H>eq`dDUF>4ijkl3Chhi00<Tqds4";
+        assert_eq!(armor_encode(&bits, total), (armored.to_vec(), 0));
+        assert_eq!(crate::armor::decode(armored, 0).unwrap(), (bits, total));
     }
 
     #[test]
@@ -281,7 +355,7 @@ mod tests {
 
     #[test]
     fn dispatcher_routes_part_b() {
-        let (bits, total) = build_part_b(1, 70, b"V", b"C", 1, 1, 1, 1);
+        let (bits, total) = build_part_b(1, 70, b"V", b"C", dimension_bits(1, 1, 1, 1), 0);
         match decode_static_data_b(&bits, total).unwrap() {
             StaticDataB::PartB(b) => assert_eq!(b.ship_type, 70),
             other => panic!("expected PartB, got {other:?}"),
@@ -328,7 +402,7 @@ mod tests {
 
     /// Regression: real-world Type 24 Part A sentences are 27 chars × 6
     /// bits = 162 gross bits, minus 2 fill bits = **160 bits exact**.
-    /// That matches ITU-R M.1371-5 §5.3.24.1 (40-bit header + 120-bit
+    /// That matches ITU-R M.1371-5 Annex 8 §3.22, Table 78 (40-bit header + 120-bit
     /// name). v0.1.0 enforced 168 as the floor for both parts and
     /// rejected every Part A frame with `PayloadTooShort`. Reported by
     /// a Python-bindings consumer with a batch of 160 sentences.

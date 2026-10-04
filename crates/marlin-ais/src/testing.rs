@@ -99,6 +99,7 @@ impl BitWriter {
     }
 
     /// Append `n` bits of `value`, MSB-first.
+    // `byte_idx` is pushed into range just above the index; the cast masks one bit.
     #[allow(clippy::cast_possible_truncation, clippy::indexing_slicing)]
     pub(crate) fn u(&mut self, n: usize, value: u64) {
         for i in 0..n {
@@ -127,5 +128,44 @@ impl BitWriter {
 
     pub(crate) fn finish(self) -> (Vec<u8>, usize) {
         (self.bits, self.total_bits)
+    }
+}
+
+/// Armor a dense bit buffer into AIVDM payload characters — the inverse
+/// of [`crate::armor::decode`]. Returns the payload and the fill-bit
+/// count the wrapper would declare (zero-padded to a 6-bit boundary).
+/// Lets a Rust test pin the armored form of a `BitWriter` payload so the
+/// Python unit tests can reuse the same bits.
+// `pos < total_bits` bounds the index; the fill count is at most 5.
+#[allow(clippy::cast_possible_truncation, clippy::indexing_slicing)]
+pub(crate) fn armor_encode(bits: &[u8], total_bits: usize) -> (Vec<u8>, u8) {
+    let chars = total_bits.div_ceil(6);
+    let fill_bits = (chars * 6 - total_bits) as u8;
+    let mut out = Vec::with_capacity(chars);
+    for c in 0..chars {
+        let mut v = 0u8;
+        for k in 0..6 {
+            let pos = c * 6 + k;
+            let bit = if pos < total_bits {
+                (bits[pos / 8] >> (7 - pos % 8)) & 1
+            } else {
+                0
+            };
+            v = (v << 1) | bit;
+        }
+        out.push(if v < 40 { v + 0x30 } else { v + 0x38 });
+    }
+    (out, fill_bits)
+}
+
+/// Append `chars` six-bit characters of `text` to the writer, padding
+/// with `@` (value 0) when `text` is shorter. Inverse of
+/// [`crate::BitReader::string`]: ASCII 64..=95 map to 0..=31, ASCII
+/// 32..=63 map to themselves.
+pub(crate) fn write_ais_str(w: &mut BitWriter, text: &[u8], chars: usize) {
+    for i in 0..chars {
+        let c = text.get(i).copied().unwrap_or(b'@');
+        let v = if c >= 64 { c - 64 } else { c };
+        w.u(6, u64::from(v));
     }
 }

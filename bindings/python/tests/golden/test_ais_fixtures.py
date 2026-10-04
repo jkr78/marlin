@@ -10,7 +10,10 @@ import pytest
 
 from marlin.ais import AisParser
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "envelope"
+# Two fixture directories: the envelope streams shared with the other
+# golden tests, and AIS-only vectors (gpsd-sourced; see fixtures/README.md).
+FIXTURES_ROOT = Path(__file__).parent.parent / "fixtures"
+FIXTURE_DIRS = (FIXTURES_ROOT / "envelope", FIXTURES_ROOT / "ais")
 EXPECTED_DIR = Path(__file__).parent / "expected" / "ais"
 EXPECTED_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -53,8 +56,8 @@ def _to_json_safe(obj: Any) -> Any:
 
 @pytest.mark.parametrize(
     "fixture",
-    sorted(FIXTURES_DIR.glob("*.nmea")),
-    ids=lambda p: p.name,
+    sorted(p for d in FIXTURE_DIRS for p in d.glob("*.nmea")),
+    ids=lambda p: f"{p.parent.name}/{p.name}",
 )
 def test_ais_fixture_matches_golden(
     fixture: Path, regenerate_goldens: bool

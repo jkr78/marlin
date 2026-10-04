@@ -100,8 +100,8 @@ while chunk := source.read(4096):
             print(f"heading: {msg.heading_true_deg}°")
 ```
 
-`Nmea0183Parser` decodes GGA, GLL, HDT, RMC, VTG, PSXN, and PRDID into
-typed classes. Anything it doesn't recognize, AIVDM included, surfaces
+`Nmea0183Parser` decodes GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN,
+and PRDID into typed classes. Anything it doesn't recognize, AIVDM included, surfaces
 as `Unknown`. Match `Unknown` to forward those sentences elsewhere, or
 skip it if you only care about typed messages.
 
@@ -136,7 +136,7 @@ messages. It also handles multi-fragment reassembly: a Type 5 split
 across two `!AIVDM` lines arrives as a single `AisMessage`.
 
 The `body` attribute holds the typed payload. `msg.type_tag` is a string
-like `"type1"`, `"type5"`, or `"type18"` for filtering without
+like `"type1"`, `"type5"`, or `"type21"` for filtering without
 `isinstance`.
 
 For deterministic replay or tests that patch `time`, set `clock="manual"`
@@ -250,9 +250,11 @@ for sentence in parser:
 Coverage:
 
 - envelope: `RawSentence`
-- typed NMEA: `Gga`, `Vtg`, `Hdt`, `Psxn`, `Prdid`, `Unknown`
-- typed AIS bodies: `PositionReportA`, `PositionReportB`,
-  `ExtendedPositionReportB`, `StaticAndVoyageA`, `StaticDataB24A`,
+- typed NMEA: `Gga`, `Gll`, `Hdg`, `Hdt`, `Rmc`, `Tll`, `Ttm`, `Vtg`,
+  `Psxn`, `Prdid`, `Unknown`
+- typed AIS bodies: `PositionReportA`, `StaticAndVoyageA`,
+  `SarAircraftPositionReport`, `PositionReportB`,
+  `ExtendedPositionReportB`, `AidToNavigationReport`, `StaticDataB24A`,
   `StaticDataB24B`, `Other`
 - AIS wrapper: `AisMessage`
 

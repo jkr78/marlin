@@ -17,7 +17,7 @@
 
 use alloc::string::String;
 
-/// AIS 6-bit character table, ITU-R M.1371-5 Table 47 (§8.2.5).
+/// AIS 6-bit character table, ITU-R M.1371-5 Annex 8 §3, Table 47.
 ///
 /// Maps 6-bit values 0..=63 to printable ASCII. Downstream string
 /// consumers typically trim trailing `@` and spaces — this table

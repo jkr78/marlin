@@ -1,16 +1,17 @@
 //! Class A static and voyage data — AIS message Type 5.
 //!
-//! 424-bit payload (ITU-R M.1371-5 §5.3.5). Spans multiple AIVDM
+//! 424-bit payload (ITU-R M.1371-5 Annex 8 §3.3, Table 52). Spans multiple AIVDM
 //! fragments in practice; caller is responsible for having
 //! reassembled the bit stream before calling
 //! [`decode_static_and_voyage_a`].
 
 use alloc::string::String;
 
-use crate::shared_types::{dim_u6, dim_u9, trim_ais_string, Dimensions, EpfdType};
+use crate::shared_types::{read_dimensions, trim_ais_string, Dimensions, EpfdType};
 use crate::{AisError, BitReader};
 
-/// Minimum valid payload size for Type 5 (ITU-R M.1371-5 §5.3.5).
+/// Minimum valid payload size for Type 5 (ITU-R M.1371-5 Annex 8 §3.3,
+/// Table 52).
 pub const STATIC_VOYAGE_A_BITS: usize = 424;
 
 /// Decoded Class A static and voyage-related data.
@@ -120,12 +121,7 @@ pub fn decode_static_and_voyage_a(
     let call_sign = trim_ais_string(r.string(7));
     let vessel_name = trim_ais_string(r.string(20));
     let ship_type = (r.u(8) & 0xFF) as u8;
-    let dimensions = Dimensions {
-        to_bow_m: dim_u9(r.u(9)),
-        to_stern_m: dim_u9(r.u(9)),
-        to_port_m: dim_u6(r.u(6)),
-        to_starboard_m: dim_u6(r.u(6)),
-    };
+    let dimensions = read_dimensions(&mut r);
     let epfd = EpfdType::from_u4((r.u(4) & 0x0F) as u8);
     let eta = Eta {
         month: sentinel_u8(r.u(4), 0),
@@ -180,33 +176,11 @@ fn sentinel_u8(raw: u64, sentinel: u64) -> Option<u8> {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::cast_precision_loss
+    clippy::indexing_slicing
 )]
 mod tests {
     use super::*;
-    use crate::testing::BitWriter;
-
-    // Helper: write a 6-bit-ASCII string of exactly `n` chars,
-    // padding with '@' (value 0) if the input is shorter.
-    fn write_ais_str(w: &mut BitWriter, s: &[u8], chars: usize) {
-        for i in 0..chars {
-            let c = s.get(i).copied().unwrap_or(b'@');
-            // Inverse of AIS table 47: find each byte's 6-bit value.
-            // For ASCII 'A'-'Z' (65-90): value = 1..=26 = c - 64.
-            // For '@' (64): value = 0.
-            // For ' ' (32): value = 32.
-            // For '0'-'9' (48-57): value = 48..=57 = c - 16? no...
-            // The table wraps at 32: values 0..=31 are @ABC...Z[\]^_,
-            // values 32..=63 are space-!"#$%&'()*+,-./0123456789:;<=>?.
-            // Inverse: c = 64 + v for v < 32; c = v for v >= 32.
-            let v = if c >= 64 { c - 64 } else { c };
-            w.u(6, u64::from(v));
-        }
-    }
+    use crate::testing::{write_ais_str, BitWriter};
 
     #[test]
     fn decodes_happy_path() {

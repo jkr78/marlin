@@ -1,22 +1,16 @@
 //! Class B CS position report — AIS message Type 18.
 //!
-//! 168-bit payload (ITU-R M.1371-5 §5.3.18). Similar shape to
+//! 168-bit payload (ITU-R M.1371-5 Annex 8 §3.16, Table 70). Similar shape to
 //! Types 1/2/3 but tailored for Class B transponders (smaller
 //! vessels, voluntary carriage) — omits `navigation_status` and
 //! `rate_of_turn`, adds Class-B-specific capability flags.
 
+use crate::shared_types::{cog_deg, heading_deg, lat_deg, lon_deg, sog_tenths_kn};
 use crate::{AisError, BitReader};
 
-/// Minimum valid payload size for Type 18 (ITU-R M.1371-5 §5.3.18).
+/// Minimum valid payload size for Type 18 (ITU-R M.1371-5 Annex 8
+/// §3.16, Table 70).
 pub const POSITION_REPORT_B_BITS: usize = 168;
-
-/// Sentinels match the Class A position report (§5.3.1).
-const SOG_NOT_AVAILABLE: u64 = 1023;
-const LON_NOT_AVAILABLE: i64 = 181 * 600_000;
-const LAT_NOT_AVAILABLE: i64 = 91 * 600_000;
-const COG_NOT_AVAILABLE: u64 = 3600;
-const HEADING_NOT_AVAILABLE: u64 = 511;
-const MINUTES_FRAC_PER_DEGREE: f64 = 600_000.0;
 
 /// Decoded Class B position report.
 ///
@@ -69,11 +63,7 @@ pub struct PositionReportB {
 /// # Errors
 ///
 /// [`AisError::PayloadTooShort`] if `total_bits < 168`.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_possible_wrap
-)]
+#[allow(clippy::cast_possible_truncation)] // every narrowing is masked to its field width
 pub fn decode_position_report_b(
     bits: &[u8],
     total_bits: usize,
@@ -87,42 +77,12 @@ pub fn decode_position_report_b(
     let mmsi = (r.u(30) & 0xFFFF_FFFF) as u32;
     let _ = r.u(8); // reserved (spec says "reserved for regional applications")
 
-    let sog_raw = r.u(10);
-    let speed_over_ground = if sog_raw == SOG_NOT_AVAILABLE {
-        None
-    } else {
-        Some((sog_raw as f32) / 10.0)
-    };
-
+    let speed_over_ground = sog_tenths_kn(r.u(10));
     let position_accuracy = r.b();
-
-    let lon_raw = r.i(28);
-    let longitude_deg = if lon_raw == LON_NOT_AVAILABLE {
-        None
-    } else {
-        Some((lon_raw as f64) / MINUTES_FRAC_PER_DEGREE)
-    };
-    let lat_raw = r.i(27);
-    let latitude_deg = if lat_raw == LAT_NOT_AVAILABLE {
-        None
-    } else {
-        Some((lat_raw as f64) / MINUTES_FRAC_PER_DEGREE)
-    };
-
-    let cog_raw = r.u(12);
-    let course_over_ground = if cog_raw == COG_NOT_AVAILABLE {
-        None
-    } else {
-        Some((cog_raw as f32) / 10.0)
-    };
-
-    let heading_raw = r.u(9);
-    let true_heading = if heading_raw == HEADING_NOT_AVAILABLE {
-        None
-    } else {
-        Some((heading_raw & 0x1FF) as u16)
-    };
-
+    let longitude_deg = lon_deg(r.i(28));
+    let latitude_deg = lat_deg(r.i(27));
+    let course_over_ground = cog_deg(r.u(12));
+    let true_heading = heading_deg(r.u(9));
     let timestamp = (r.u(6) & 0x3F) as u8;
     let _ = r.u(2); // regional reserved
     let class_b_cs_flag = r.b();
@@ -161,14 +121,14 @@ pub fn decode_position_report_b(
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation
 )]
 mod tests {
     use super::*;
+    use crate::shared_types::sentinel;
     use crate::testing::BitWriter;
 
     #[allow(clippy::too_many_arguments)]
@@ -241,12 +201,12 @@ mod tests {
     fn sentinels_decode_to_none() {
         let (bits, total) = build_prb(
             1,
-            SOG_NOT_AVAILABLE as u16,
+            sentinel::SOG_NOT_AVAILABLE,
             false,
-            LON_NOT_AVAILABLE as i32,
-            LAT_NOT_AVAILABLE as i32,
-            COG_NOT_AVAILABLE as u16,
-            HEADING_NOT_AVAILABLE as u16,
+            sentinel::LON_NOT_AVAILABLE as i32,
+            sentinel::LAT_NOT_AVAILABLE as i32,
+            sentinel::COG_NOT_AVAILABLE,
+            sentinel::HEADING_NOT_AVAILABLE,
             60,
             [false; 7],
             0,

@@ -73,14 +73,10 @@ pub(crate) fn decode_err(err: RustDecodeError) -> PyErr {
 /// Reassembly-related variants map to `ReassemblyError`; everything else
 /// to `AisError`. Envelope-wrapped failures preserve `__cause__`.
 pub(crate) fn ais_err(py: Python<'_>, err: RustAisError) -> PyErr {
-    use marlin_ais::AisError::{
-        Envelope, ReassemblyChannelMismatch, ReassemblyOutOfOrder, ReassemblyTimeout,
-    };
+    use marlin_ais::AisError::{Envelope, ReassemblyOutOfOrder, ReassemblyTimeout};
     let msg = err.to_string();
     match err {
-        ReassemblyTimeout | ReassemblyOutOfOrder | ReassemblyChannelMismatch => {
-            ReassemblyError::new_err(msg)
-        }
+        ReassemblyTimeout | ReassemblyOutOfOrder => ReassemblyError::new_err(msg),
         Envelope(inner) => {
             let pyerr = AisError::new_err(msg);
             let cause = envelope_err(py, inner);

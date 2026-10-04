@@ -36,8 +36,15 @@ use crate::errors::{decode_err, envelope_err};
 ///
 /// `GgaFixQuality::Other(u8)` carries a raw byte this fieldless Python
 /// enum cannot represent; it collapses to `INVALID` for v0.1.
-#[pyclass(name = "GgaFixQuality", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "GgaFixQuality",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.nmea"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyGgaFixQuality {
     #[pyo3(name = "INVALID")]
     Invalid = 0,
@@ -84,8 +91,8 @@ impl From<RustGgaFixQuality> for PyGgaFixQuality {
 ///
 /// `VtgMode::Other(u8)` collapses to `NOT_VALID` for v0.1 — same
 /// information-loss rationale as `PyGgaFixQuality`.
-#[pyclass(name = "VtgMode", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "VtgMode", frozen, eq, eq_int, hash, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyVtgMode {
     #[pyo3(name = "NOT_VALID")]
     NotValid = 0,
@@ -123,8 +130,8 @@ impl From<RustVtgMode> for PyVtgMode {
 /// `DataStatus::Other(u8)` collapses to `VOID` for v0.1 — fieldless
 /// Python enum cannot carry the raw byte. Same trade-off as
 /// `PyGgaFixQuality` and `PyVtgMode`.
-#[pyclass(name = "DataStatus", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "DataStatus", frozen, eq, eq_int, hash, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyDataStatus {
     #[pyo3(name = "ACTIVE")]
     Active = 0,
@@ -150,8 +157,15 @@ impl From<RustDataStatus> for PyDataStatus {
 ///
 /// `RmcNavStatus::Other(u8)` collapses to `NOT_VALID`; same fieldless-
 /// enum information loss as the other discriminator types here.
-#[pyclass(name = "RmcNavStatus", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "RmcNavStatus",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.nmea"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyRmcNavStatus {
     #[pyo3(name = "SAFE")]
     Safe = 0,
@@ -179,8 +193,15 @@ impl From<RustRmcNavStatus> for PyRmcNavStatus {
 /// Radar target tracking state (mirrors `TargetStatus`). `Other(u8)`
 /// collapses to `UNKNOWN` — a fieldless Python enum cannot carry the
 /// raw byte (same trade-off as `PyVtgMode`).
-#[pyclass(name = "TargetStatus", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "TargetStatus",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.nmea"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyTargetStatus {
     #[pyo3(name = "LOST")]
     Lost = 0,
@@ -206,8 +227,15 @@ impl From<RustTargetStatus> for PyTargetStatus {
 
 /// Bearing/course reference (mirrors `AngleReference`). `Other(u8)` →
 /// `UNKNOWN`.
-#[pyclass(name = "AngleReference", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "AngleReference",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.nmea"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyAngleReference {
     #[pyo3(name = "TRUE")]
     True = 0,
@@ -230,8 +258,15 @@ impl From<RustAngleReference> for PyAngleReference {
 
 /// Speed/distance units (mirrors `DistanceUnits`). `Other(u8)` →
 /// `UNKNOWN`.
-#[pyclass(name = "DistanceUnits", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "DistanceUnits",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.nmea"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyDistanceUnits {
     #[pyo3(name = "NAUTICAL")]
     Nautical = 0,
@@ -257,8 +292,15 @@ impl From<RustDistanceUnits> for PyDistanceUnits {
 
 /// Target acquisition type (mirrors `AcquisitionType`). `Other(u8)` →
 /// `UNKNOWN`.
-#[pyclass(name = "AcquisitionType", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "AcquisitionType",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.nmea"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyAcquisitionType {
     #[pyo3(name = "AUTOMATIC")]
     Automatic = 0,
@@ -1170,8 +1212,8 @@ impl PyUnknown {
 
 /// Meaning of one of the six `dataN` slots in a PSXN sentence
 /// (mirrors `PsxnSlot`).
-#[pyclass(name = "PsxnSlot", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(name = "PsxnSlot", frozen, eq, eq_int, hash, module = "marlin.nmea")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyPsxnSlot {
     #[pyo3(name = "ROLL")]
     Roll = 0,
@@ -1219,8 +1261,15 @@ impl From<PyPsxnSlot> for RustPsxnSlot {
 }
 
 /// Runtime selector for PRDID field ordering (mirrors `PrdidDialect`).
-#[pyclass(name = "PrdidDialect", eq, eq_int, module = "marlin.nmea")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(
+    name = "PrdidDialect",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.nmea"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyPrdidDialect {
     #[pyo3(name = "UNKNOWN")]
     Unknown = 0,

@@ -7,9 +7,9 @@ multi-sentence reassembly, and MISB ST 0601 (KLV) encode/decode.
 ## Status
 
 Wraps four Rust crates: `marlin-nmea-envelope` (framing + checksum),
-`marlin-nmea-0183` (GGA, GLL, HDT, RMC, VTG, PSXN, PRDID typed
-decoders), `marlin-ais` (Types 1/2/3/5/18/19/24A/24B + reassembly), and
-`marlin-klv` (MISB ST 0601 UAS Datalink Local Set encode/decode).
+`marlin-nmea-0183` (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID
+typed decoders), `marlin-ais` (Types 1/2/3/5/9/18/19/21/24A/24B +
+reassembly), and `marlin-klv` (MISB ST 0601 UAS Datalink Local Set encode/decode).
 `py.typed` marker and `.pyi` stubs ship with the package; mypy
 `--strict` is clean across the entire `python/marlin/`, `tests/`, and
 `examples/` tree.
@@ -70,7 +70,8 @@ opts = DecodeOptions().with_prdid_dialect(PrdidDialect.PITCH_ROLL_HEADING)
 parser = Nmea0183Parser.streaming(options=opts)
 ```
 
-Per-sentence extension functions (`decode_gga`, `decode_vtg`, `decode_hdt`,
+Per-sentence extension functions (`decode_gga`, `decode_gll`, `decode_hdg`,
+`decode_hdt`, `decode_rmc`, `decode_tll`, `decode_ttm`, `decode_vtg`,
 `decode_psxn`, `decode_prdid`) are public so downstream code can build its
 own message enum and delegate to Marlin for the standard types.
 
@@ -155,8 +156,8 @@ Every exception is a `MarlinError` subclass (importable from `marlin`):
 - `EnvelopeError` — framing or checksum failure
 - `DecodeError` — field-level decode failure in a typed NMEA sentence
 - `AisError` — AIS armor or bit-level decode failure
-- `ReassemblyError` — fragment reassembly violation (out-of-order, channel
-  mismatch, or timeout eviction)
+- `ReassemblyError` — fragment reassembly violation (out-of-order or
+  timeout eviction)
 - `KlvError` — malformed KLV input (bad local-set key, truncated bytes,
   checksum mismatch)
 

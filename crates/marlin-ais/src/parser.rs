@@ -112,8 +112,8 @@ where
     ///   that mix AIS and NMEA on the same channel should run a
     ///   `marlin_nmea_0183::Parser` alongside this one, or strip
     ///   non-AIS traffic before feeding here.
-    /// - `Some(Err(AisError::Reassembly...))` — fragment-ordering or
-    ///   channel-mismatch issue (see
+    /// - `Some(Err(AisError::Reassembly...))` — fragment-ordering issue
+    ///   or timeout eviction (see
     ///   [`AisReassembler`](crate::AisReassembler)).
     /// - `Some(Err(..))` — other decoding failures (armor, bit reader,
     ///   payload length).
@@ -444,25 +444,67 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Channel mismatch
+    // Same sequential id on the other channel is a different key
     // -----------------------------------------------------------------
 
     #[test]
-    fn streaming_channel_mismatch_surfaces_error() {
+    fn streaming_fragment_on_other_channel_is_out_of_order_and_keeps_partial() {
         let mut p = Parser::streaming();
-        let frag1 = build_aivdm(2, 1, Some(6), Some(b'A'), TYPE5_FRAG_A, 0);
-        let frag2 = build_aivdm(2, 2, Some(6), Some(b'B'), TYPE5_FRAG_B, 2);
+        // Fragment 1 on A, fragment 2 on B: (B, 6) has no partial, so the
+        // B fragment is stray. The (A, 6) partial survives and completes.
+        let frag1_a = build_aivdm(2, 1, Some(6), Some(b'A'), TYPE5_FRAG_A, 0);
+        let frag2_b = build_aivdm(2, 2, Some(6), Some(b'B'), TYPE5_FRAG_B, 2);
+        let frag2_a = build_aivdm(2, 2, Some(6), Some(b'A'), TYPE5_FRAG_B, 2);
         let mut combined = Vec::new();
-        combined.extend_from_slice(&frag1);
-        combined.extend_from_slice(b"\r\n");
-        combined.extend_from_slice(&frag2);
-        combined.extend_from_slice(b"\r\n");
+        for frag in [&frag1_a, &frag2_b, &frag2_a] {
+            combined.extend_from_slice(frag);
+            combined.extend_from_slice(b"\r\n");
+        }
         p.feed(&combined);
 
         match p.next_message().unwrap() {
-            Err(AisError::ReassemblyChannelMismatch) => {}
-            other => panic!("expected ReassemblyChannelMismatch, got {other:?}"),
+            Err(AisError::ReassemblyOutOfOrder) => {}
+            other => panic!("expected ReassemblyOutOfOrder, got {other:?}"),
         }
+        match p.next_message().unwrap() {
+            Ok(AisMessage {
+                body: AisMessageBody::Type5(_),
+                ..
+            }) => {}
+            other => panic!("expected Type5, got {other:?}"),
+        }
+        assert!(p.next_message().is_none());
+    }
+
+    #[test]
+    fn streaming_same_sequence_id_on_both_channels_completes_both() {
+        // Spec §6.5 reproduction, end to end: (1,A), (1,B), (2,B), (2,A)
+        // with the same sequential id yield two Type 5 messages and no
+        // errors.
+        let mut p = Parser::streaming();
+        let frags = [
+            build_aivdm(2, 1, Some(7), Some(b'A'), TYPE5_FRAG_A, 0),
+            build_aivdm(2, 1, Some(7), Some(b'B'), TYPE5_FRAG_A, 0),
+            build_aivdm(2, 2, Some(7), Some(b'B'), TYPE5_FRAG_B, 2),
+            build_aivdm(2, 2, Some(7), Some(b'A'), TYPE5_FRAG_B, 2),
+        ];
+        let mut combined = Vec::new();
+        for frag in &frags {
+            combined.extend_from_slice(frag);
+            combined.extend_from_slice(b"\r\n");
+        }
+        p.feed(&combined);
+
+        for _ in 0..2 {
+            match p.next_message().unwrap() {
+                Ok(AisMessage {
+                    body: AisMessageBody::Type5(_),
+                    ..
+                }) => {}
+                other => panic!("expected Type5, got {other:?}"),
+            }
+        }
+        assert!(p.next_message().is_none());
     }
 
     // -----------------------------------------------------------------

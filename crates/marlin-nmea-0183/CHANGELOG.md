@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Cargo description and the crate-level docs now list every
+  decoded sentence. GLL, RMC, HDG, TTM, and TLL were missing.
+
 ## [0.1.4] - 2026-07-07
 
 ### Added

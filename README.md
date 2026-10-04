@@ -11,10 +11,10 @@ unit-test byte slices.
 
 | Crate | Purpose | Status |
 | --- | --- | --- |
-| [`marlin-nmea-envelope`](./crates/marlin-nmea-envelope) | NMEA 0183 framing, checksum, TAG block recognition | feature-complete (v0.1) |
-| [`marlin-nmea-0183`](./crates/marlin-nmea-0183) | Typed NMEA sentence decoders (GGA, GLL, HDT, RMC, VTG, PSXN, PRDID) | feature-complete (v0.1) |
-| [`marlin-ais`](./crates/marlin-ais) | Typed AIS message decoders + multi-sentence reassembly | feature-complete (v0.1) |
-| [`marlin-klv`](./crates/marlin-klv) | MISB ST 0601 (KLV) encoder/decoder | feature-complete (v0.1) |
+| [`marlin-nmea-envelope`](./crates/marlin-nmea-envelope) | NMEA 0183 framing, checksum, TAG block recognition | feature-complete |
+| [`marlin-nmea-0183`](./crates/marlin-nmea-0183) | Typed NMEA sentence decoders (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID) | feature-complete |
+| [`marlin-ais`](./crates/marlin-ais) | Typed AIS message decoders + multi-sentence reassembly | feature-complete |
+| [`marlin-klv`](./crates/marlin-klv) | MISB ST 0601 (KLV) encoder/decoder | feature-complete |
 
 `marlin-nmea-0183` and `marlin-ais` are siblings; both depend on
 `marlin-nmea-envelope` but not on each other. `marlin-klv` is a
@@ -32,11 +32,17 @@ Typed decoders for these sentence types, regardless of talker prefix
   HDOP, altitude, geoid separation, DGPS metadata
 - **GLL** — geographic position with UTC time, validity status, and
   optional 2.3+ mode indicator
+- **HDG** — magnetic heading with deviation and variation as signed
+  degrees (`E` positive, `W` negative)
 - **HDT** — true heading
 - **RMC** — recommended minimum: UTC time + date + position + speed
   + course + magnetic variation, with validity status; pre-2.3, 2.3+
   with mode indicator, and 4.10+ with nav status all decode through
   one path
+- **TLL** — radar/ARPA target position: target number, latitude,
+  longitude, name, UTC time, status
+- **TTM** — radar/ARPA tracked target: distance, bearing, speed,
+  course, CPA, TCPA, name, status, acquisition type
 - **VTG** — course over ground and speed: course (true and magnetic),
   speed (knots and km/h), mode indicator; both pre-2.3 and 2.3+ forms
 - **PSXN** — Seapath / Kongsberg attitude with install-configurable
@@ -56,12 +62,17 @@ Typed decoders for these ITU-R M.1371 message types:
   heading, navigation status, maneuver indicator, ROT)
 - **Type 5** — Class A static and voyage data (name, IMO, callsign,
   ship type, dimensions, ETA, draught, destination)
+- **Type 9** — SAR aircraft position report (altitude, SOG in whole
+  knots, lat/lon, COG, altitude sensor)
 - **Type 18** — Class B position report
 - **Type 19** — Class B extended position report (position + name +
   ship type + dimensions)
+- **Type 21** — aid-to-navigation report (AtoN type, name with its
+  optional extension, lat/lon, dimensions, EPFD, off-position and
+  virtual flags)
 - **Type 24 part A** — Class B static data: vessel name
 - **Type 24 part B** — Class B static data: callsign, ship type,
-  vendor ID, dimensions
+  vendor ID, dimensions (or mother-ship MMSI for an auxiliary craft), EPFD
 
 Multi-fragment messages reassemble across `!AIVDM` line pairs. Other
 types surface as `Other` carrying the raw bit buffer for downstream

@@ -7,11 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `marlin.ais.TurnDirection` enum (`RIGHT`, `LEFT`) and
+  `PositionReportA.turn_direction`: set when a Type 1/2/3 report carries
+  raw rate of turn ±127, "turning right/left at more than 5° per 30 s,
+  no turn indicator" (ITU-R M.1371-5 Table 48). The enum's int values
+  are discriminants, not wire codes. `marlin.dataclasses.PositionReportA`
+  mirrors it as `turn_direction: Optional[int]`.
+- `StaticDataB24B.mothership_mmsi` and `StaticDataB24B.epfd`: a Type 24
+  Part B from an auxiliary craft (MMSI `98MIDxxxx`) carries the mother
+  ship's MMSI in the 30 bits that otherwise hold dimensions (ADR-0002);
+  the EPFD type at bits 162–165 was previously dropped.
+  `marlin.dataclasses.StaticDataB24B` mirrors both.
+- `marlin.ais.SarAircraftPositionReport` (`type_tag == "type9"`) and the
+  `AltitudeSensor` enum (`GNSS = 0`, `BAROMETRIC = 1`, wire codes): Type 9
+  SAR aircraft position reports now decode instead of surfacing as
+  `Other(msg_type=9)`. `altitude_m` and `speed_over_ground` are whole
+  metres / whole knots (`None` for the not-available codes 4095 / 1023;
+  the over-range codes 4094 m and 1022 kn pass through, ADR-0001); DTE,
+  assigned and RAIM flags and the 20-bit `radio_status` are exposed.
+  `marlin.dataclasses.SarAircraftPositionReport` mirrors it with
+  `altitude_sensor` as `int`. New golden fixture directory
+  `tests/fixtures/ais/` holds the gpsd T9-1 / T9-2 vectors
+  (BSD-2-Clause, attributed in `tests/fixtures/README.md`).
+- `marlin.ais.AidToNavigationReport` (`type_tag == "type21"`) and the
+  `AtonType` enum (32 members, `NOT_SPECIFIED = 0` … `LIGHT_VESSEL = 31`,
+  wire codes of ITU-R M.1371-5 Table 74): Type 21 aid-to-navigation
+  reports now decode instead of surfacing as `Other(msg_type=21)`. `name`
+  joins the 20-character name with the optional extension of up to 14
+  more characters and trims trailing `@` / spaces (an embedded `@` is
+  kept); `dimensions` reuses `Dimensions` and is all-`None` for virtual
+  AtoN; the off-position, virtual, assigned and RAIM flags and the raw
+  8-bit `aton_status` are exposed. Payloads over 360 bits are tolerated,
+  under 272 raise `AisError`. `marlin.dataclasses.AidToNavigationReport`
+  mirrors it with `aton_type` and `epfd` as `int`. Golden fixtures
+  `02_type21_gpsd_extension`, `03_type21_gpsd_overlong` (gpsd T21-1 and
+  T21-2) and `04_type21_short` (246 bits, decodes to nothing).
+
 ### Fixed
 
+- Every int-backed enum in `marlin.ais` and `marlin.nmea` (`NavStatus`,
+  `ManeuverIndicator`, `TurnDirection`, `EpfdType`, `AisVersion`,
+  `GgaFixQuality`, `VtgMode`, `DataStatus`, `RmcNavStatus`, `TargetStatus`,
+  `AngleReference`, `DistanceUnits`, `AcquisitionType`, `PsxnSlot`,
+  `PrdidDialect`) is now hashable, so members work as set members and
+  dict keys. The stubs always declared `__hash__`; at runtime `hash()`
+  raised `TypeError`.
+- Two multi-sentence AIS messages sharing a sequential id on channels A
+  and B both decode. Previously the second channel's continuation
+  fragment raised `ReassemblyError` and both messages were lost
+  (`marlin-ais` reassembly fix).
 - Parser `__exit__` type stubs now return `Literal[False]` (they never suppress
   exceptions), so type checkers no longer report variables assigned inside a
   `with parser as p:` block as possibly-unbound after the block.
+- The package docstring, `marlin.dataclasses.to_dataclass` docstring,
+  README, and GUIDE now list every typed NMEA sentence (GLL, RMC, HDG,
+  TTM, and TLL were missing) and the AIS Type 9 and Type 21 classes.
+
+### Changed (BREAKING)
+
+- `PositionReportA.rate_of_turn` is `None` for raw rate of turn ±127, which
+  used to decode to a fabricated ±720.0 °/min; the status now lives in
+  `turn_direction`. Measured rates (raw 0..=±126) and the −128
+  not-available sentinel are unchanged. Consumers that treated
+  `abs(rate_of_turn) > 708.7` as the no-turn-indicator case should test
+  `turn_direction is not None` instead.
+- `StaticDataB24B.dimensions` is `Optional[Dimensions]`: `None` for an
+  auxiliary craft, whose extent surfaces as `mothership_mmsi` instead
+  (ADR-0003 flattening; parser output sets exactly one of the two). The
+  constructor no longer substitutes an all-`None` `Dimensions` when the
+  argument is omitted. `marlin.dataclasses.StaticDataB24B.dimensions` is
+  `Optional[Dimensions]` likewise.
+- `ReassemblyError` no longer carries a "channel mismatch" message; the
+  underlying `marlin-ais` variant is removed. The out-of-order and
+  timeout messages are unchanged.
 
 ## [0.1.4] - 2026-07-07
 
@@ -75,8 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - AIS Type 24 Part A messages now decode correctly. v0.1.0 enforced a
   168-bit minimum on both parts of Type 24, but the spec (ITU-R
-  M.1371-5 §5.3.24.1) defines Part A as 160 bits exactly. All
-  spec-canonical Part A frames (27-character payloads with `fill_bits=2`)
+  M.1371-5 Annex 8 §3.22, Table 78) defines Part A as 160 bits
+  exactly. All spec-canonical Part A frames (27-character payloads with `fill_bits=2`)
   were silently rejected with a `PayloadTooShort`-equivalent error.
   Fix lives in the underlying `marlin-ais` crate.
 

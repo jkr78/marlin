@@ -7,16 +7,20 @@ import json
 
 import pytest
 
-GGA = b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
-AIVDM_TYPE1 = b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*23\r\n"
-
-# Type 5 two-fragment message (same corpus as test_aio.py).
-_TYPE5_FRAG1 = (
-    b"!AIVDM,2,1,3,A,"
-    b"55P5TL01VIaAL@7WKO@mBplU@<PDhh000000001S;AJ::4A80?4i@E53,"
-    b"0*3D\r\n"
+from .ais_vectors import (
+    AIVDM_TYPE1,
+    AIVDM_TYPE1_ROT_PLUS_127,
+    AIVDM_TYPE5_FRAG1,
+    AIVDM_TYPE5_FRAG2,
+    AIVDM_TYPE9_GPSD_T9_2,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG1,
+    AIVDM_TYPE21_GPSD_T21_1_FRAG2,
+    AIVDM_TYPE21_GPSD_T21_2_FRAG1,
+    AIVDM_TYPE21_GPSD_T21_2_FRAG2,
+    AIVDM_TYPE24B_AUXILIARY_CRAFT,
 )
-_TYPE5_FRAG2 = b"!AIVDM,2,2,3,A,1CQWBDhH888888888880,2*4D\r\n"
+
+GGA = b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
 
 
 def _json_default(v: object) -> object:
@@ -254,6 +258,28 @@ def test_ais_position_report_a_round_trip() -> None:
     json.dumps(d, default=_json_default)
     assert d["body"]["mmsi"] > 0
     assert isinstance(d["body"]["navigation_status"], int)
+    # Classic fixture carries ROT -128: both flattened fields are None.
+    assert d["body"]["rate_of_turn"] is None
+    assert d["body"]["turn_direction"] is None
+
+
+def test_ais_position_report_a_turn_direction_is_enum_int() -> None:
+    from marlin.ais import AisParser, TurnDirection
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import PositionReportA as DCPositionReportA
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE1_ROT_PLUS_127)
+    msgs = list(p)
+    assert len(msgs) == 1
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCPositionReportA)
+    assert dc.body.rate_of_turn is None
+    # The mirror stores the TurnDirection enum value, not the wire code 127.
+    assert dc.body.turn_direction == int(TurnDirection.RIGHT)
 
 
 def test_ais_static_and_voyage_a_round_trip() -> None:
@@ -263,7 +289,7 @@ def test_ais_static_and_voyage_a_round_trip() -> None:
     from marlin.dataclasses import to_dataclass
 
     p = AisParser.streaming()
-    p.feed(_TYPE5_FRAG1 + _TYPE5_FRAG2)
+    p.feed(AIVDM_TYPE5_FRAG1 + AIVDM_TYPE5_FRAG2)
     msgs = list(p)
     assert len(msgs) == 1
     assert isinstance(msgs[0].body, StaticAndVoyageA)
@@ -279,6 +305,112 @@ def test_ais_static_and_voyage_a_round_trip() -> None:
     # eta and dimensions are always-present nested dataclasses.
     assert "eta" in d["body"]
     assert "dimensions" in d["body"]
+
+
+def test_ais_sar_aircraft_position_report_round_trip() -> None:
+    from marlin.ais import AisParser, AltitudeSensor, SarAircraftPositionReport
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import (
+        SarAircraftPositionReport as DCSarAircraftPositionReport,
+    )
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE9_GPSD_T9_2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert isinstance(msgs[0].body, SarAircraftPositionReport)
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCSarAircraftPositionReport)
+    assert dc.type_tag == "type9"
+    assert dc.body.mmsi == 111232511
+    assert dc.body.altitude_m == 303
+    assert dc.body.speed_over_ground == 42
+    # The mirror stores the AltitudeSensor wire value as int.
+    assert dc.body.altitude_sensor == int(AltitudeSensor.GNSS)
+    assert dc.body.dte is True
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+    assert d["body"]["radio_status"] == 0x8270
+
+
+def test_ais_aid_to_navigation_report_round_trip() -> None:
+    from marlin.ais import AidToNavigationReport, AisParser, AtonType, EpfdType
+    from marlin.dataclasses import (
+        AidToNavigationReport as DCAidToNavigationReport,
+    )
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE21_GPSD_T21_2_FRAG1 + AIVDM_TYPE21_GPSD_T21_2_FRAG2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert isinstance(msgs[0].body, AidToNavigationReport)
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCAidToNavigationReport)
+    assert dc.type_tag == "type21"
+    assert dc.body.mmsi == 4000003
+    # The mirror stores the AtonType and EpfdType wire values as int.
+    assert dc.body.aton_type == int(AtonType.SPECIAL_MARK) == 30
+    assert dc.body.epfd == int(EpfdType.GPS)
+    # Trailing-trim policy: the embedded @ survives (gpsd would stop there).
+    assert dc.body.name == "IBC G BUOY@?????????"
+    assert dc.body.dimensions.to_bow_m == 2
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+    assert d["body"]["aton_status"] == 0
+    assert d["body"]["dimensions"]["to_port_m"] == 2
+
+
+def test_ais_static_data_b24b_mothership_round_trip() -> None:
+    from marlin.ais import AisParser, EpfdType, StaticDataB24B
+    from marlin.dataclasses import AisMessage as DCAisMessage
+    from marlin.dataclasses import StaticDataB24B as DCStaticDataB24B
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE24B_AUXILIARY_CRAFT)
+    msgs = list(p)
+    assert len(msgs) == 1
+    assert isinstance(msgs[0].body, StaticDataB24B)
+
+    dc = to_dataclass(msgs[0])
+    assert isinstance(dc, DCAisMessage)
+    assert isinstance(dc.body, DCStaticDataB24B)
+    assert dc.type_tag == "type24b"
+    # The mirror keeps the flattened extent: no all-None Dimensions stand-in.
+    assert dc.body.dimensions is None
+    assert dc.body.mothership_mmsi == 211000123
+    assert dc.body.epfd == int(EpfdType.GPS)
+
+    d = dataclasses.asdict(dc)
+    json.dumps(d, default=_json_default)
+    assert d["body"]["dimensions"] is None
+    assert d["body"]["mothership_mmsi"] == 211000123
+
+
+def test_to_dataclass_accepts_bare_ais_body() -> None:
+    # A body passed without its AisMessage wrapper converts through the
+    # same dispatcher as the wrapped path.
+    from marlin.ais import AisParser
+    from marlin.dataclasses import (
+        AidToNavigationReport as DCAidToNavigationReport,
+    )
+    from marlin.dataclasses import to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE21_GPSD_T21_1_FRAG1 + AIVDM_TYPE21_GPSD_T21_1_FRAG2)
+    body = list(p)[0].body
+    dc = to_dataclass(body)
+    assert isinstance(dc, DCAidToNavigationReport)
+    assert dc.name == "CHINA ROSE MURPHY EXPRESS ALERT"
 
 
 def test_to_dataclass_type_error_on_unknown() -> None:

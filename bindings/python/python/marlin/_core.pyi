@@ -99,6 +99,7 @@ class _NmeaModule:
         SIMULATOR: "_NmeaModule.GgaFixQuality"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class VtgMode:
         NOT_VALID: "_NmeaModule.VtgMode"
@@ -109,12 +110,14 @@ class _NmeaModule:
         SIMULATOR: "_NmeaModule.VtgMode"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class DataStatus:
         ACTIVE: "_NmeaModule.DataStatus"
         VOID: "_NmeaModule.DataStatus"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class RmcNavStatus:
         SAFE: "_NmeaModule.RmcNavStatus"
@@ -123,6 +126,7 @@ class _NmeaModule:
         NOT_VALID: "_NmeaModule.RmcNavStatus"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class UtcTime:
         def __init__(
@@ -228,6 +232,7 @@ class _NmeaModule:
         UNKNOWN: "_NmeaModule.TargetStatus"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class AngleReference:
         TRUE: "_NmeaModule.AngleReference"
@@ -235,6 +240,7 @@ class _NmeaModule:
         UNKNOWN: "_NmeaModule.AngleReference"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class DistanceUnits:
         NAUTICAL: "_NmeaModule.DistanceUnits"
@@ -243,6 +249,7 @@ class _NmeaModule:
         UNKNOWN: "_NmeaModule.DistanceUnits"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class AcquisitionType:
         AUTOMATIC: "_NmeaModule.AcquisitionType"
@@ -251,6 +258,7 @@ class _NmeaModule:
         UNKNOWN: "_NmeaModule.AcquisitionType"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class Hdg:
         def __init__(
@@ -420,6 +428,7 @@ class _NmeaModule:
         IGNORED: "_NmeaModule.PsxnSlot"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class PsxnLayout:
         @staticmethod
@@ -431,6 +440,7 @@ class _NmeaModule:
         ROLL_PITCH_HEADING: "_NmeaModule.PrdidDialect"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class PrdidPitchRollHeading:
         def __init__(
@@ -582,6 +592,7 @@ class _AisModule:
         NOT_DEFINED: "_AisModule.NavStatus"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class ManeuverIndicator:
         NOT_AVAILABLE: "_AisModule.ManeuverIndicator"
@@ -590,6 +601,62 @@ class _AisModule:
         RESERVED: "_AisModule.ManeuverIndicator"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
+
+    class TurnDirection:
+        RIGHT: "_AisModule.TurnDirection"
+        LEFT: "_AisModule.TurnDirection"
+        def __int__(self) -> int: ...
+        def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
+
+    class AltitudeSensor:
+        GNSS: "_AisModule.AltitudeSensor"
+        BAROMETRIC: "_AisModule.AltitudeSensor"
+        def __int__(self) -> int: ...
+        def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
+
+    class AtonType:
+        """Type of aid to navigation (Type 21, ITU-R M.1371-5 Table 74).
+        Int values are the 5-bit wire codes 0..=31; codes 5-19 are fixed AtoN,
+        20-31 floating AtoN, 0-4 neither."""
+
+        NOT_SPECIFIED: "_AisModule.AtonType"
+        REFERENCE_POINT: "_AisModule.AtonType"
+        RACON: "_AisModule.AtonType"
+        FIXED_STRUCTURE_OFFSHORE: "_AisModule.AtonType"
+        EMERGENCY_WRECK_MARKING_BUOY: "_AisModule.AtonType"
+        LIGHT_WITHOUT_SECTORS: "_AisModule.AtonType"
+        LIGHT_WITH_SECTORS: "_AisModule.AtonType"
+        LEADING_LIGHT_FRONT: "_AisModule.AtonType"
+        LEADING_LIGHT_REAR: "_AisModule.AtonType"
+        BEACON_CARDINAL_NORTH: "_AisModule.AtonType"
+        BEACON_CARDINAL_EAST: "_AisModule.AtonType"
+        BEACON_CARDINAL_SOUTH: "_AisModule.AtonType"
+        BEACON_CARDINAL_WEST: "_AisModule.AtonType"
+        BEACON_PORT_HAND: "_AisModule.AtonType"
+        BEACON_STARBOARD_HAND: "_AisModule.AtonType"
+        BEACON_PREFERRED_CHANNEL_PORT_HAND: "_AisModule.AtonType"
+        BEACON_PREFERRED_CHANNEL_STARBOARD_HAND: "_AisModule.AtonType"
+        BEACON_ISOLATED_DANGER: "_AisModule.AtonType"
+        BEACON_SAFE_WATER: "_AisModule.AtonType"
+        BEACON_SPECIAL_MARK: "_AisModule.AtonType"
+        CARDINAL_MARK_NORTH: "_AisModule.AtonType"
+        CARDINAL_MARK_EAST: "_AisModule.AtonType"
+        CARDINAL_MARK_SOUTH: "_AisModule.AtonType"
+        CARDINAL_MARK_WEST: "_AisModule.AtonType"
+        PORT_HAND_MARK: "_AisModule.AtonType"
+        STARBOARD_HAND_MARK: "_AisModule.AtonType"
+        PREFERRED_CHANNEL_PORT_HAND: "_AisModule.AtonType"
+        PREFERRED_CHANNEL_STARBOARD_HAND: "_AisModule.AtonType"
+        ISOLATED_DANGER: "_AisModule.AtonType"
+        SAFE_WATER: "_AisModule.AtonType"
+        SPECIAL_MARK: "_AisModule.AtonType"
+        LIGHT_VESSEL: "_AisModule.AtonType"
+        def __int__(self) -> int: ...
+        def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class EpfdType:
         UNDEFINED: "_AisModule.EpfdType"
@@ -604,6 +671,7 @@ class _AisModule:
         INTERNAL_GNSS: "_AisModule.EpfdType"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class AisVersion:
         ITU1371V1: "_AisModule.AisVersion"
@@ -612,6 +680,7 @@ class _AisModule:
         FUTURE: "_AisModule.AisVersion"
         def __int__(self) -> int: ...
         def __eq__(self, other: object) -> bool: ...
+        def __hash__(self) -> int: ...
 
     class Dimensions:
         def __init__(
@@ -655,6 +724,7 @@ class _AisModule:
             mmsi: int = ...,
             navigation_status: "_AisModule.NavStatus" = ...,
             rate_of_turn: float | None = ...,
+            turn_direction: "_AisModule.TurnDirection | None" = ...,
             speed_over_ground: float | None = ...,
             position_accuracy: bool = ...,
             longitude_deg: float | None = ...,
@@ -672,6 +742,8 @@ class _AisModule:
         def navigation_status(self) -> "_AisModule.NavStatus": ...
         @property
         def rate_of_turn(self) -> float | None: ...
+        @property
+        def turn_direction(self) -> "_AisModule.TurnDirection | None": ...
         @property
         def speed_over_ground(self) -> float | None: ...
         @property
@@ -733,6 +805,50 @@ class _AisModule:
         def destination(self) -> str | None: ...
         @property
         def dte(self) -> bool: ...
+
+    class SarAircraftPositionReport:
+        def __init__(
+            self,
+            mmsi: int = ...,
+            altitude_m: int | None = ...,
+            speed_over_ground: int | None = ...,
+            position_accuracy: bool = ...,
+            longitude_deg: float | None = ...,
+            latitude_deg: float | None = ...,
+            course_over_ground: float | None = ...,
+            timestamp: int = ...,
+            altitude_sensor: "_AisModule.AltitudeSensor" = ...,
+            dte: bool = ...,
+            assigned_flag: bool = ...,
+            raim: bool = ...,
+            radio_status: int = ...,
+        ) -> None: ...
+        @property
+        def mmsi(self) -> int: ...
+        @property
+        def altitude_m(self) -> int | None: ...
+        @property
+        def speed_over_ground(self) -> int | None: ...
+        @property
+        def position_accuracy(self) -> bool: ...
+        @property
+        def longitude_deg(self) -> float | None: ...
+        @property
+        def latitude_deg(self) -> float | None: ...
+        @property
+        def course_over_ground(self) -> float | None: ...
+        @property
+        def timestamp(self) -> int: ...
+        @property
+        def altitude_sensor(self) -> "_AisModule.AltitudeSensor": ...
+        @property
+        def dte(self) -> bool: ...
+        @property
+        def assigned_flag(self) -> bool: ...
+        @property
+        def raim(self) -> bool: ...
+        @property
+        def radio_status(self) -> int: ...
 
     class PositionReportB:
         def __init__(
@@ -837,6 +953,61 @@ class _AisModule:
         @property
         def assigned_flag(self) -> bool: ...
 
+    class AidToNavigationReport:
+        """Type 21 aid-to-navigation report.
+
+        `name` joins the 20-character name with the optional extension (up to
+        14 more characters) and trims trailing `@` / spaces; an `@` inside the
+        name is kept. `dimensions` is all-None for virtual AtoN and reference
+        points. `aton_status` is the raw 8-bit field.
+        """
+
+        def __init__(
+            self,
+            mmsi: int = ...,
+            aton_type: "_AisModule.AtonType" = ...,
+            name: str | None = ...,
+            position_accuracy: bool = ...,
+            longitude_deg: float | None = ...,
+            latitude_deg: float | None = ...,
+            dimensions: "_AisModule.Dimensions" | None = ...,
+            epfd: "_AisModule.EpfdType" = ...,
+            timestamp: int = ...,
+            off_position: bool = ...,
+            aton_status: int = ...,
+            raim: bool = ...,
+            virtual_aton: bool = ...,
+            assigned_flag: bool = ...,
+        ) -> None: ...
+        @property
+        def mmsi(self) -> int: ...
+        @property
+        def aton_type(self) -> "_AisModule.AtonType": ...
+        @property
+        def name(self) -> str | None: ...
+        @property
+        def position_accuracy(self) -> bool: ...
+        @property
+        def longitude_deg(self) -> float | None: ...
+        @property
+        def latitude_deg(self) -> float | None: ...
+        @property
+        def dimensions(self) -> "_AisModule.Dimensions": ...
+        @property
+        def epfd(self) -> "_AisModule.EpfdType": ...
+        @property
+        def timestamp(self) -> int: ...
+        @property
+        def off_position(self) -> bool: ...
+        @property
+        def aton_status(self) -> int: ...
+        @property
+        def raim(self) -> bool: ...
+        @property
+        def virtual_aton(self) -> bool: ...
+        @property
+        def assigned_flag(self) -> bool: ...
+
     class StaticDataB24A:
         def __init__(
             self,
@@ -856,6 +1027,8 @@ class _AisModule:
             vendor_id: str | None = ...,
             call_sign: str | None = ...,
             dimensions: "_AisModule.Dimensions | None" = ...,
+            mothership_mmsi: int | None = ...,
+            epfd: "_AisModule.EpfdType" = ...,
         ) -> None: ...
         @property
         def mmsi(self) -> int: ...
@@ -866,7 +1039,11 @@ class _AisModule:
         @property
         def call_sign(self) -> str | None: ...
         @property
-        def dimensions(self) -> "_AisModule.Dimensions": ...
+        def dimensions(self) -> "_AisModule.Dimensions | None": ...
+        @property
+        def mothership_mmsi(self) -> int | None: ...
+        @property
+        def epfd(self) -> "_AisModule.EpfdType": ...
 
     class Other:
         def __init__(
@@ -930,7 +1107,7 @@ class _AisModule:
             self,
             is_own_ship: bool,
             type_tag: str,
-            body: "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other",
+            body: "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.SarAircraftPositionReport | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.AidToNavigationReport | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other",
         ) -> None: ...
         @property
         def is_own_ship(self) -> bool: ...
@@ -939,7 +1116,7 @@ class _AisModule:
         @property
         def body(
             self,
-        ) -> "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other": ...
+        ) -> "_AisModule.PositionReportA | _AisModule.StaticAndVoyageA | _AisModule.SarAircraftPositionReport | _AisModule.PositionReportB | _AisModule.ExtendedPositionReportB | _AisModule.AidToNavigationReport | _AisModule.StaticDataB24A | _AisModule.StaticDataB24B | _AisModule.Other": ...
 
 ais: _AisModule
 

@@ -2,7 +2,8 @@
 
 Submodules:
     marlin.envelope — raw NMEA sentence parsing (any shape).
-    marlin.nmea     — typed NMEA 0183 decoders (GGA, VTG, HDT, PSXN, PRDID).
+    marlin.nmea     — typed NMEA 0183 decoders (GGA, GLL, HDG, HDT, RMC,
+                      TLL, TTM, VTG, PSXN, PRDID).
     marlin.ais      — typed AIS decoders + multi-sentence reassembly.
 
 Most users can start with:

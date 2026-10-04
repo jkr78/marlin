@@ -1,11 +1,62 @@
 # Test fixtures
 
+Raw NMEA byte streams read by the golden tests in `tests/golden/`. Two
+directories, two provenances.
+
+## `envelope/`
+
 Copied verbatim from `crates/marlin-nmea-envelope/tests/fixtures/` at the
 commit the binding was built from. If you need to sync changes:
 
     cp crates/marlin-nmea-envelope/tests/fixtures/*.nmea \
        bindings/python/tests/fixtures/envelope/
 
-These are raw NMEA byte streams reused by three golden-test files
+These streams are reused by three golden-test files
 (`tests/golden/test_{envelope,nmea,ais}_fixtures.py`), each verifying a
 different layer of the parsing stack against the same input.
+
+## `ais/`
+
+AIS-only vectors read by `tests/golden/test_ais_fixtures.py` alone. Each
+file holds one or more public test sentences, by default from the gpsd
+project's `test/sample.aivdm`; the expected values in the matching golden
+JSON were checked against gpsd's `test/sample.aivdm.chk` when the file
+was added. The source column names any other origin.
+
+| file | source | contents |
+|------|--------|----------|
+| `01_type9_gpsd.nmea` | gpsd `test/sample.aivdm` | Type 9 SAR aircraft position reports T9-1 (MMSI 111265591) and T9-2 (MMSI 111232511) |
+| `02_type21_gpsd_extension.nmea` | gpsd `test/sample.aivdm` | Type 21 AtoN report T21-1 (MMSI 123456789), two fragments, 346 bits, 12-character name extension |
+| `03_type21_gpsd_overlong.nmea` | gpsd `test/sample.aivdm` | Type 21 AtoN report T21-2 (MMSI 4000003), two fragments, 368 bits (over the 360-bit maximum); the decoder keeps the embedded `@` in the name |
+| `04_type21_short.nmea` | nexus `ais_sample.nmea:8` | 246-bit Type 21, below the 272-bit minimum; rejected, so the golden is `[]` |
+
+The gpsd test data is distributed under the BSD-2-Clause licence. gpsd's
+`COPYING` states: "Compilation copyright is held by the GPSD project. All
+rights reserved." and lists the SPDX short identifier `BSD-2-Clause`; the
+per-contributor copyright lines are in that file. The licence text:
+
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are
+> met:
+>
+> 1. Redistributions of source code must retain the above copyright
+>    notice, this list of conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright
+>    notice, this list of conditions and the following disclaimer in the
+>    documentation and/or other materials provided with the distribution.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+> IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+> THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+> PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+> CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+> EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+> PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+> PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+> LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+> NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Regenerate every golden with `just py-golden-regenerate` (sets
+`MARLIN_REGENERATE_GOLDENS=1`) and review the diff before committing.

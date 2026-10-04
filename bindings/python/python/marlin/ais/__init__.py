@@ -7,9 +7,12 @@ ReassemblyError: type[Exception] = _core.ReassemblyError
 
 # Data enums
 AisVersion = _core.ais.AisVersion
+AltitudeSensor = _core.ais.AltitudeSensor
+AtonType = _core.ais.AtonType
 EpfdType = _core.ais.EpfdType
 ManeuverIndicator = _core.ais.ManeuverIndicator
 NavStatus = _core.ais.NavStatus
+TurnDirection = _core.ais.TurnDirection
 
 # Value types
 Dimensions = _core.ais.Dimensions
@@ -19,10 +22,12 @@ Eta = _core.ais.Eta
 BitReader = _core.ais.BitReader
 
 # Message variants
+AidToNavigationReport = _core.ais.AidToNavigationReport
 ExtendedPositionReportB = _core.ais.ExtendedPositionReportB
 Other = _core.ais.Other
 PositionReportA = _core.ais.PositionReportA
 PositionReportB = _core.ais.PositionReportB
+SarAircraftPositionReport = _core.ais.SarAircraftPositionReport
 StaticAndVoyageA = _core.ais.StaticAndVoyageA
 StaticDataB24A = _core.ais.StaticDataB24A
 StaticDataB24B = _core.ais.StaticDataB24B
@@ -34,10 +39,13 @@ AisMessage = _core.ais.AisMessage
 AisParser = _core.ais.AisParser
 
 __all__ = [
+    "AidToNavigationReport",
     "AisError",
     "AisMessage",
     "AisParser",
     "AisVersion",
+    "AltitudeSensor",
+    "AtonType",
     "BitReader",
     "Dimensions",
     "EpfdType",
@@ -49,7 +57,9 @@ __all__ = [
     "PositionReportA",
     "PositionReportB",
     "ReassemblyError",
+    "SarAircraftPositionReport",
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
+    "TurnDirection",
 ]
