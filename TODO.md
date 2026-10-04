@@ -95,14 +95,17 @@ track deliverables (not conversational state).
   test names only what it varies, no allow needed) and convert the siblings
   when their tests are next touched. Raised by the ticket 05 Standards review.
   [ais][ready]
-- [ ] Make `just py-ci` self-sufficient: add maturin and pyright to the venv
-  `py-dev` runs `maturin develop` and `py-type-check` runs `pyright` from PATH;
-  `bindings/python/.venv` (uv) has neither, so the recipe fails at `py-dev` on a
-  fresh checkout. `pyproject.toml` `dev` extras list pyright but not maturin, and
-  the venv was created without the extras. Add `maturin` to `dev`, document
-  `uv sync --extra dev` (or have the recipe use `uv run`), so the recipe runs as
-  written. Workaround used 2026-10-02: `uvx maturin develop --release` and
-  `uvx pyright` with `VIRTUAL_ENV` pointed at the venv.
+- [x] Make `just py-ci` self-sufficient **DONE 2026-10-04**
+  `just py-ci` failed on a fresh checkout: `maturin` and `pyright` came from
+  PATH and the virtualenv had neither. Every Python recipe now runs its tools
+  as `{{py}} -m <tool>` from one virtualenv, `.venv` at the repo root by
+  default (the one CI and `pyrightconfig.json` use), and `just py-setup`
+  creates it and installs the `dev` extra, which now includes `maturin`.
+  Another interpreter: `just py_venv=/abs/path py-setup py-ci`; run that way
+  on Python 3.9 and 3.13. `bindings/python/.venv` (uv, no pip) is no longer
+  used by any recipe. The CI workflow installs the same `dev` extra list,
+  read from `pyproject.toml`; it still runs its steps inline, not through
+  `just py-ci`.
 - [ ] Simplify the three-step lookup in `AisReassembler::append_to_partial`
   `position` → `get(idx)` → `get_mut(idx)` with three identical
   `else { return Err(ReassemblyOutOfOrder) }` fallbacks exists only to dodge
