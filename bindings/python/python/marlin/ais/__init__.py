@@ -1,5 +1,7 @@
 """Typed AIS decoders + multi-sentence reassembly."""
 
+from typing import Literal, Union
+
 from .. import _core
 
 AisError: type[Exception] = _core.AisError
@@ -32,21 +34,38 @@ StaticAndVoyageA = _core.ais.StaticAndVoyageA
 StaticDataB24A = _core.ais.StaticDataB24A
 StaticDataB24B = _core.ais.StaticDataB24B
 
+# Any decoded message body; `AisMessage.body` is one of these.
+AisMessageBody = Union[
+    PositionReportA,
+    StaticAndVoyageA,
+    SarAircraftPositionReport,
+    PositionReportB,
+    ExtendedPositionReportB,
+    AidToNavigationReport,
+    StaticDataB24A,
+    StaticDataB24B,
+    Other,
+]
+
 # Outer message wrapper
 AisMessage = _core.ais.AisMessage
 
 # Parser
+# The `clock` argument of `AisParser`: who drives the reassembly timeout.
+ClockMode = Literal["auto", "manual"]
 AisParser = _core.ais.AisParser
 
 __all__ = [
     "AidToNavigationReport",
     "AisError",
     "AisMessage",
+    "AisMessageBody",
     "AisParser",
     "AisVersion",
     "AltitudeSensor",
     "AtonType",
     "BitReader",
+    "ClockMode",
     "Dimensions",
     "EpfdType",
     "Eta",

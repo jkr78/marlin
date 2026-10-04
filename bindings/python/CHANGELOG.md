@@ -44,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   mirrors it with `aton_type` and `epfd` as `int`. Golden fixtures
   `02_type21_gpsd_extension`, `03_type21_gpsd_overlong` (gpsd T21-1 and
   T21-2) and `04_type21_short` (246 bits, decodes to nothing).
+- `marlin.ais.AisMessageBody`, `marlin.ais.ClockMode`, and
+  `marlin.nmea.Nmea0183Message` exist at runtime. The stubs always
+  exported these three type aliases, but importing one outside
+  `if TYPE_CHECKING:` raised `ImportError`. `AisMessageBody` is the
+  `Union` of the nine AIS body classes, `ClockMode` is
+  `Literal["auto", "manual"]`, and `Nmea0183Message` is the `Union` of
+  the eleven NMEA message classes. `marlin.dataclasses.AisMessageBody`
+  is a different alias, the union of the dataclass mirrors.
 
 ### Fixed
 
@@ -82,6 +90,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `ReassemblyError` no longer carries a "channel mismatch" message; the
   underlying `marlin-ais` variant is removed. The out-of-order and
   timeout messages are unchanged.
+
+### Changed
+
+- The stub for the private `marlin._core` extension module no longer
+  repeats every class. It keeps `__version__` and the exception classes
+  and types the `envelope`, `nmea`, `ais`, and `klv` submodules as `Any`.
+  The public stubs beside each package are unchanged and are now the
+  only place a class is declared. Code that imported from `marlin._core`
+  directly loses its type information and should import from
+  `marlin.envelope`, `marlin.nmea`, `marlin.ais`, or `marlin.klv`.
 
 ## [0.1.4] - 2026-07-07
 
