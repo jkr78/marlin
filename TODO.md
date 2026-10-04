@@ -143,14 +143,16 @@ track deliverables (not conversational state).
   never constructed: dispatch uses `StaticDataB::{PartA, PartB, Reserved}`.
   Removal is breaking; the 0.2.0 window (Type 9/21 release) was declined on
   2026-10-02 in favour of this card, so it waits for the next breaking release.
-- [x] Fix pre-existing marlin-py stub/export gaps (found during radar-sentence review) **DONE 2026-07-07**
+- [x] Fix pre-existing marlin-py stub/export gaps **DONE 2026-07-07**
+  Found during the radar-sentence review.
   Two unrelated pre-existing drifts surfaced while adding HDG/TTM/TLL:
   (1) `bindings/python/python/marlin/_core.pyi` `Nmea0183Parser.next_message`
   return-type union omits `Gll` and `Rmc` (present on `__next__` and the public
   alias, missing only here). (2) `bindings/python/python/marlin/dataclasses.py`
   `__all__` omits `Gll`, `Rmc`, and `UtcDate` (classes exist and are used but
   aren't exported). Both are latent-only (no runtime break today). Small fix.
-- [ ] Add a present-field enumeration view to marlin-klv St0601 (klv-inspect G2)
+- [ ] Add a present-field enumeration view to marlin-klv St0601
+  klv-inspect G2.
   Ergonomic convenience only, no wire semantics: a `present()` / `items()`
   view yielding the tags a decoded set actually carries, so consumers stop
   reflecting over `raw_*` attribute names. Deferred — not codec territory and
@@ -159,7 +161,8 @@ track deliverables (not conversational state).
   the same way the AIS parser helpers exist for ergonomics. Once the G1 tag
   registry landed, consumers can already enumerate against the authoritative
   table instead of a naming convention.
-- [ ] Add a checksum-free KLV structural reader if faulty senders appear (klv-inspect G3)
+- [ ] Add a checksum-free KLV structural reader if faulty senders appear
+  klv-inspect G3.
   Only if real streams arrive with absent/bad BCC or foreign framing that
   strict `decode` rejects: a clearly-named, separate reader (Rust first, then
   a Python binding) that walks UL + BER-TLV and yields raw `(tag, value)`

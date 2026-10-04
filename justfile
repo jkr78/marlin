@@ -52,7 +52,11 @@ doc-open:
 
 # Run everything CI runs, in order. Use before pushing. Includes the
 # workspace-excluded fuzz crate's fmt + clippy (stable — see below).
-ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint
+ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint todo-check
+
+# Check the mechanical TODO.md card rules (title length, DONE format).
+todo-check:
+    python3 scripts/check_todo.py TODO.md
 
 # ---------------------------------------------------------------------------
 # Fuzzing (requires nightly + cargo-fuzz)
