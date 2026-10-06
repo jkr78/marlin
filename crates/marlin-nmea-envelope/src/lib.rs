@@ -61,13 +61,14 @@
 //! assert!(parser.next_sentence().is_none());
 //! ```
 //!
-//! # Runtime dispatch without `dyn`
+//! # Choosing the source mode at runtime
 //!
 //! The [`SentenceSource`] trait uses a GAT for zero-copy borrows (see the
 //! trait's documentation) and therefore is not object-safe. Callers who
-//! need to choose the mode at runtime (e.g. from a config file) use the
-//! [`Parser`] enum, which provides the same `feed` / `next_sentence`
-//! shape with zero-cost static dispatch:
+//! need to choose the source mode at runtime (e.g. from a config file)
+//! use the [`Parser`] enum. It is itself a [`SentenceSource`], so the
+//! typed parsers in `marlin-nmea-0183` and `marlin-ais` wrap it the same
+//! way they wrap [`OneShot`] or [`Streaming`]:
 //!
 //! ```
 //! use marlin_nmea_envelope::Parser;
@@ -147,17 +148,19 @@ pub fn parse(bytes: &[u8]) -> Result<RawSentence<'_>, Error> {
     parser::parse_sentence(stripped)
 }
 
-/// Runtime-dispatch wrapper over the two sentence-source implementations.
+/// A [`SentenceSource`] whose source mode is chosen at runtime.
 ///
-/// Use this when the parser mode is a configuration choice — e.g. "if
-/// the transport is UDP, use one-shot; if TCP, use streaming" — and the
-/// caller does not want generics infecting their signatures.
+/// Use this when the source mode is a configuration choice — "if the
+/// transport is UDP, use one-shot; if TCP, use streaming" — and the
+/// caller does not want generics in their signatures. `Parser`
+/// implements [`SentenceSource`] itself, so anything generic over a
+/// source, including the typed parsers in `marlin-nmea-0183` and
+/// `marlin-ais`, accepts it in place of [`OneShot`] or [`Streaming`].
+/// This is the only place a mode enum exists in the workspace: the
+/// typed layers wrap this one rather than mirroring it.
 ///
-/// The enum delegates [`feed`](Self::feed) and
-/// [`next_sentence`](Self::next_sentence) to the active variant. Dispatch
-/// is a match (static, inlined); there is no heap allocation and no
-/// vtable lookup. This is the recommended pattern for callers that need
-/// runtime flexibility but not trait-object genericity.
+/// Dispatch is a match (static, inlined); there is no heap allocation
+/// and no vtable lookup.
 ///
 /// # Example
 ///
@@ -184,6 +187,13 @@ impl Parser {
         Self::OneShot(OneShot::new())
     }
 
+    /// Construct a [`Parser::OneShot`] with a caller-specified initial
+    /// buffer capacity. See [`OneShot::with_capacity`].
+    #[must_use]
+    pub fn one_shot_with_capacity(cap: usize) -> Self {
+        Self::OneShot(OneShot::with_capacity(cap))
+    }
+
     /// Construct a [`Parser::Streaming`] with the default maximum buffer
     /// size ([`DEFAULT_MAX_BUFFER_SIZE`]).
     #[must_use]
@@ -192,13 +202,13 @@ impl Parser {
     }
 
     /// Construct a [`Parser::Streaming`] with a caller-specified maximum
-    /// buffer size.
+    /// buffer size. See [`Streaming::with_capacity`].
     #[must_use]
     pub fn streaming_with_capacity(max_size: usize) -> Self {
         Self::Streaming(Streaming::with_capacity(max_size))
     }
 
-    /// Push raw bytes into the active parser. See
+    /// Push raw bytes into the active source. See
     /// [`SentenceSource::feed`] for the per-mode semantics.
     pub fn feed(&mut self, bytes: &[u8]) {
         match self {
@@ -207,13 +217,40 @@ impl Parser {
         }
     }
 
-    /// Pull the next complete sentence out of the active parser. See
+    /// Pull the next complete sentence out of the active source. See
     /// [`SentenceSource::next_sentence`] for the per-mode semantics.
     pub fn next_sentence(&mut self) -> Option<Result<RawSentence<'_>, Error>> {
         match self {
             Self::OneShot(p) => p.next_sentence(),
             Self::Streaming(p) => p.next_sentence(),
         }
+    }
+}
+
+impl From<OneShot> for Parser {
+    fn from(source: OneShot) -> Self {
+        Self::OneShot(source)
+    }
+}
+
+impl From<Streaming> for Parser {
+    fn from(source: Streaming) -> Self {
+        Self::Streaming(source)
+    }
+}
+
+impl SentenceSource for Parser {
+    type Item<'a>
+        = RawSentence<'a>
+    where
+        Self: 'a;
+
+    fn feed(&mut self, bytes: &[u8]) {
+        Parser::feed(self, bytes);
+    }
+
+    fn next_sentence(&mut self) -> Option<Result<RawSentence<'_>, Error>> {
+        Parser::next_sentence(self)
     }
 }
 
@@ -225,7 +262,7 @@ impl Parser {
     clippy::panic
 )]
 mod parser_enum_tests {
-    use super::Parser;
+    use super::{OneShot, Parser, SentenceSource, Streaming};
     use crate::testing::build_sentence;
 
     #[test]
@@ -287,5 +324,39 @@ mod parser_enum_tests {
         let bytes = build_sentence(b"GPGGA,1");
         assert_eq!(drive(&mut Parser::one_shot(), &bytes), Some("gga"));
         assert_eq!(drive(&mut Parser::streaming(), &bytes), Some("gga"));
+    }
+
+    #[test]
+    fn parser_enum_one_shot_with_capacity_parses() {
+        let bytes = build_sentence(b"GPGGA,1");
+        let mut parser = Parser::one_shot_with_capacity(8);
+        parser.feed(&bytes);
+        assert_eq!(
+            parser.next_sentence().unwrap().unwrap().sentence_type,
+            "GGA"
+        );
+    }
+
+    #[test]
+    fn parser_enum_from_concrete_sources() {
+        assert!(matches!(Parser::from(OneShot::new()), Parser::OneShot(_)));
+        assert!(matches!(
+            Parser::from(Streaming::with_capacity(16)),
+            Parser::Streaming(_)
+        ));
+    }
+
+    #[test]
+    fn parser_enum_is_a_sentence_source() {
+        // Generic code over `SentenceSource` accepts the enum, so the
+        // typed parsers in the higher crates can wrap it.
+        fn yields_one<P: SentenceSource>(source: &mut P, bytes: &[u8]) -> bool {
+            source.feed(bytes);
+            source.next_sentence().is_some_and(|r| r.is_ok())
+        }
+
+        let bytes = build_sentence(b"GPGGA,1");
+        assert!(yields_one(&mut Parser::one_shot(), &bytes));
+        assert!(yields_one(&mut Parser::streaming(), &bytes));
     }
 }

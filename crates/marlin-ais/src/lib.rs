@@ -77,7 +77,7 @@ pub use extended_position_report_b::{
     decode_extended_position_report_b, ExtendedPositionReportB, EXTENDED_POSITION_REPORT_B_BITS,
 };
 pub use message::{decode, decode_message, AisMessage, AisMessageBody};
-pub use parser::{AisFragmentParser, Parser};
+pub use parser::AisFragmentParser;
 pub use position_report_a::{
     decode_position_report_a, ManeuverIndicator, NavStatus, PositionReportA, RateOfTurn,
     TurnDirection, POSITION_REPORT_A_BITS,
@@ -98,6 +98,8 @@ pub use static_voyage_a::{
     decode_static_and_voyage_a, AisVersion, Eta, StaticAndVoyageA, STATIC_VOYAGE_A_BITS,
 };
 
-// Convenience re-export for consumers that want to parse sentences
-// through the envelope directly.
-pub use marlin_nmea_envelope::RawSentence;
+// Re-export the envelope types a caller needs alongside this crate:
+// the sentence sources `AisFragmentParser` wraps (`Parser` for a source
+// mode chosen at runtime), and `RawSentence` for the single-fragment
+// `decode` entry point.
+pub use marlin_nmea_envelope::{OneShot, Parser, RawSentence, Streaming};

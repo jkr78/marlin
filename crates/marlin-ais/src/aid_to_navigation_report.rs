@@ -320,7 +320,7 @@ mod tests {
     use super::*;
     use crate::shared_types::sentinel;
     use crate::testing::{build_aivdm, write_ais_str, BitWriter};
-    use crate::{AisMessageBody, Parser};
+    use crate::{AisFragmentParser, AisMessageBody, Streaming};
 
     /// Every Table 73 field a test may want to vary. The spare bit is
     /// zero. `name` is the 20-character fixed field (`@`-padded when
@@ -626,7 +626,7 @@ mod tests {
     /// 5/5/5/5, EPFD GPS, second 50, status 165.
     #[test]
     fn gpsd_vector_t21_1_two_fragments() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         let frag1 = build_aivdm(
             2,
             1,
@@ -684,7 +684,7 @@ mod tests {
     /// choice this decoder deliberately does not make (design spec §3.6).
     #[test]
     fn gpsd_vector_t21_2_overlong() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         let frag1 = build_aivdm(
             2,
             1,

@@ -25,7 +25,7 @@ use marlin_nmea_0183::{
     TargetStatus as RustTargetStatus, TllData, TtmData, UtcDate as RustUtcDate,
     UtcTime as RustUtcTime, VtgData, VtgMode as RustVtgMode,
 };
-use marlin_nmea_envelope::{OneShot, Streaming};
+use marlin_nmea_envelope::Parser;
 
 use crate::envelope::{PyRawSentence, DEFAULT_MAX_SIZE};
 use crate::errors::{decode_err, envelope_err};
@@ -1729,29 +1729,12 @@ fn repr_talker(talker: Option<[u8; 2]>) -> String {
 
 // ---------- Nmea0183Parser ----------
 
-/// Internal mode-enum so the HRTB generic on `Nmea0183Parser<P>` doesn't
-/// infect the Python class surface — the `Parser` runtime-dispatch enum
-/// from marlin-nmea-0183 solves the same problem, but constructing it
-/// directly gives us matching shape without bringing a second enum in.
-///
-/// Do **not** "simplify" this into a `Nmea0183Parser<P>` field with a
-/// generic bound. The HRTB nested-call trap (see the repo CLAUDE.md)
-/// means `&mut self` methods bounded by
-/// `for<'a> SentenceSource<Item<'a> = RawSentence<'a>>` can't delegate to
-/// other such methods — rustc emits "P does not live long enough". The
-/// mode-enum dodges the trap by matching on a concrete parser in each arm.
-#[derive(Debug)]
-enum Nmea0183Inner {
-    OneShot(RustNmea0183<OneShot>),
-    Streaming(RustNmea0183<Streaming>),
-}
-
 /// Typed NMEA 0183 parser that wraps an envelope parser and exposes
 /// [`Nmea0183Message`] variants. Construct via `streaming()` or
 /// `one_shot()` staticmethods; both accept optional `DecodeOptions`.
 #[pyclass(name = "Nmea0183Parser", module = "marlin.nmea")]
 pub struct PyNmea0183Parser {
-    inner: Nmea0183Inner,
+    inner: RustNmea0183<Parser>,
 }
 
 #[pymethods]
@@ -1761,7 +1744,7 @@ impl PyNmea0183Parser {
     fn one_shot(options: Option<PyDecodeOptions>) -> Self {
         let opts = options.map(|o| o.inner).unwrap_or_default();
         Self {
-            inner: Nmea0183Inner::OneShot(RustNmea0183::with_options(OneShot::new(), opts)),
+            inner: RustNmea0183::with_options(Parser::one_shot(), opts),
         }
     }
 
@@ -1770,18 +1753,12 @@ impl PyNmea0183Parser {
     fn streaming(options: Option<PyDecodeOptions>, max_size: usize) -> Self {
         let opts = options.map(|o| o.inner).unwrap_or_default();
         Self {
-            inner: Nmea0183Inner::Streaming(RustNmea0183::with_options(
-                Streaming::with_capacity(max_size),
-                opts,
-            )),
+            inner: RustNmea0183::with_options(Parser::streaming_with_capacity(max_size), opts),
         }
     }
 
     fn feed(&mut self, data: &[u8]) {
-        match &mut self.inner {
-            Nmea0183Inner::OneShot(p) => p.feed(data),
-            Nmea0183Inner::Streaming(p) => p.feed(data),
-        }
+        self.inner.feed(data);
     }
 
     /// Return the next decoded message, `None` if no complete sentence is
@@ -1791,14 +1768,10 @@ impl PyNmea0183Parser {
         // dropping the &mut borrow on `self.inner`. Otherwise the borrow
         // checker flags the subsequent PyO3 construction as overlapping
         // with the `next_message()` borrow.
-        let result = match &mut self.inner {
-            Nmea0183Inner::OneShot(p) => {
-                p.next_message().map(|r| r.map(owned_message_from_borrowed))
-            }
-            Nmea0183Inner::Streaming(p) => {
-                p.next_message().map(|r| r.map(owned_message_from_borrowed))
-            }
-        };
+        let result = self
+            .inner
+            .next_message()
+            .map(|r| r.map(owned_message_from_borrowed));
         match result {
             None => Ok(None),
             Some(Ok(owned)) => Ok(Some(owned.into_pyany(py)?)),

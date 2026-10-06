@@ -25,7 +25,7 @@ means "not available" decodes to `None`. A code that means "this value
 or higher" stays a value. The codes are public constants in
 `marlin_ais::sentinel`.
 
-`Parser` takes bytes and yields `AisMessage` values. It
+`AisFragmentParser` takes bytes and yields `AisMessage` values. It
 reassembles multi-sentence messages keyed on `(channel,
 sequential_id)`, evicts the oldest partial once 16 are open, and can
 expire partials by age when you supply a clock.
@@ -33,9 +33,9 @@ expire partials by age when you supply a clock.
 ## Quickstart
 
 ```rust
-use marlin_ais::{AisMessageBody, Parser};
+use marlin_ais::{AisFragmentParser, AisMessageBody, Streaming};
 
-let mut parser = Parser::streaming();
+let mut parser = AisFragmentParser::new(Streaming::new());
 parser.feed(b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*23\r\n");
 
 while let Some(result) = parser.next_message() {
@@ -50,8 +50,22 @@ while let Some(result) = parser.next_message() {
 }
 ```
 
-`Parser::one_shot()` is the datagram variant. It takes one sentence per
-`feed` and does not need a trailing `\r\n`.
+`Streaming` is the source mode for byte streams (TCP, serial).
+`OneShot` is the one-shot source mode, for datagrams: one sentence per
+`feed`, no trailing `\r\n` needed. To pick the source mode at runtime,
+wrap `Parser`, the envelope's mode enum, which this crate re-exports:
+
+```rust
+use marlin_ais::{AisFragmentParser, AisReassembler, Parser};
+
+let source = if transport_is_udp {
+    Parser::one_shot()
+} else {
+    Parser::streaming()
+};
+let reassembler = AisReassembler::with_timeout_ms(16, 30_000);
+let mut parser = AisFragmentParser::with_reassembler(source, reassembler);
+```
 
 ## What AIS is
 

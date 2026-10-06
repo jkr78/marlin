@@ -37,9 +37,10 @@ use crate::Error;
 /// lifetime-parameterized associated type cannot be expressed in a fixed
 /// vtable, so `Box<dyn SentenceSource>` does not compile. This is
 /// intentional. Use this trait in generic code (`fn drain<P:
-/// SentenceSource>(p: &mut P)`). For runtime dispatch (config-driven mode
-/// selection), use the concrete [`Parser`](crate::Parser) enum instead —
-/// it is zero-cost and exhaustive at compile time. See PRD §4.4 and §4.5.
+/// SentenceSource>(p: &mut P)`). To choose the source mode at runtime
+/// (config-driven), use the concrete [`Parser`](crate::Parser) enum: it
+/// implements this trait, and its dispatch is zero-cost and exhaustive at
+/// compile time.
 ///
 /// # Contract
 ///

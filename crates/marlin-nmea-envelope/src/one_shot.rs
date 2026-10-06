@@ -19,8 +19,8 @@ use crate::{parser, Error, RawSentence, SentenceSource};
 /// sentence. This matches PRD §E5.
 ///
 /// See [`Streaming`](crate::Streaming) for the byte-stream (TCP / serial)
-/// counterpart, and [`Parser`](crate::Parser) for a runtime-dispatch
-/// wrapper over both modes.
+/// counterpart, and [`Parser`](crate::Parser) for a source mode chosen
+/// at runtime.
 #[derive(Debug)]
 pub struct OneShot {
     buf: Vec<u8>,

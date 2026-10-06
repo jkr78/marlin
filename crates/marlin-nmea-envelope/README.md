@@ -12,7 +12,8 @@ Sans-I/O NMEA 0183 envelope parser. Foundation crate of the `marlin` suite.
 - Exposes a unified [`SentenceSource`] trait with two implementations:
   - [`OneShot`] — one complete sentence per `feed` (for UDP datagrams)
   - [`Streaming`] — buffered scanning for TCP-style byte streams
-- Plus a [`Parser`] enum for zero-cost runtime mode selection
+- Plus a [`Parser`] enum, itself a `SentenceSource`, for choosing the
+  source mode at runtime with zero-cost static dispatch
 
 ## What this crate does not do
 
@@ -47,7 +48,7 @@ while let Some(result) = parser.next_sentence() {
 }
 ```
 
-### Runtime dispatch (config-driven mode selection)
+### Source mode chosen at runtime (config-driven)
 
 ```rust
 use marlin_nmea_envelope::Parser;
@@ -61,6 +62,10 @@ let mut parser = if transport_is_udp {
 parser.feed(&bytes);
 while let Some(Ok(s)) = parser.next_sentence() { ... }
 ```
+
+`Parser` is a `SentenceSource`, so the typed parsers in
+`marlin-nmea-0183` and `marlin-ais` wrap it exactly as they wrap
+`OneShot` or `Streaming`.
 
 ## Features
 
