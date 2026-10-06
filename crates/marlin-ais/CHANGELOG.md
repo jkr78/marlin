@@ -101,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   instead.
 - `AisError::UnknownMessageType` removed: it was never emitted; unrouted
   message types surface as `AisMessageBody::Other`.
+- `Type24Part` removed: it was never constructed. `decode_static_data_b`
+  already names the part by variant, `StaticDataB::{PartA, PartB,
+  Reserved}`, and `Reserved { part_code }` carries the raw code.
 - The reassembly clock is reassembler state (ADR-0004).
   `AisReassembler::tick(now_ms)` now also stores `now_ms`, and
   `feed_fragment` stamps the partial it touches with the last ticked

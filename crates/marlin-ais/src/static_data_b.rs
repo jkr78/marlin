@@ -28,20 +28,6 @@ pub const STATIC_DATA_B_24A_BITS: usize = 160;
 /// 30 `dimensions` + 4 `EPFD` + 2 spare = **168**.
 pub const STATIC_DATA_B_24B_BITS: usize = 168;
 
-/// Which part of Type 24 a sentence carries. Encoded in bits 38–39
-/// of the payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Type24Part {
-    /// Part A — vessel name.
-    A,
-    /// Part B — ship type, vendor ID, call sign, extent (dimensions or
-    /// mother-ship MMSI), EPFD type.
-    B,
-    /// Reserved part codes (2 or 3); raw code preserved.
-    Reserved(u8),
-}
-
 /// Decoded Type 24 Part A — vessel name only.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticDataB24A {
@@ -114,7 +100,7 @@ pub enum StaticDataB {
 }
 
 /// Decode a Type 24 payload, dispatching on the 2-bit part-number
-/// field to the appropriate part-specific decoder.
+/// field (bits 38–39) to the appropriate part-specific decoder.
 ///
 /// The dispatcher uses Part A's smaller minimum (160 bits) as its own
 /// floor; the per-part decoder it dispatches to enforces its own
