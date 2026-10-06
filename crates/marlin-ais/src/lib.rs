@@ -91,8 +91,7 @@ pub use sar_aircraft_position_report::{
 pub use shared_types::{is_auxiliary_craft_mmsi, sentinel, Dimensions, EpfdType};
 pub use static_data_b::{
     decode_static_data_b, decode_static_data_b_24a, decode_static_data_b_24b, StaticDataB,
-    StaticDataB24A, StaticDataB24B, Type24BExtent, Type24Part, STATIC_DATA_B_24A_BITS,
-    STATIC_DATA_B_24B_BITS,
+    StaticDataB24A, StaticDataB24B, Type24BExtent, STATIC_DATA_B_24A_BITS, STATIC_DATA_B_24B_BITS,
 };
 pub use static_voyage_a::{
     decode_static_and_voyage_a, AisVersion, Eta, StaticAndVoyageA, STATIC_VOYAGE_A_BITS,

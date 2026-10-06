@@ -162,11 +162,12 @@ track deliverables (not conversational state).
   `.github/workflows/ci.yml` runs only `just fuzz envelope 30`; `just
   fuzz-smoke-all` covers the AIS targets locally only. Add `just fuzz ais_parser
   30` (nightly job already set up).
-- [ ] Remove the never-constructed Type24Part enum
-  `Type24Part` is defined in `static_data_b.rs` and re-exported from `lib.rs` but
+- [x] Remove the never-constructed Type24Part enum **DONE 2026-10-06**
+  `Type24Part` was defined in `static_data_b.rs` and re-exported from `lib.rs` but
   never constructed: dispatch uses `StaticDataB::{PartA, PartB, Reserved}`.
-  Removal is breaking; the 0.2.0 window (Type 9/21 release) was declined on
-  2026-10-02 in favour of this card, so it waits for the next breaking release.
+  Removal is breaking; the Type 9/21 branch declined it on 2026-10-02 in favour
+  of this card. Removed in the still-open 0.2.0 Unreleased window, beside the
+  `AisError::UnknownMessageType` removal.
 - [x] Fix pre-existing marlin-py stub/export gaps **DONE 2026-07-07**
   Found during the radar-sentence review.
   Two unrelated pre-existing drifts surfaced while adding HDG/TTM/TLL:
