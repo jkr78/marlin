@@ -69,8 +69,8 @@ pub(crate) fn build_with_tag(tag_content: &[u8], sentence_body: &[u8]) -> Vec<u8
 }
 
 /// Build a TAG-prefixed sentence with a deliberately-wrong TAG checksum.
-/// Sentence checksum remains valid — PRD decision 7 says the sentence
-/// should still parse.
+/// Sentence checksum remains valid — the sentence should still parse
+/// (ADR-0006).
 pub(crate) fn build_with_bad_tag_checksum(tag_content: &[u8], sentence_body: &[u8]) -> Vec<u8> {
     build_with_tag_inner(tag_content, sentence_body, TagChecksumMode::Wrong, b"")
 }

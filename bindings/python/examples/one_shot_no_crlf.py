@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Parse a single-sentence UDP-style datagram with no CRLF.
-
-Python analogue of PRD §10 deliverable 7, item 2.
-"""
+"""Parse a single-sentence UDP-style datagram with no CRLF."""
 
 from marlin.envelope import OneShotParser
 

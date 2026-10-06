@@ -1,4 +1,4 @@
-//! Multi-sentence AIS reassembly (PRD §A5).
+//! Multi-sentence AIS reassembly.
 //!
 //! AIVDM/AIVDO encapsulates one AIS message into one or more NMEA 0183
 //! sentences — the AIS payload is armored into 6-bit ASCII and split
@@ -8,7 +8,7 @@
 //!
 //! # Design choices
 //!
-//! - **Reassembly key: `(channel, sequential_id)`** per PRD §A5. This
+//! - **Reassembly key: `(channel, sequential_id)`.** This
 //!   lets two multi-sentence messages interleave cleanly on different
 //!   channels or different sequential IDs.
 //!
@@ -27,9 +27,9 @@
 //!   cap is exceeded, the oldest partial is evicted and
 //!   [`AisError::ReassemblyTimeout`] is queued for the next
 //!   [`take_pending_error`](AisReassembler::take_pending_error) call.
-//!   PRD §A5 specifies a 60 s timeout as the motivation — this
-//!   bounded-slot approach satisfies the underlying memory-safety goal
-//!   clock-free. Time-based expiry is opt-in on top of it:
+//!   A time limit is the usual remedy; this bounded-slot approach
+//!   satisfies the underlying memory-safety goal clock-free. Time-based
+//!   expiry is opt-in on top of it:
 //!   [`AisReassembler::with_timeout_ms`] sets an age limit, and the
 //!   caller supplies the clock through [`tick`](AisReassembler::tick)
 //!   (ADR-0004). The reassembler keeps the last ticked time and
@@ -168,7 +168,7 @@ impl AisReassembler {
     /// a clock-based timeout policy. Callers advance the clock with
     /// [`tick`](Self::tick) before feeding fragments.
     ///
-    /// PRD §A5 suggests 60 000 ms (60 s) as a typical value. The
+    /// 60 000 ms (60 s) is a typical value. The
     /// library itself never calls a clock — time is the caller's
     /// responsibility, which keeps the crate `#![no_std]` and
     /// sans-I/O.

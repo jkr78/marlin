@@ -1583,11 +1583,11 @@ impl PyAisMessage {
 /// The binding class owns its byte buffer and tracks the cursor itself;
 /// every method constructs a fresh Rust `BitReader` and fast-forwards to
 /// the current cursor position. That fast-forward is O(cursor) per call,
-/// i.e. O(n²) total — documented as accepted for v0.1 AIS rates in the
-/// PRD (Type 5 = ~20 field reads × ~200-bit midpoint ≈ 4k bit-ops per
-/// decode, well below any user-visible threshold). See the module doc
-/// for the rationale around not storing a live `BitReader` (would
-/// require a self-referential struct).
+/// i.e. O(n²) total — accepted for AIS rates (Type 5 = ~20 field reads
+/// × ~200-bit midpoint ≈ 4k bit-ops per decode, well below any
+/// user-visible threshold). See the module doc for the rationale around
+/// not storing a live `BitReader` (would require a self-referential
+/// struct).
 #[pyclass(name = "BitReader", module = "marlin.ais")]
 pub struct PyBitReader {
     data: Vec<u8>,

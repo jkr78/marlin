@@ -4,7 +4,7 @@ Golden-file test inputs for `marlin-nmea-envelope`. Each file is a
 byte-exact NMEA 0183 payload; corresponding assertions live in
 `../golden.rs`.
 
-Per PRD §G3, v1 envelope fixtures may be synthetic. Higher-layer crates
+Envelope fixtures may be synthetic. Higher-layer crates
 (`marlin-nmea-0183`, `marlin-ais`) will use real captures when those are
 implemented.
 
@@ -15,7 +15,7 @@ implemented.
 | `01_gga_basic.nmea` | Classic `$GPGGA` with CRLF terminator and 14 fields (two trailing empty) | NMEA 0183 specification example (widely cited; checksum `*47`) |
 | `02_hdt_no_terminator.nmea` | `$INHDT` with **no** terminator — the UDP-datagram case | Synthetic |
 | `03_aivdm_encapsulation.nmea` | `!AIVDM` encapsulation sentence with CRLF | Synthetic (payload follows ITU-R M.1371 armor) |
-| `04_rmc_lowercase_checksum.nmea` | `$GPRMC` with the checksum rendered in **lowercase** hex (PRD §E2) | Synthetic |
+| `04_rmc_lowercase_checksum.nmea` | `$GPRMC` with the checksum rendered in **lowercase** hex | Synthetic |
 | `05_stream_mixed_terminators.nmea` | Three back-to-back sentences terminated by CRLF / LF / CR respectively | Synthetic |
 | `06_tagged_sentence.nmea` | `\c:1577836800*XX\$GPGGA...` — NMEA 4.10 TAG block with valid checksum | Synthetic (timestamp tag format per IEC 61162-450) |
 | `07_streaming_with_garbage.nmea` | Garbage bytes → `$GPGGA` → more garbage → `$INHDT` (streaming-recovery test) | Synthetic |
@@ -24,7 +24,7 @@ implemented.
 > since both are valid sentence-start delimiters (`$` for data, `!` for
 > encapsulation). A `!` embedded in otherwise-garbage bytes would cause
 > the scanner to latch onto it and swallow data up to the next `*` — this
-> is correct parser behavior per PRD §E1, just rarely what tests want.
+> is correct parser behavior, just rarely what tests want.
 
 ## Checksum verification
 

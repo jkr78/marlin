@@ -79,7 +79,7 @@ while let Some(Ok(s)) = parser.next_sentence() { ... }
 - **One parser core** shared by both modes.
 - **`complete` nom parsers** only — no `Err::Incomplete` propagation.
 - **Zero-copy** borrows; no allocation on the sentence hot path.
-- **TAG checksum mismatches are advisory**, not fatal (PRD decision 7).
+- **TAG block checksum mismatches are advisory**, not fatal (ADR-0006).
 - **Panic-free** on all inputs; verified by cargo-fuzz.
 
 ## Minimum Supported Rust Version

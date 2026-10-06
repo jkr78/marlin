@@ -45,7 +45,7 @@ use alloc::vec::Vec;
 ///   **excluding** the surrounding backslashes and checksum. The TAG block's
 ///   own checksum is computed by the parser and mismatches are logged via
 ///   the `tracing` feature; a mismatch does **not** reject the sentence
-///   (see PRD decision 7).
+///   (ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawSentence<'a> {
     /// Raw content of the preceding NMEA 4.10 TAG block, excluding the

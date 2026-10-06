@@ -70,7 +70,7 @@ pub enum Error {
     /// separator inside the TAG block, or invalid hex digits in the TAG
     /// block's own checksum.
     ///
-    /// Note: per the PRD, a TAG block checksum *mismatch* does **not**
+    /// Note: a TAG block checksum *mismatch* does **not**
     /// produce this error — the sentence checksum is authoritative, and the
     /// TAG block content is preserved even if its own checksum is wrong.
     /// Only a structurally malformed TAG block surfaces here.

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use crate::{parser, Error, RawSentence, SentenceSource};
 
-/// Default maximum buffer size (64 KiB), per PRD §N1.
+/// Default maximum buffer size (64 KiB).
 pub const DEFAULT_MAX_BUFFER_SIZE: usize = 64 * 1024;
 
 /// Compaction trigger: when `cursor` passes `max_size / COMPACT_DIVISOR`,
@@ -26,13 +26,13 @@ const INITIAL_CAPACITY_HINT: usize = 4096;
 /// start delimiter at all) are discarded. When the read cursor passes
 /// roughly half of the configured maximum buffer size, the buffer is
 /// compacted on the next `feed` — this keeps memory bounded without
-/// per-call quadratic rescanning (PRD §N2).
+/// per-call quadratic rescanning.
 ///
 /// If a [`feed`](SentenceSource::feed) call would push the buffer past
 /// the configured maximum size, the oldest bytes are discarded to make
 /// room for the new bytes and an [`Error::BufferOverflow`] is queued for
-/// the next [`next_sentence`](SentenceSource::next_sentence) call (PRD
-/// §N1). Parsing then continues normally.
+/// the next [`next_sentence`](SentenceSource::next_sentence) call.
+/// Parsing then continues normally.
 ///
 /// The shared nom parser core is reused from the same implementation
 /// used by [`OneShot`](crate::OneShot) — there is one parser in this
@@ -354,7 +354,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Garbage handling (PRD E6)
+    // Garbage handling
     // -----------------------------------------------------------------
 
     #[test]
@@ -426,7 +426,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Terminator variants (PRD T3)
+    // Terminator variants
     // -----------------------------------------------------------------
 
     #[test]
@@ -528,7 +528,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Buffer overflow (PRD N1)
+    // Buffer overflow
     // -----------------------------------------------------------------
 
     #[test]
@@ -616,7 +616,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // TAG block handling (PRD E4, decision 7)
+    // TAG block handling (ADR-0006)
     // -----------------------------------------------------------------
 
     #[test]
@@ -650,7 +650,7 @@ mod tests {
 
     #[test]
     fn streaming_accepts_tag_block_with_invalid_tag_checksum() {
-        // PRD decision 7: TAG checksum mismatch is advisory.
+        // ADR-0006: a TAG block checksum mismatch is advisory.
         let bytes = build_with_bad_tag_checksum(b"c:999", b"GPGGA,1,2");
         let mut parser = Streaming::new();
         parser.feed(&bytes);

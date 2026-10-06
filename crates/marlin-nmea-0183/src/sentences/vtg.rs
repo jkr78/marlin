@@ -14,7 +14,7 @@ use crate::DecodeError;
 
 /// Decoded fields of a `$__VTG` sentence.
 ///
-/// Per PRD §D6, the talker ID is preserved rather than dispatched on —
+/// The talker is preserved rather than dispatched on —
 /// `$GPVTG`, `$GNVTG`, `$INVTG` all decode to `VtgData` with different
 /// [`talker`](Self::talker) values.
 #[derive(Debug, Clone, Copy, PartialEq)]

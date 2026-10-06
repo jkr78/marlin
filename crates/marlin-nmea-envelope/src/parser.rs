@@ -8,9 +8,10 @@
 //! `OneShot` and `Streaming`.
 //!
 //! Uses `nom` complete combinators for the structural pieces and direct
-//! byte operations for the one-pass XOR and field split. Per PRD §E7 and
-//! the architectural rationale in §9 decision 3, `nom::*::streaming`
-//! variants are intentionally avoided.
+//! byte operations for the one-pass XOR and field split. The
+//! `nom::*::streaming` variants are intentionally avoided: sentence
+//! boundaries are found by the buffer scanner first, so the grammar only
+//! ever sees a complete slice and never needs `Err::Incomplete`.
 
 use alloc::vec::Vec;
 
@@ -79,7 +80,7 @@ pub(crate) fn parse_sentence(input: &[u8]) -> Result<RawSentence<'_>, Error> {
 /// opening `\` and the `*`, exclusive of both) and the remaining input
 /// starting at the sentence's `$` or `!`.
 ///
-/// Per PRD decision 7, a TAG block with a mismatched checksum is **not**
+/// Per ADR-0006, a TAG block with a mismatched checksum is **not**
 /// rejected — the content is preserved and the mismatch is surfaced only
 /// as a `tracing::debug!` event when the `tracing` feature is enabled.
 /// Only structurally malformed TAG blocks (unterminated, missing `*`, or
@@ -107,7 +108,7 @@ fn extract_tag_block(input: &[u8]) -> Result<(Option<&[u8]>, &[u8]), Error> {
         return Err(Error::MalformedTagBlock);
     }
 
-    // Verify the TAG block's own checksum. Per PRD decision 7 a mismatch
+    // Verify the TAG block's own checksum. Per ADR-0006 a mismatch
     // is advisory, not fatal: we emit a tracing event (if the feature is
     // enabled) but still accept the content. When the `tracing` feature
     // is off the whole block compiles to nothing.
@@ -119,7 +120,7 @@ fn extract_tag_block(input: &[u8]) -> Result<(Option<&[u8]>, &[u8]), Error> {
             tracing::debug!(
                 expected,
                 computed,
-                "TAG block checksum mismatch; content preserved (PRD decision 7)"
+                "TAG block checksum mismatch; sentence kept, TAG block content preserved"
             );
         }
     }
@@ -169,7 +170,7 @@ fn decode_nibble(b: u8) -> u8 {
         b'A'..=b'F' => 10 + (b - b'A'),
         // Unreachable: caller pre-validates via `is_ascii_hexdigit`. A wrong
         // byte here would silently decode as 0 rather than panic, preserving
-        // the panic-free contract (PRD §C3).
+        // the panic-free contract.
         _ => 0,
     }
 }

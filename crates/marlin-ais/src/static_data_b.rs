@@ -6,7 +6,7 @@
 //! dimensions (or a mother-ship MMSI, see [`Type24BExtent`]) and EPFD
 //! type. The two parts share an MMSI but may arrive minutes apart.
 //!
-//! Per PRD §A6, v1 emits [`StaticDataB24A`] and [`StaticDataB24B`] as
+//! This crate emits [`StaticDataB24A`] and [`StaticDataB24B`] as
 //! independent messages and does **not** pair them. A higher layer
 //! can pair by MMSI if desired.
 
