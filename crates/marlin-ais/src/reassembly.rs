@@ -31,9 +31,9 @@
 //!   bounded-slot approach satisfies the underlying memory-safety goal
 //!   clock-free. Time-based expiry is opt-in on top of it:
 //!   [`AisReassembler::with_timeout_ms`] sets an age limit, and the
-//!   caller supplies the clock through
-//!   [`feed_fragment_at`](AisReassembler::feed_fragment_at) and
-//!   [`tick`](AisReassembler::tick).
+//!   caller supplies the clock through [`tick`](AisReassembler::tick)
+//!   (ADR-0004). The reassembler keeps the last ticked time and
+//!   stamps each fragment with it; it never reads a clock itself.
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -97,6 +97,10 @@ pub struct AisReassembler {
     /// means time-based eviction is disabled; only bounded-slots
     /// eviction applies.
     timeout_ms: Option<u64>,
+    /// The clock as of the last [`tick`](AisReassembler::tick), in
+    /// monotonic milliseconds. `None` until the first tick; partials
+    /// opened before then carry no stamp.
+    now_ms: Option<u64>,
     /// Queue of errors deferred until the next
     /// [`take_pending_error`](AisReassembler::take_pending_error)
     /// call — today that's `ReassemblyTimeout` raised by slot or
@@ -117,10 +121,10 @@ struct PartialMessage {
     /// Last-seen `fill_bits` — overwritten on each append; the final
     /// fragment's value is the one we use at completion.
     last_fill_bits: u8,
-    /// Monotonic timestamp (ms) of the last fragment seen. `None`
-    /// means this partial was fed via [`feed_fragment`](AisReassembler::feed_fragment)
-    /// (no time supplied) and is **not** subject to time eviction —
-    /// bounded-slots still applies.
+    /// The reassembler's clock when the last fragment was seen.
+    /// `None` means the partial was opened before the first
+    /// [`tick`](AisReassembler::tick) and is **not** subject to time
+    /// eviction — bounded-slots still applies.
     last_touched_ms: Option<u64>,
 }
 
@@ -155,14 +159,14 @@ impl AisReassembler {
             partials: Vec::new(),
             max_partials: max_partials.max(1),
             timeout_ms: None,
+            now_ms: None,
             pending_errors: VecDeque::new(),
         }
     }
 
     /// Construct a reassembler with both bounded-slots eviction AND
-    /// a clock-based timeout policy. Callers feed fragments with
-    /// [`feed_fragment_at`](Self::feed_fragment_at) and periodically
-    /// call [`tick`](Self::tick) with a monotonic millisecond timestamp.
+    /// a clock-based timeout policy. Callers advance the clock with
+    /// [`tick`](Self::tick) before feeding fragments.
     ///
     /// PRD §A5 suggests 60 000 ms (60 s) as a typical value. The
     /// library itself never calls a clock — time is the caller's
@@ -174,6 +178,7 @@ impl AisReassembler {
             partials: Vec::new(),
             max_partials: max_partials.max(1),
             timeout_ms: Some(timeout_ms),
+            now_ms: None,
             pending_errors: VecDeque::new(),
         }
     }
@@ -193,9 +198,8 @@ impl AisReassembler {
     }
 
     /// Replace the time-based eviction threshold. Pass `None` to
-    /// disable time eviction; partials previously stamped by
-    /// [`feed_fragment_at`](Self::feed_fragment_at) retain their
-    /// stamps but no tick will expire them until a new timeout is set.
+    /// disable time eviction; stamped partials keep their stamps but
+    /// no tick will expire them until a new timeout is set.
     pub fn set_timeout_ms(&mut self, timeout_ms: Option<u64>) {
         self.timeout_ms = timeout_ms;
     }
@@ -217,11 +221,10 @@ impl AisReassembler {
 
     /// Feed an AIVDM/AIVDO header into the reassembler.
     ///
-    /// Partials opened or appended via this method carry no
-    /// timestamp, so [`tick`](Self::tick) will not evict them —
-    /// bounded-slots eviction is the only mechanism that can retire
-    /// them. Mixing with [`feed_fragment_at`](Self::feed_fragment_at)
-    /// on the same reassembler is supported.
+    /// The partial it opens or appends to is stamped with the clock
+    /// as of the last [`tick`](Self::tick). Before the first tick
+    /// there is no stamp, and bounded-slots eviction is the only
+    /// mechanism that can retire such a partial.
     ///
     /// Returns:
     /// - `Ok(Some(payload))` — a complete armored payload is ready.
@@ -231,50 +234,6 @@ impl AisReassembler {
     pub fn feed_fragment(
         &mut self,
         header: &AivdmHeader<'_>,
-    ) -> Result<Option<ReassembledPayload>, AisError> {
-        self.feed_fragment_impl(header, None)
-    }
-
-    /// Feed a fragment and stamp it with `now_ms` — a monotonic
-    /// millisecond timestamp supplied by the caller. The stamp is
-    /// used by [`tick`](Self::tick) to evict partials older than the
-    /// configured [`timeout_ms`](Self::timeout_ms).
-    pub fn feed_fragment_at(
-        &mut self,
-        header: &AivdmHeader<'_>,
-        now_ms: u64,
-    ) -> Result<Option<ReassembledPayload>, AisError> {
-        self.feed_fragment_impl(header, Some(now_ms))
-    }
-
-    /// Advance the clock to `now_ms` and evict any partial whose
-    /// last-touched stamp is older than
-    /// [`timeout_ms`](Self::timeout_ms). Each evicted partial queues
-    /// one [`AisError::ReassemblyTimeout`] for retrieval via
-    /// [`take_pending_error`](Self::take_pending_error).
-    ///
-    /// Partials fed without a timestamp (via
-    /// [`feed_fragment`](Self::feed_fragment)) are immune — they have
-    /// no stamp to compare. No-op when `timeout_ms` is `None`.
-    pub fn tick(&mut self, now_ms: u64) {
-        let Some(timeout) = self.timeout_ms else {
-            return;
-        };
-        let before = self.partials.len();
-        self.partials.retain(|p| match p.last_touched_ms {
-            Some(t) => now_ms.saturating_sub(t) <= timeout,
-            None => true,
-        });
-        let evicted = before - self.partials.len();
-        for _ in 0..evicted {
-            self.pending_errors.push_back(AisError::ReassemblyTimeout);
-        }
-    }
-
-    fn feed_fragment_impl(
-        &mut self,
-        header: &AivdmHeader<'_>,
-        now_ms: Option<u64>,
     ) -> Result<Option<ReassembledPayload>, AisError> {
         // Validate the fragment-numbering invariants first — these
         // checks apply to single and multi-fragment messages alike.
@@ -298,15 +257,41 @@ impl AisReassembler {
         let seq_id = header.sequential_id.ok_or(AisError::MalformedWrapper)?;
 
         if header.fragment_number == 1 {
-            self.open_partial(header, seq_id, now_ms);
+            self.open_partial(header, seq_id);
             return Ok(None);
         }
 
-        self.append_to_partial(header, seq_id, now_ms)
+        self.append_to_partial(header, seq_id)
+    }
+
+    /// Advance the clock to `now_ms` and evict any partial whose
+    /// last-touched stamp is older than
+    /// [`timeout_ms`](Self::timeout_ms). Each evicted partial queues
+    /// one [`AisError::ReassemblyTimeout`] for retrieval via
+    /// [`take_pending_error`](Self::take_pending_error). Fragments
+    /// fed after this call are stamped with `now_ms`.
+    ///
+    /// Partials opened before the first tick have no stamp and are
+    /// immune. Eviction is a no-op when `timeout_ms` is `None`; the
+    /// clock still advances.
+    pub fn tick(&mut self, now_ms: u64) {
+        self.now_ms = Some(now_ms);
+        let Some(timeout) = self.timeout_ms else {
+            return;
+        };
+        let before = self.partials.len();
+        self.partials.retain(|p| match p.last_touched_ms {
+            Some(t) => now_ms.saturating_sub(t) <= timeout,
+            None => true,
+        });
+        let evicted = before - self.partials.len();
+        for _ in 0..evicted {
+            self.pending_errors.push_back(AisError::ReassemblyTimeout);
+        }
     }
 
     /// Start (or restart) a partial for a first fragment.
-    fn open_partial(&mut self, header: &AivdmHeader<'_>, seq_id: u8, now_ms: Option<u64>) {
+    fn open_partial(&mut self, header: &AivdmHeader<'_>, seq_id: u8) {
         // If there's already a partial on the same key, replace it
         // silently — the old one got interrupted by a fresh fragment 1.
         // This matches real-world behavior when a multi-sentence
@@ -330,7 +315,7 @@ impl AisReassembler {
             is_own_ship: header.is_own_ship,
             payload: header.payload.to_vec(),
             last_fill_bits: header.fill_bits,
-            last_touched_ms: now_ms,
+            last_touched_ms: self.now_ms,
         });
     }
 
@@ -340,7 +325,6 @@ impl AisReassembler {
         &mut self,
         header: &AivdmHeader<'_>,
         seq_id: u8,
-        now_ms: Option<u64>,
     ) -> Result<Option<ReassembledPayload>, AisError> {
         // Find the partial on the same `(channel, sequential_id)` key.
         // Channels A and B carry independent sequential-id spaces, so
@@ -375,13 +359,9 @@ impl AisReassembler {
             partial.payload.extend_from_slice(header.payload);
             partial.next_expected = partial.next_expected.saturating_add(1);
             partial.last_fill_bits = header.fill_bits;
-            // Refresh the age stamp if the caller supplied one.
-            // Partials stamped on fragment 1 and then appended via
-            // `feed_fragment` (no _at) retain their old stamp — the
-            // timeout clock does not pause.
-            if now_ms.is_some() {
-                partial.last_touched_ms = now_ms;
-            }
+            // Refresh the age stamp. A partial opened before the first
+            // tick picks up a stamp on its first append after one.
+            partial.last_touched_ms = self.now_ms;
             header.fragment_number == partial.fragment_count
         };
 
@@ -745,13 +725,14 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Clock-based timeout: feed_fragment_at + tick
+    // Clock-based timeout: tick, then feed
     // -----------------------------------------------------------------
 
     #[test]
     fn tick_expires_partial_past_timeout() {
         let mut r = AisReassembler::with_timeout_ms(16, 60_000);
-        r.feed_fragment_at(&header(2, 1, Some(1), Some(b'A'), b"a", 0), 1_000)
+        r.tick(1_000);
+        r.feed_fragment(&header(2, 1, Some(1), Some(b'A'), b"a", 0))
             .unwrap();
         assert_eq!(r.in_flight(), 1);
 
@@ -772,11 +753,14 @@ mod tests {
     #[test]
     fn tick_expiring_multiple_partials_queues_multiple_timeouts() {
         let mut r = AisReassembler::with_timeout_ms(16, 1_000);
-        r.feed_fragment_at(&header(2, 1, Some(1), Some(b'A'), b"a", 0), 100)
+        r.tick(100);
+        r.feed_fragment(&header(2, 1, Some(1), Some(b'A'), b"a", 0))
             .unwrap();
-        r.feed_fragment_at(&header(2, 1, Some(2), Some(b'A'), b"b", 0), 200)
+        r.tick(200);
+        r.feed_fragment(&header(2, 1, Some(2), Some(b'A'), b"b", 0))
             .unwrap();
-        r.feed_fragment_at(&header(2, 1, Some(3), Some(b'A'), b"c", 0), 300)
+        r.tick(300);
+        r.feed_fragment(&header(2, 1, Some(3), Some(b'A'), b"c", 0))
             .unwrap();
         assert_eq!(r.in_flight(), 3);
 
@@ -803,7 +787,8 @@ mod tests {
     #[test]
     fn tick_without_timeout_set_is_noop() {
         let mut r = AisReassembler::new(); // no timeout
-        r.feed_fragment_at(&header(2, 1, Some(1), Some(b'A'), b"a", 0), 0)
+        r.tick(0);
+        r.feed_fragment(&header(2, 1, Some(1), Some(b'A'), b"a", 0))
             .unwrap();
         r.tick(u64::MAX); // the end of time — should still not expire.
         assert_eq!(r.in_flight(), 1);
@@ -811,9 +796,9 @@ mod tests {
     }
 
     #[test]
-    fn unstamped_partials_are_immune_to_tick() {
+    fn partials_opened_before_the_first_tick_are_immune() {
         let mut r = AisReassembler::with_timeout_ms(16, 100);
-        // No _at — no stamp.
+        // No tick yet — no stamp.
         r.feed_fragment(&header(2, 1, Some(1), Some(b'A'), b"a", 0))
             .unwrap();
         r.tick(1_000_000);
@@ -822,15 +807,34 @@ mod tests {
     }
 
     #[test]
-    fn feed_fragment_at_refreshes_partial_timestamp_on_append() {
+    fn append_after_a_tick_stamps_a_partial_opened_before_it() {
+        let mut r = AisReassembler::with_timeout_ms(16, 100);
+        r.feed_fragment(&header(3, 1, Some(1), Some(b'A'), b"a", 0))
+            .unwrap();
+        r.tick(1_000);
+        r.feed_fragment(&header(3, 2, Some(1), Some(b'A'), b"b", 0))
+            .unwrap();
+        // Stamped at 1_000 on the append; 101 ms later it is evicted.
+        r.tick(1_101);
+        assert_eq!(r.in_flight(), 0);
+        assert!(matches!(
+            r.take_pending_error(),
+            Some(AisError::ReassemblyTimeout)
+        ));
+    }
+
+    #[test]
+    fn append_refreshes_partial_timestamp() {
         // A multi-fragment message that arrives slowly: fragment 1 at
         // t=0, fragment 2 at t=500 (inside the 1000ms timeout). The
         // append must refresh the stamp so a later tick(t=1200)
         // computes age against 500, not 0.
         let mut r = AisReassembler::with_timeout_ms(16, 1_000);
-        r.feed_fragment_at(&header(3, 1, Some(1), Some(b'A'), b"a", 0), 0)
+        r.tick(0);
+        r.feed_fragment(&header(3, 1, Some(1), Some(b'A'), b"a", 0))
             .unwrap();
-        r.feed_fragment_at(&header(3, 2, Some(1), Some(b'A'), b"b", 0), 500)
+        r.tick(500);
+        r.feed_fragment(&header(3, 2, Some(1), Some(b'A'), b"b", 0))
             .unwrap();
 
         // At t=1200 age-from-last-touch is 700 < 1000 — still alive.
@@ -839,8 +843,9 @@ mod tests {
         assert!(r.take_pending_error().is_none());
 
         // Fragment 3 completes the message.
+        r.tick(1_300);
         let out = r
-            .feed_fragment_at(&header(3, 3, Some(1), Some(b'A'), b"c", 2), 1_300)
+            .feed_fragment(&header(3, 3, Some(1), Some(b'A'), b"c", 2))
             .unwrap()
             .unwrap();
         assert_eq!(out.payload, b"abc");

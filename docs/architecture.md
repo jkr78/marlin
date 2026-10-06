@@ -158,9 +158,11 @@ touches no state.
 - At most `DEFAULT_MAX_PARTIALS` (16) partials are open. One more
   evicts the oldest and queues `AisError::ReassemblyTimeout`.
 - Expiry by age is opt-in. `with_timeout_ms` sets the limit. The crate
-  never reads a clock, so the caller supplies monotonic milliseconds
-  through `feed_fragment_at`, `tick`, or
-  `AisFragmentParser::next_message_at`.
+  never reads a clock, so the caller advances it with `tick(now_ms)`
+  (also on `AisFragmentParser` and `Parser`); the reassembler keeps that
+  time and stamps each fragment with it (ADR-0004). A partial opened
+  before the first tick has no stamp and can only be evicted by the
+  slot cap.
 
 ### Python binding class policy
 

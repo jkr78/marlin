@@ -8,6 +8,14 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Report slot-full eviction under its own error, not ReassemblyTimeout
+  `AisReassembler::open_partial` queues `AisError::ReassemblyTimeout` when
+  the slot cap evicts the oldest partial, although no time passed. The two
+  evictions are told apart only by whether `with_timeout_ms` was set. A
+  separate variant (or one `ReassemblyEvicted { reason }`) would name the
+  cause; `AisError` is `non_exhaustive`, so adding one is not breaking for
+  matchers, but the Python `ReassemblyError` message text would change.
+  Found while grilling the reassembly clock change. [ais][draft]
 - [ ] Settle what "wrapper" means in the Python bindings
   The word appears 14 times in `bindings/python/src/` with two meanings. The
   four module headers ("Python wrappers for `marlin-ais`", and the same in
@@ -325,8 +333,8 @@ track deliverables (not conversational state).
 - [x] **Type 24A / 24B** — `StaticDataB24A` + `StaticDataB24B` + `decode_static_data_b` dispatcher (routes on part-number field). Part B `extent: Type24BExtent` is dimensions, or the mother-ship MMSI for an auxiliary craft (`98MIDxxxx`, ADR-0002), and `epfd` is decoded (0.2.0)
 - [x] Shared `Dimensions` + `EpfdType` + `trim_ais_string` helpers; public `sentinel` wire codes and `is_auxiliary_craft_mmsi` (0.2.0, ADR-0001)
 - [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/9/18/19/21/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
-- [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — fragment buffers keyed on `(channel, sequential_id)` for every lookup (0.2.0 fix: continuation fragments used to match on sequential id alone, so the same id live on A and B lost both messages); in-order enforcement; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`feed_fragment_at`/`tick(now_ms)` (caller owns the clock — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
-- [x] **`AisFragmentParser<P>` generic wrapper + `Parser` enum** — mirrors `Nmea0183Parser` pattern; composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `next_message_at(now_ms)` variant drives the reassembler clock for time-based expiry
+- [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — fragment buffers keyed on `(channel, sequential_id)` for every lookup (0.2.0 fix: continuation fragments used to match on sequential id alone, so the same id live on A and B lost both messages); in-order enforcement; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`tick(now_ms)` (caller owns the clock and the reassembler stores the last tick, ADR-0004 — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
+- [x] **`AisFragmentParser<P>` generic wrapper + `Parser` enum** — mirrors `Nmea0183Parser` pattern; composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `tick(now_ms)` passthrough drives the reassembler clock for time-based expiry
 - [x] **cargo-fuzz targets** (PRD §F1) — `ais_armor`, `ais_bit_reader`, `ais_parser`. 15 s smoke runs each: 9 M / 1.5 M / 1.25 M executions, zero panics. `just fuzz-smoke-all` and `just fuzz-release` wrap up the set
 
 ### Remaining (non-blocking)

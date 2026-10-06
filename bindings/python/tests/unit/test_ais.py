@@ -665,6 +665,40 @@ def test_ais_tick_on_auto_raises() -> None:
         p.tick(now_ms=1000)
 
 
+def test_ais_manual_tick_past_timeout_raises_on_next_message() -> None:
+    # Fragment 1 of a 2-fragment message at t=0; the clock then jumps past
+    # the timeout. tick() evicts the partial and the eviction surfaces
+    # as ReassemblyError from the next next_message().
+    p = AisParser.streaming(timeout_ms=1_000, clock="manual")
+    p.tick(now_ms=0)
+    p.feed(aivdm(2, 1, 1, "A", b"XXXXXXX", 0))
+    assert p.next_message() is None
+    p.tick(now_ms=5_000)
+    with pytest.raises(ReassemblyError):
+        p.next_message()
+    assert p.next_message() is None
+
+
+def test_ais_manual_clock_starts_at_zero() -> None:
+    # A fragment fed before the first tick() is stamped 0, so the first
+    # tick past the timeout evicts it: the same result as before 0.2.0.
+    p = AisParser.streaming(timeout_ms=1_000, clock="manual")
+    p.feed(aivdm(2, 1, 1, "A", b"XXXXXXX", 0))
+    assert p.next_message() is None
+    p.tick(now_ms=5_000)
+    with pytest.raises(ReassemblyError):
+        p.next_message()
+
+
+def test_ais_manual_tick_within_timeout_keeps_partial() -> None:
+    p = AisParser.streaming(timeout_ms=10_000, clock="manual")
+    p.tick(now_ms=0)
+    p.feed(aivdm(2, 1, 1, "A", b"XXXXXXX", 0))
+    assert p.next_message() is None
+    p.tick(now_ms=5_000)
+    assert p.next_message() is None
+
+
 def test_ais_reassembly_out_of_order_raises() -> None:
     # Feed part 2 of a 2-fragment message without part 1 — the
     # reassembler emits ReassemblyError (subclass of AisError). Strict

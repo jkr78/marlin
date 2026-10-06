@@ -81,6 +81,22 @@ impl<P> AisFragmentParser<P> {
         &self.reassembler
     }
 
+    /// Advance the reassembler's clock to `now_ms`, evicting partials
+    /// past their TTL. Each eviction surfaces as
+    /// `Err(AisError::ReassemblyTimeout)` from the following
+    /// [`next_message`](Self::next_message) calls, and fragments pulled
+    /// after this call are stamped with `now_ms`.
+    ///
+    /// Only meaningful with an
+    /// [`AisReassembler::with_timeout_ms`](crate::AisReassembler::with_timeout_ms)
+    /// reassembler. `now_ms` is a monotonic millisecond timestamp
+    /// chosen by the caller (e.g. `Instant::now().duration_since(epoch).as_millis()`
+    /// in std, or a platform tick counter in embedded); the crate never
+    /// reads a clock itself (ADR-0004).
+    pub fn tick(&mut self, now_ms: u64) {
+        self.reassembler.tick(now_ms);
+    }
+
     /// Unwrap back to the underlying envelope parser. The reassembler
     /// and any in-flight partials are dropped.
     #[must_use]
@@ -113,7 +129,8 @@ where
     ///   `marlin_nmea_0183::Parser` alongside this one, or strip
     ///   non-AIS traffic before feeding here.
     /// - `Some(Err(AisError::Reassembly...))` — fragment-ordering issue
-    ///   or timeout eviction (see
+    ///   or an eviction (slots full, or past the TTL as of the last
+    ///   [`tick`](Self::tick); see
     ///   [`AisReassembler`](crate::AisReassembler)).
     /// - `Some(Err(..))` — other decoding failures (armor, bit reader,
     ///   payload length).
@@ -121,6 +138,9 @@ where
     ///   [`feed`](Self::feed) with more bytes.
     pub fn next_message(&mut self) -> Option<Result<AisMessage, AisError>> {
         loop {
+            // Evictions queued by the previous feed or by `tick` surface
+            // before the next sentence is pulled, so they are never
+            // reordered past the fragment that follows them.
             if let Some(err) = self.reassembler.take_pending_error() {
                 return Some(Err(err));
             }
@@ -140,56 +160,14 @@ where
             }
         }
     }
-
-    /// Time-aware variant of [`next_message`](Self::next_message).
-    ///
-    /// Before pulling work, advances the reassembler's clock to
-    /// `now_ms` (expiring any partials past their TTL). Fragments
-    /// drained during this call are stamped with `now_ms` so the next
-    /// [`tick`](crate::AisReassembler::tick) measures their age
-    /// correctly.
-    ///
-    /// Use this with an
-    /// [`AisReassembler::with_timeout_ms`](crate::AisReassembler::with_timeout_ms)
-    /// reassembler. `now_ms` is a monotonic millisecond timestamp
-    /// chosen by the caller (e.g. `Instant::now().duration_since(epoch).as_millis()`
-    /// in std, or a platform tick counter in embedded).
-    //
-    // The body duplicates `next_message`'s loop because Rust's HRTB
-    // handling chokes when a `for<'a> SentenceSource<Item<'a> = ...>`-
-    // bounded method calls another such method or function that
-    // shares the bound (rustc emits "P does not live long enough").
-    // Inlining sidesteps the compiler limitation.
-    pub fn next_message_at(&mut self, now_ms: u64) -> Option<Result<AisMessage, AisError>> {
-        self.reassembler.tick(now_ms);
-        loop {
-            if let Some(err) = self.reassembler.take_pending_error() {
-                return Some(Err(err));
-            }
-            let raw = match self.inner.next_sentence() {
-                Some(Ok(r)) => r,
-                Some(Err(e)) => return Some(Err(AisError::from(e))),
-                None => return None,
-            };
-            let header = match parse_aivdm_wrapper(&raw) {
-                Ok(h) => h,
-                Err(e) => return Some(Err(e)),
-            };
-            match self.reassembler.feed_fragment_at(&header, now_ms) {
-                Ok(Some(assembled)) => return Some(finish_assembled(&assembled)),
-                Ok(None) => {}
-                Err(e) => return Some(Err(e)),
-            }
-        }
-    }
 }
 
 /// Decode a reassembled armored payload into a typed [`AisMessage`].
 ///
-/// Factored out of `next_message` / `next_message_at` so the duplicated
-/// loop bodies share the completion tail. The tail takes only concrete
-/// types (no HRTB), so extracting it sidesteps the nested-HRTB compiler
-/// limitation that forced the loop itself to stay inlined.
+/// Takes only concrete types (no HRTB), so `next_message` can call it:
+/// rustc rejects a `for<'a> SentenceSource<Item<'a> = RawSentence<'a>>`-
+/// bounded method that calls another function sharing the bound
+/// ("P does not live long enough").
 fn finish_assembled(assembled: &ReassembledPayload) -> Result<AisMessage, AisError> {
     let (bits, total_bits) = armor::decode(&assembled.payload, assembled.fill_bits)?;
     decode_message(&bits, total_bits, assembled.is_own_ship)
@@ -249,21 +227,21 @@ impl Parser {
         }
     }
 
+    /// Advance the reassembler's clock. See
+    /// [`AisFragmentParser::tick`].
+    pub fn tick(&mut self, now_ms: u64) {
+        match self {
+            Self::OneShot(p) => p.tick(now_ms),
+            Self::Streaming(p) => p.tick(now_ms),
+        }
+    }
+
     /// Pull the next typed AIS message. See
     /// [`AisFragmentParser::next_message`] for the full semantics.
     pub fn next_message(&mut self) -> Option<Result<AisMessage, AisError>> {
         match self {
             Self::OneShot(p) => p.next_message(),
             Self::Streaming(p) => p.next_message(),
-        }
-    }
-
-    /// Time-aware variant of [`next_message`](Self::next_message). See
-    /// [`AisFragmentParser::next_message_at`].
-    pub fn next_message_at(&mut self, now_ms: u64) -> Option<Result<AisMessage, AisError>> {
-        match self {
-            Self::OneShot(p) => p.next_message_at(now_ms),
-            Self::Streaming(p) => p.next_message_at(now_ms),
         }
     }
 }
@@ -631,47 +609,67 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Time-aware wrapper API: next_message_at drives reassembler clock
+    // Clock: tick drives the reassembler's TTL, next_message surfaces it
     // -----------------------------------------------------------------
 
     #[test]
-    fn next_message_at_expires_stale_partial() {
+    fn tick_evicts_stale_partial_and_next_message_surfaces_it() {
         let inner = Streaming::new();
         let reasm = AisReassembler::with_timeout_ms(16, 1_000);
         let mut p = AisFragmentParser::with_reassembler(inner, reasm);
 
         // First fragment of a 2-fragment message at t=0.
+        p.tick(0);
         p.feed(&build_aivdm(2, 1, Some(1), Some(b'A'), b"aa", 0));
         p.feed(b"\r\n");
-        assert!(p.next_message_at(0).is_none());
+        assert!(p.next_message().is_none());
         assert_eq!(p.reassembler().in_flight(), 1);
 
-        // Time jumps past the timeout without fragment 2 arriving.
-        // next_message_at first ticks, which expires the partial,
-        // then returns the queued ReassemblyTimeout.
-        match p.next_message_at(5_000).unwrap() {
+        // Time jumps past the timeout without fragment 2 arriving: the
+        // tick evicts the partial, the next poll returns the queued
+        // ReassemblyTimeout.
+        p.tick(5_000);
+        assert_eq!(p.reassembler().in_flight(), 0);
+        match p.next_message().unwrap() {
             Err(AisError::ReassemblyTimeout) => {}
             other => panic!("expected ReassemblyTimeout, got {other:?}"),
         }
-        assert_eq!(p.reassembler().in_flight(), 0);
+        assert!(p.next_message().is_none());
     }
 
     #[test]
-    fn next_message_at_does_not_expire_within_timeout() {
+    fn tick_within_timeout_keeps_partial() {
         let inner = Streaming::new();
         let reasm = AisReassembler::with_timeout_ms(16, 10_000);
         let mut p = AisFragmentParser::with_reassembler(inner, reasm);
 
         // Two-fragment message that arrives slowly but within the
         // timeout window.
+        p.tick(0);
         p.feed(&build_aivdm(2, 1, Some(2), Some(b'A'), TYPE5_FRAG_A, 0));
         p.feed(b"\r\n");
-        assert!(p.next_message_at(0).is_none());
+        assert!(p.next_message().is_none());
 
+        // Time advanced 5s — still under the 10s TTL.
+        p.tick(5_000);
         p.feed(&build_aivdm(2, 2, Some(2), Some(b'A'), TYPE5_FRAG_B, 2));
         p.feed(b"\r\n");
-        // Time advanced 5s — still under the 10s TTL.
-        let msg = p.next_message_at(5_000).unwrap().unwrap();
+        let msg = p.next_message().unwrap().unwrap();
         assert!(matches!(msg.body, AisMessageBody::Type5(_)));
+    }
+
+    #[test]
+    fn parser_enum_tick_evicts_stale_partial() {
+        let reasm = AisReassembler::with_timeout_ms(16, 1_000);
+        let mut p = Parser::Streaming(AisFragmentParser::with_reassembler(Streaming::new(), reasm));
+        p.tick(0);
+        p.feed(&build_aivdm(2, 1, Some(1), Some(b'A'), b"aa", 0));
+        p.feed(b"\r\n");
+        assert!(p.next_message().is_none());
+        p.tick(5_000);
+        match p.next_message().unwrap() {
+            Err(AisError::ReassemblyTimeout) => {}
+            other => panic!("expected ReassemblyTimeout, got {other:?}"),
+        }
     }
 }
