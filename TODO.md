@@ -8,6 +8,18 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Compile-test the crate README examples
+  No crate README is doctested: none is embedded with `include_str!`, so
+  a README example can drift from the API without CI noticing. The
+  missing nmea-0183 README quickstart was found by review, not by a
+  build. The runtime source-mode examples in the envelope, nmea-0183 and
+  ais READMEs deliberately use undefined names (`transport_is_udp`,
+  `bytes`), so the fix is `#![doc = include_str!("../README.md")]` with
+  `ignore` fences on the illustrative blocks, or a README doctest harness
+  that skips them. Embedding would also retire the nmea-0183 crate docs'
+  link to the README on `main`, which a docs.rs reader of an older
+  version follows to newer text. May not be worth it while the READMEs
+  stay this small. [docs][draft]
 - [ ] Expose the TAG block checksum status on RawSentence
   The envelope accepts a sentence whose TAG block checksum mismatches
   (ADR-0006) and reports it only as a `tracing` debug event, and only with
