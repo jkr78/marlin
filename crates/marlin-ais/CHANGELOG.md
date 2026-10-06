@@ -85,6 +85,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   instead.
 - `AisError::UnknownMessageType` removed: it was never emitted; unrouted
   message types surface as `AisMessageBody::Other`.
+- The reassembly clock is reassembler state (ADR-0004).
+  `AisReassembler::tick(now_ms)` now also stores `now_ms`, and
+  `feed_fragment` stamps the partial it touches with the last ticked
+  time; `feed_fragment_at` is removed. `AisFragmentParser` and `Parser`
+  gain `tick(now_ms)` and lose `next_message_at`: replace
+  `p.next_message_at(t)` with `p.tick(t); p.next_message()`. A partial
+  opened before the first tick has no stamp and is retired only by the
+  slot cap, as unstamped partials were before.
 
 ## [0.1.4] - 2026-07-07
 

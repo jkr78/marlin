@@ -100,6 +100,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `AisParser.tick(now_ms)` evicts reassembly partials past their timeout
+  at once instead of on the next `next_message()`; each eviction still
+  surfaces as a `ReassemblyError` from a later `next_message()`, and the
+  manual clock still starts at 0, so callers see the same sequence of
+  results. The binding no longer keeps its own copy of the manual clock
+  (`marlin-ais` ADR-0004).
 - The stub for the private `marlin._core` extension module no longer
   repeats every class. It keeps `__version__` and the exception classes
   and types the `envelope`, `nmea`, `ais`, and `klv` submodules as `Any`.

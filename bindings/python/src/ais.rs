@@ -1695,11 +1695,17 @@ impl ClockMode {
     }
 }
 
-fn build_reassembler(timeout_ms: Option<u64>) -> AisReassembler {
-    match timeout_ms {
-        Some(t) => AisReassembler::with_timeout_ms(DEFAULT_MAX_PARTIALS, t),
-        None => AisReassembler::with_max_partials(DEFAULT_MAX_PARTIALS),
+fn build_reassembler(timeout_ms: Option<u64>, clock_mode: ClockMode) -> AisReassembler {
+    let Some(t) = timeout_ms else {
+        return AisReassembler::with_max_partials(DEFAULT_MAX_PARTIALS);
+    };
+    let mut reassembler = AisReassembler::with_timeout_ms(DEFAULT_MAX_PARTIALS, t);
+    if clock_mode == ClockMode::Manual {
+        // The manual clock starts at 0, as it always has, so a fragment
+        // fed before the first `tick()` is stamped 0 and still times out.
+        reassembler.tick(0);
     }
+    reassembler
 }
 
 /// Internal mode-enum so the HRTB generic on `AisFragmentParser<P>` doesn't
@@ -1721,18 +1727,19 @@ enum AisInner {
 /// AIS parser with multi-fragment reassembly and selectable clock source.
 ///
 /// Three clock modes:
-/// - `timeout_ms=None`: no eviction; clock is never read.
-/// - `timeout_ms=Some(t), clock="auto"` (default): reads `time.monotonic_ns`
-///   every `next_message()` call.
-/// - `timeout_ms=Some(t), clock="manual"`: uses `manual_now_ms` (set via
-///   `tick(now_ms=...)`). Never touches Python's `time` module. Enables
-///   deterministic replay of historical data.
+/// - `timeout_ms=None`: no eviction; the reassembler's clock is never
+///   advanced.
+/// - `timeout_ms=t, clock="auto"` (default): reads `time.monotonic_ns`
+///   and ticks the reassembler at the start of every `next_message()` call.
+/// - `timeout_ms=t, clock="manual"`: the caller ticks the reassembler
+///   through `tick(now_ms=...)`; the clock starts at 0. Never touches
+///   Python's `time` module. Enables deterministic replay of historical
+///   data.
 #[pyclass(name = "AisParser", module = "marlin.ais")]
 pub struct PyAisParser {
     inner: AisInner,
     clock_mode: ClockMode,
     timeout_ms: Option<u64>,
-    manual_now_ms: u64,
 }
 
 #[pymethods]
@@ -1741,13 +1748,12 @@ impl PyAisParser {
     #[pyo3(signature = (timeout_ms = None, clock = None))]
     fn one_shot(timeout_ms: Option<u64>, clock: Option<&str>) -> PyResult<Self> {
         let clock_mode = ClockMode::parse(clock)?;
-        let reassembler = build_reassembler(timeout_ms);
+        let reassembler = build_reassembler(timeout_ms, clock_mode);
         let frag = AisFragmentParser::with_reassembler(OneShot::new(), reassembler);
         Ok(Self {
             inner: AisInner::OneShot(frag),
             clock_mode,
             timeout_ms,
-            manual_now_ms: 0,
         })
     }
 
@@ -1755,14 +1761,13 @@ impl PyAisParser {
     #[pyo3(signature = (timeout_ms = None, clock = None, max_size = DEFAULT_MAX_SIZE))]
     fn streaming(timeout_ms: Option<u64>, clock: Option<&str>, max_size: usize) -> PyResult<Self> {
         let clock_mode = ClockMode::parse(clock)?;
-        let reassembler = build_reassembler(timeout_ms);
+        let reassembler = build_reassembler(timeout_ms, clock_mode);
         let frag =
             AisFragmentParser::with_reassembler(Streaming::with_capacity(max_size), reassembler);
         Ok(Self {
             inner: AisInner::Streaming(frag),
             clock_mode,
             timeout_ms,
-            manual_now_ms: 0,
         })
     }
 
@@ -1773,12 +1778,10 @@ impl PyAisParser {
         }
     }
 
-    /// Manual-clock tick — stash `now_ms` for the next `next_message()`.
+    /// Manual-clock tick — advance the reassembler's clock to `now_ms`.
     ///
-    /// Eviction of expired reassembly partials is **deferred** until the
-    /// next `next_message()` call (which forwards `manual_now_ms` to
-    /// `next_message_at`). `tick()` on its own does not touch the
-    /// reassembler; it only updates the wrapper's stored clock value.
+    /// Partials last touched more than `timeout_ms` ago are evicted here; each eviction
+    /// surfaces as a `ReassemblyError` from a later `next_message()` call.
     ///
     /// Only valid when the parser was built with `clock="manual"`.
     /// Raises `ValueError` otherwise.
@@ -1788,7 +1791,7 @@ impl PyAisParser {
                 "tick() is only valid when clock=\"manual\"",
             ));
         }
-        self.manual_now_ms = now_ms;
+        self.tick_inner(now_ms);
         Ok(())
     }
 
@@ -1796,10 +1799,12 @@ impl PyAisParser {
     /// is yet buffered, or raise `AisError` / `ReassemblyError` /
     /// `EnvelopeError` on decode or reassembly failure.
     fn next_message(&mut self, py: Python<'_>) -> PyResult<Option<PyAisMessage>> {
-        let now = self.current_time_ms(py)?;
+        if let Some(now) = self.auto_time_ms(py)? {
+            self.tick_inner(now);
+        }
         let result = match &mut self.inner {
-            AisInner::OneShot(p) => p.next_message_at(now),
-            AisInner::Streaming(p) => p.next_message_at(now),
+            AisInner::OneShot(p) => p.next_message(),
+            AisInner::Streaming(p) => p.next_message(),
         };
         match result {
             None => Ok(None),
@@ -1844,20 +1849,23 @@ impl PyAisParser {
 }
 
 impl PyAisParser {
-    fn current_time_ms(&self, py: Python<'_>) -> PyResult<u64> {
-        // When timeout is None, the reassembler ignores `now` (no eviction
-        // logic runs); any sentinel value works and we skip the time read.
-        if self.timeout_ms.is_none() {
-            return Ok(0);
+    fn tick_inner(&mut self, now_ms: u64) {
+        match &mut self.inner {
+            AisInner::OneShot(p) => p.tick(now_ms),
+            AisInner::Streaming(p) => p.tick(now_ms),
         }
-        match self.clock_mode {
-            ClockMode::Manual => Ok(self.manual_now_ms),
-            ClockMode::Auto => {
-                let time_mod = py.import("time")?;
-                let ns: u64 = time_mod.getattr("monotonic_ns")?.call0()?.extract()?;
-                Ok(ns / 1_000_000)
-            }
+    }
+
+    /// The monotonic clock reading an auto-clock `next_message()` ticks
+    /// with; `None` when there is nothing to tick for (no timeout, or
+    /// the caller drives the clock through `tick()`).
+    fn auto_time_ms(&self, py: Python<'_>) -> PyResult<Option<u64>> {
+        if self.timeout_ms.is_none() || self.clock_mode == ClockMode::Manual {
+            return Ok(None);
         }
+        let time_mod = py.import("time")?;
+        let ns: u64 = time_mod.getattr("monotonic_ns")?.call0()?.extract()?;
+        Ok(Some(ns / 1_000_000))
     }
 }
 
