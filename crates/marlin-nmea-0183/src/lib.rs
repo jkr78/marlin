@@ -36,15 +36,13 @@
 //! # Quickstart
 //!
 //! ```
-//! use marlin_nmea_envelope::{OneShot, SentenceSource};
-//! use marlin_nmea_0183::{decode, Nmea0183Message};
+//! use marlin_nmea_0183::{Nmea0183Message, Nmea0183Parser, Streaming};
 //!
 //! // Classic NMEA 0183 GGA example (checksum 0x47 = XOR of body bytes).
-//! let mut parser = OneShot::new();
-//! parser.feed(b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47");
+//! let mut parser = Nmea0183Parser::new(Streaming::new());
+//! parser.feed(b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n");
 //!
-//! let raw = parser.next_sentence().unwrap().unwrap();
-//! match decode(&raw).unwrap() {
+//! match parser.next_message().unwrap().unwrap() {
 //!     Nmea0183Message::Gga(gga) => {
 //!         assert_eq!(gga.talker, Some(*b"GP"));
 //!         assert_eq!(gga.satellites_used, Some(8));
@@ -53,13 +51,19 @@
 //! }
 //! ```
 //!
+//! [`Streaming`] and [`OneShot`] are the two source modes. To choose
+//! one at runtime, wrap [`Parser`], the envelope's source-mode enum.
+//! [`Nmea0183Parser::with_options`] takes the [`DecodeOptions`] for
+//! the strict-by-default decoding of the proprietary sentences (PSXN
+//! layout, PRDID dialect).
+//!
 //! # Extension
 //!
 //! Each sentence type has a **public** per-sentence decoder
 //! ([`decode_gga`], [`decode_hdt`], …). Downstream crates that need
 //! proprietary sentences this crate doesn't decode can build their own
 //! enum and delegate to these decoders. See the crate
-//! [README](https://docs.rs/marlin-nmea-0183/latest/marlin_nmea_0183)
+//! [README](https://github.com/jkr78/marlin/blob/main/crates/marlin-nmea-0183/README.md)
 //! for a full example.
 //!
 //! # Policy

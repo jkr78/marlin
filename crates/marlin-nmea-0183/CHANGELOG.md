@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - The Cargo description and the crate-level docs now list every
   decoded sentence. GLL, RMC, HDG, TTM, and TLL were missing.
+- The README and the crate-level quickstart build `Nmea0183Parser`
+  over a source, as the marlin-ais docs do, and show `Parser` for a
+  source mode chosen at runtime and `with_options` for the
+  proprietary-sentence settings. The README used to show only the
+  per-sentence decoders. The crate docs' README link pointed back at
+  the crate docs; it now points at the repository README.
 
 ## [0.1.4] - 2026-07-07
 

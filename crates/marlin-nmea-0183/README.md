@@ -21,6 +21,45 @@ Typed decoders for NMEA 0183 sentences. Built on top of
 (`__` is the 2-byte talker ID — `GP`, `IN`, `GN`, etc. The decoder
 doesn't dispatch on talker; it's preserved as metadata.)
 
+## Quickstart
+
+```rust
+use marlin_nmea_0183::{Nmea0183Message, Nmea0183Parser, Streaming};
+
+let mut parser = Nmea0183Parser::new(Streaming::new());
+parser.feed(b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n");
+
+while let Some(result) = parser.next_message() {
+    match result {
+        Ok(Nmea0183Message::Gga(gga)) => {
+            println!("fix at {:?}, {:?}", gga.latitude_deg, gga.longitude_deg);
+        }
+        Ok(_) => {}
+        Err(err) => eprintln!("skipped: {err}"),
+    }
+}
+```
+
+`Streaming` is the source mode for byte streams (TCP, serial).
+`OneShot` is the one-shot source mode, for datagrams: one sentence per
+`feed`, no trailing `\r\n` needed. To pick the source mode at runtime,
+wrap `Parser`, the envelope's mode enum, which this crate re-exports.
+`with_options` configures the strict-by-default decoding of the
+proprietary sentences (PSXN layout, PRDID dialect):
+
+```rust
+use marlin_nmea_0183::{DecodeOptions, Nmea0183Parser, Parser, PrdidDialect};
+
+let source = if transport_is_udp {
+    Parser::one_shot()
+} else {
+    Parser::streaming()
+};
+let options = DecodeOptions::default()
+    .with_prdid_dialect(PrdidDialect::PitchRollHeading);
+let mut parser = Nmea0183Parser::with_options(source, options);
+```
+
 ## What this crate adds over the envelope
 
 - **Typed structs** (`GgaData`, `VtgData`, …) with decoded numeric
