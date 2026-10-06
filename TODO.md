@@ -24,8 +24,8 @@ track deliverables (not conversational state).
   no other home (advisory TAG block checksum, saturating past-end bit reads)
   as ADRs. Enforced at review, not by a committed check, which would have to
   name the documents itself. Landed: ADR-0006 and ADR-0007, the glossary
-  tracked, every mention restated or dropped. Ignore-file pattern lines may
-  still name the files they ignore. [docs]
+  tracked, every mention restated or dropped, and `.gitignore` no longer
+  names agent files that the local exclude list already covers. [docs]
 - [ ] Report slot-full eviction under its own error, not ReassemblyTimeout
   `AisReassembler::open_partial` queues `AisError::ReassemblyTimeout` when
   the slot cap evicts the oldest partial, although no time passed. The two
