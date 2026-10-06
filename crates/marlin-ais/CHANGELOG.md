@@ -163,7 +163,7 @@ adds the new `marlin-klv` crate (MISB ST 0601 KLV encoder/decoder).
   (`armor::decode`, `armor::decode_char`)
 - `BitReader<'a>` with width-aware unsigned, two's-complement signed,
   boolean, and AIS-Table-47 string readers; past-end reads yield
-  saturating zeros (panic-free contract, PRD §T5)
+  saturating zeros (panic-free contract)
 - `AivdmHeader` and `parse_aivdm_wrapper` — fragment count, sequential
   id, channel, payload, fill bits; `is_own_ship` distinguishes `!AIVDM`
   from `!AIVDO`
@@ -184,7 +184,7 @@ adds the new `marlin-klv` crate (MISB ST 0601 KLV encoder/decoder).
   enum. Top-level `decode_message(bits, total_bits, is_own_ship)`
   primitive and `decode(&RawSentence)` single-fragment convenience.
   Unrouted types surface as `Other { msg_type, raw_payload, total_bits }`
-- `AisReassembler` (PRD §A5) — per-channel per-sequential-id buffers,
+- `AisReassembler` — per-channel per-sequential-id buffers,
   in-order enforcement, channel-mismatch detection, bounded-slot eviction
   (`DEFAULT_MAX_PARTIALS = 16`), and optional clock-based TTL via
   `with_timeout_ms` / `feed_fragment_at` / `tick(now_ms)`. The caller

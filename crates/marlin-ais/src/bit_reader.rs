@@ -11,7 +11,7 @@
 //! are padding the reader must not consume).
 //!
 //! Reading past `total_bits` yields **saturating zeros** — consistent
-//! with this crate's panic-free contract (PRD §Q3). Callers that need
+//! with this crate's panic-free contract (ADR-0007). Callers that need
 //! to detect underrun inspect [`BitReader::remaining`] before or after
 //! a read.
 
@@ -158,7 +158,7 @@ impl<'a> BitReader<'a> {
 }
 
 // ---------------------------------------------------------------------------
-// Tests (PRD §T5)
+// Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -235,7 +235,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Signed reads — the single most error-prone area (PRD §A2)
+    // Signed reads — the single most error-prone area
     // -----------------------------------------------------------------
 
     #[test]
@@ -334,7 +334,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Past-end behavior: saturating zero (PRD §T5 implementer's choice)
+    // Past-end behavior: saturating zero (ADR-0007)
     // -----------------------------------------------------------------
 
     #[test]

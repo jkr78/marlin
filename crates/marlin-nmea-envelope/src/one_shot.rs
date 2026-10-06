@@ -16,7 +16,7 @@ use crate::{parser, Error, RawSentence, SentenceSource};
 ///
 /// Once `next_sentence` returns `Some(_)`, the internal buffer is marked as
 /// consumed; the next `feed` clears it and begins accumulating a fresh
-/// sentence. This matches PRD §E5.
+/// sentence.
 ///
 /// See [`Streaming`](crate::Streaming) for the byte-stream (TCP / serial)
 /// counterpart, and [`Parser`](crate::Parser) for a source mode chosen
@@ -237,7 +237,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Terminator variants (PRD T3: CRLF, LF, CR, none)
+    // Terminator variants (CRLF, LF, CR, none)
     // -----------------------------------------------------------------
 
     #[test]
@@ -274,7 +274,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Checksum handling (PRD E2: case-insensitive hex; bad checksum is Err)
+    // Checksum handling (case-insensitive hex; bad checksum is Err)
     // -----------------------------------------------------------------
 
     #[test]
@@ -375,7 +375,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Multi-feed accumulation (PRD E5)
+    // Multi-feed accumulation
     // -----------------------------------------------------------------
 
     #[test]
@@ -440,7 +440,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // TAG block handling (PRD E4, decision 7)
+    // TAG block handling (ADR-0006)
     // -----------------------------------------------------------------
 
     #[test]
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn one_shot_accepts_tag_block_with_invalid_tag_checksum() {
-        // PRD decision 7: bad TAG checksum is advisory, not fatal.
+        // ADR-0006: a bad TAG block checksum is advisory, not fatal.
         let bytes = build_with_bad_tag_checksum(b"c:12345", b"GPGGA,1,2,3");
         let mut parser = OneShot::new();
         parser.feed(&bytes);

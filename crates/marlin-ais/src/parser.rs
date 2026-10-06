@@ -398,9 +398,9 @@ mod tests {
 
     #[test]
     fn streaming_same_sequence_id_on_both_channels_completes_both() {
-        // Spec §6.5 reproduction, end to end: (1,A), (1,B), (2,B), (2,A)
-        // with the same sequential id yield two Type 5 messages and no
-        // errors.
+        // Regression for the 0.2.0 reassembly-key fix, end to end:
+        // (1,A), (1,B), (2,B), (2,A) with the same sequential id yield two
+        // Type 5 messages and no errors.
         let mut p = AisFragmentParser::new(Streaming::new());
         let frags = [
             build_aivdm(2, 1, Some(7), Some(b'A'), TYPE5_FRAG_A, 0),

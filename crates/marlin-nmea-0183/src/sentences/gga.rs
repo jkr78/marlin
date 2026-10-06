@@ -9,9 +9,9 @@ use super::UtcTime;
 
 /// Decoded fields of a `$__GGA` sentence.
 ///
-/// The talker ID is preserved so `$GPGGA`, `$INGGA`, and `$GNGGA` all
+/// The talker is preserved so `$GPGGA`, `$INGGA`, and `$GNGGA` all
 /// decode to `GgaData` with distinct [`talker`](Self::talker) values —
-/// per PRD §D6, talker is source metadata, not dispatch.
+/// the talker is source metadata, not dispatch.
 ///
 /// Empty NMEA fields decode to `None`. This is semantically distinct
 /// from zero and must not be conflated — a receiver that cannot compute
@@ -132,7 +132,7 @@ pub fn decode_gga(raw: &RawSentence<'_>) -> Result<GgaData, DecodeError> {
         });
     }
 
-    // PRD §D2: empty-means-None must propagate through the whole row.
+    // Empty-means-None must propagate through the whole row.
     let utc = if f[0].is_empty() {
         None
     } else {

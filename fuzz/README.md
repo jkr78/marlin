@@ -21,7 +21,7 @@ cargo +nightly fuzz run ais_parser     -- -max_total_time=60
 # Via just:
 just fuzz envelope 60
 just fuzz-smoke-all            # 30 s each target (~ 2 min total)
-just fuzz-release              # one CPU-hour per target (PRD §F2)
+just fuzz-release              # one CPU-hour per target, before a release
 ```
 
 ## Targets
@@ -35,7 +35,7 @@ just fuzz-release              # one CPU-hour per target (PRD §F2)
 
 Targets for `marlin-nmea-0183` land when the crate needs dedicated
 coverage beyond what's exercised via `envelope` + the typed NMEA
-decoders' unit tests (PRD §8.3).
+decoders' unit tests.
 
 ## What is being fuzzed
 

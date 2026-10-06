@@ -201,7 +201,7 @@ def test_unknown_round_trip() -> None:
     from marlin.envelope import StreamingParser
     from marlin.nmea import decode
 
-    # GSV is still un-typed (PRD §11 deferred); RMC and GLL would route
+    # GSV is still un-typed; RMC and GLL would route
     # to their typed variants now.
     gsv_bytes = b"$GPGSV,3,1,11,18,87,050,48,22,56,250,49,21,55,122,49,03,40,284,47*78\r\n"
     p = StreamingParser()

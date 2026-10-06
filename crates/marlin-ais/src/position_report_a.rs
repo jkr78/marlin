@@ -448,7 +448,7 @@ mod tests {
 
     // -----------------------------------------------------------------
     // Positive (northern + eastern) and negative (southern + western)
-    // coordinates — PRD §A4 sign-handling requirement
+    // coordinates — sign handling
     // -----------------------------------------------------------------
 
     #[test]
@@ -547,7 +547,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Rate of turn — PRD §A2 (signed decoding is the single most
+    // Rate of turn (signed decoding is the single most
     // error-prone area)
     // -----------------------------------------------------------------
 

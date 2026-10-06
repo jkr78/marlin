@@ -14,7 +14,7 @@ target
 **/mutants.out*/
 
 # cargo-fuzz runtime artifacts. The persistent regression corpus lives
-# at fuzz/seeds/ (PRD §F3); fuzz/corpus/ is the libfuzzer working set
+# at fuzz/seeds/; fuzz/corpus/ is the libfuzzer working set
 # and is re-seeded from fuzz/seeds/ on every `just fuzz` run.
 fuzz/artifacts/
 fuzz/corpus/

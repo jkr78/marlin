@@ -81,7 +81,7 @@ fuzz-lint:
 # Bootstrap the libfuzzer working corpus from the persistent regression
 # seeds at fuzz/seeds/<target>/. Idempotent: cp -n preserves any better
 # minimizations libfuzzer may have produced since the seed was curated.
-# Auto-invoked by `just fuzz`. PRD §F3.
+# Auto-invoked by `just fuzz`.
 fuzz-bootstrap target="envelope":
     @mkdir -p fuzz/corpus/{{target}}
     @cp -n fuzz/seeds/{{target}}/* fuzz/corpus/{{target}}/ 2>/dev/null || :
@@ -102,7 +102,7 @@ fuzz-smoke-all:
     @just fuzz ais_parser 30
 
 # Long-form fuzz run (one CPU-hour per target) — required before a
-# release per PRD §F2.
+# release.
 fuzz-release:
     @just fuzz envelope 3600
     @just fuzz ais_armor 3600

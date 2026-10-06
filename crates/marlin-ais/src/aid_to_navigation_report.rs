@@ -681,7 +681,7 @@ mod tests {
     /// joined name, so the embedded `@` in the raw 20-character field
     /// survives and the name is `IBC G BUOY@?????????`. gpsd stops at
     /// the first `@` and reports `IBC G BUOY`; that is a presentation
-    /// choice this decoder deliberately does not make (design spec §3.6).
+    /// choice this decoder deliberately does not make.
     #[test]
     fn gpsd_vector_t21_2_overlong() {
         let mut p = AisFragmentParser::new(Streaming::new());

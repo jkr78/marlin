@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Parse a captured NMEA log from disk using StreamingParser.
 
-Python analogue of the example in PRD §10 deliverable 7, item 1.
 Rust counterpart: (none yet — examples are a pre-release deliverable.)
 """
 

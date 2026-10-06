@@ -91,7 +91,7 @@ fn golden_aivdm_encapsulation() {
 }
 
 // ---------------------------------------------------------------------------
-// 04: $GPRMC with lowercase hex checksum (PRD §E2)
+// 04: $GPRMC with lowercase hex checksum
 // ---------------------------------------------------------------------------
 const RMC_LOWERCASE: &[u8] = include_bytes!("fixtures/04_rmc_lowercase_checksum.nmea");
 

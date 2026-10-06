@@ -2,7 +2,7 @@
 
 This directory holds a small set of libfuzzer-discovered inputs that
 must continue to parse without panic on every release. It is the
-regression corpus called for in PRD §F3.
+regression corpus.
 
 ## What lives here
 

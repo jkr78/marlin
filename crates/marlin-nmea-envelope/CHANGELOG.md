@@ -54,7 +54,7 @@ fixes a Type 24 Part A floor in the AIS crate.
   - `OneShot` for datagram transports (UDP)
   - `Streaming` for byte-stream transports (TCP, serial)
 - `Parser` runtime-dispatch enum that avoids `Box<dyn SentenceSource>`
-- TAG block parsing with advisory-only checksum (PRD decision 7); the
+- TAG block parsing with advisory-only checksum; the
   wrapped sentence still surfaces with its own checksum status
 - Proprietary-sentence detection: `$P…` sets `talker = None` and packs
   the full address into `sentence_type`

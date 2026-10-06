@@ -32,7 +32,7 @@ use crate::{
 /// A fully decoded AIS message with envelope metadata.
 ///
 /// The payload sits in `body`; `is_own_ship` carries the `!AIVDM` vs
-/// `!AIVDO` distinction from the envelope (PRD §A7). The split exists
+/// `!AIVDO` distinction from the envelope. The split exists
 /// because the two pieces have different sources — `body` is
 /// bit-level decode, `is_own_ship` is a wrapper-tag boolean — and
 /// because any other envelope metadata (channel, fragment count)
@@ -55,7 +55,8 @@ pub struct AisMessage {
 /// without a breaking change. Types this crate does not yet decode
 /// are surfaced as [`Self::Other`] with the raw bit buffer preserved.
 ///
-/// See PRD §5.3 for the normative list of variants targeted by v0.1.
+/// The decoded types are listed on each variant below and in the crate
+/// README's message-type table.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum AisMessageBody {

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Parse a TCP-style byte stream where sentences may straddle feed() boundaries.
 
-Python analogue of PRD §10 deliverable 7, item 3 — Streaming mode demo.
 Demonstrates: a real TCP receiver gets bytes in arbitrary chunks; the
 parser reassembles cross-chunk sentences correctly.
 """

@@ -92,16 +92,13 @@
 //!   garbage, buffer overflows, and TAG block checksum mismatches. Add a
 //!   subscriber in the host application to see them.
 //!
-//! # Specification
-//!
-//! The normative requirements are in `.docs/prd.txt` §5.1. Key
-//! architectural decisions (§9) relevant to this crate:
+//! # Architectural commitments
 //!
 //! - Sans-I/O: no sockets, no runtime, no file handles.
 //! - One parser core shared by both modes.
 //! - `complete` nom parsers only — no `Err::Incomplete` propagation.
 //! - Zero-copy borrows; no allocation on the sentence hot path.
-//! - TAG block checksum mismatches are advisory, not fatal (decision 7).
+//! - TAG block checksum mismatches are advisory, not fatal (ADR-0006).
 
 #![no_std]
 

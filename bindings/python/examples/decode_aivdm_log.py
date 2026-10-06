@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Decode a captured AIVDM log into AIS messages.
 
-Python analogue of PRD §10 deliverable 7, item 4. Demonstrates:
+Demonstrates:
  - single-fragment Type 1 (position report A)
  - multi-fragment Type 5 (static + voyage data) reassembly
 """

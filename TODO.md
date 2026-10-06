@@ -8,6 +8,24 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Expose the TAG block checksum status on RawSentence
+  The envelope accepts a sentence whose TAG block checksum mismatches
+  (ADR-0006) and reports it only as a `tracing` debug event, and only with
+  that feature on. `RawSentence::tag_block` carries the content without its
+  `*hh`, so a strict caller cannot re-check it. Add a `tag_block_checksum_ok`
+  flag or surface the `*hh` so callers can reject or log on their own terms.
+  Non-breaking if added as a new field behind the existing shape. [envelope][draft]
+- [x] Stop tracked docs from mentioning untracked documents **DONE 2026-10-06**
+  Sixty rustdoc, README, test, tooling and example comments cite the local
+  requirements document by section, two test comments cite local design
+  specs, and TODO.md cites local tickets and the glossary. None of those
+  documents are in git, so no reader of the repository can follow them. Drop
+  or restate each, track the glossary, record the two rationales that have
+  no other home (advisory TAG block checksum, saturating past-end bit reads)
+  as ADRs. Enforced at review, not by a committed check, which would have to
+  name the documents itself. Landed: ADR-0006 and ADR-0007, the glossary
+  tracked, every mention restated or dropped. Ignore-file pattern lines may
+  still name the files they ignore. [docs]
 - [ ] Report slot-full eviction under its own error, not ReassemblyTimeout
   `AisReassembler::open_partial` queues `AisError::ReassemblyTimeout` when
   the slot cap evicts the oldest partial, although no time passed. The two
@@ -26,7 +44,7 @@ track deliverables (not conversational state).
   that way too, and the glossary has no term for it. Decide the term for the
   outer message first (keep "wrapper" with a glossary entry, or pick another),
   then reword. Only the four module headers are clear misuses today, so this
-  may need no more than those four lines. Found by the py-field-once ticket 03
+  may need no more than those four lines. Found during the py-field-once review
   review. [docs][draft]
 - [ ] Generate each binding class from one field list
   A field of a binding class is written 5 times in `bindings/python/src/ais.rs`
@@ -51,17 +69,16 @@ track deliverables (not conversational state).
   are private and absent at runtime. May not need fixing: users iterate these
   objects and never name them, so nothing breaks today. A fix picks the
   Python-visible name in `#[pyclass(name = ...)]`, matches the stubs to it, and
-  rebuilds the extension. Found by the py-field-once ticket 01 review. [py][draft]
+  rebuilds the extension. Found by the py-field-once review. [py][draft]
 - [x] Write each Python message field once per layer **DONE 2026-10-03**
-  Candidate 1 of the 2026-10-03 architecture review; spec and tickets in
-  `.scratch/py-field-once/`. A field was written about 11 times across three
+  Candidate 1 of the 2026-10-03 architecture review. A field was written about 11 times across three
   layers. What landed: the public stubs are checked against the runtime by
-  `mypy.stubtest` (ticket 01, card below); `marlin.dataclasses` converts with
+  `mypy.stubtest` (card below); `marlin.dataclasses` converts with
   one generic converter that pairs a binding class with the dataclass mirror
   of the same name, guarded by
   `bindings/python/tests/unit/test_dataclass_agreement.py`, so adding a message
-  there is one dataclass and one `__all__` entry (ticket 02); docs and comments
-  say "binding class" and "dataclass mirror" (ticket 03). Not done: the binding
+  there is one dataclass and one `__all__` entry; docs and comments
+  say "binding class" and "dataclass mirror". Not done: the binding
   class still writes each field 5 times (card above), and the stubs stay
   hand-written because no stub generator fits (PyO3's is experimental and
   rejects function-declared modules, `pyo3-stub-gen` needs Python 3.10 against
@@ -78,8 +95,7 @@ track deliverables (not conversational state).
   them positionally; the stubs now follow the runtime. The allowlist has two
   entries: `marlin.ais.ClockMode` (a two-value `Literal` alias reported as "is
   not a Union") and, on Python 3.9 only, `marlin.aio.AsyncIterator`. The second
-  forces `--ignore-unused-allowlist`, so a stale entry is not reported. Ticket:
-  `.scratch/py-field-once/issues/01`. [py]
+  forces `--ignore-unused-allowlist`, so a stale entry is not reported. [py]
 - [ ] Give the supported sentence and message lists one source
   The NMEA sentence list (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID)
   is written out by hand in about twelve places and the AIS type list in about
@@ -90,18 +106,18 @@ track deliverables (not conversational state).
   name only the count, and decide whether a CI check should compare the list
   against the `Nmea0183Message` / `AisMessageBody` variants. Needs a short
   design pass first: Cargo descriptions and docstrings cannot link. Raised by
-  the ticket 07 Standards review. [docs][draft]
+  a Standards review. [docs][draft]
 - [ ] Unify the marlin-ais test payload builders on one style
   `message.rs` routing tests mix named `build_typeN(mmsi)` helpers (Types 1/2/3,
   5, 18, 24) with inline `w.u(64, 0)` padding (Types 19 and 9).
-  `build_min_payload(msg_type, mmsi, total_bits)` landed with ticket 06 and the
+  `build_min_payload(msg_type, mmsi, total_bits)` landed with the Type 9/21 feature and the
   Type 21 routing tests use it; the other eight builders still need converting
   to it. The decoder modules mix positional builders under `too_many_arguments`
   (`build_prb`, `build_pra`, `build_part_b`) with the `Fields` struct + `Default`
   + struct-update form that `sar_aircraft_position_report.rs` (Type 9) and
   `aid_to_navigation_report.rs` (Type 21) use. Keep the `Fields` form (each
   test names only what it varies, no allow needed) and convert the siblings
-  when their tests are next touched. Raised by the ticket 05 Standards review.
+  when their tests are next touched. Raised by a Standards review.
   [ais][ready]
 - [x] Make `just py-ci` self-sufficient **DONE 2026-10-04**
   `just py-ci` failed on a fresh checkout: `maturin` and `pyright` came from
@@ -121,11 +137,11 @@ track deliverables (not conversational state).
   `position`-plus-`remove` reshaping. Judgement call: the current form is clippy
   clean and the fallbacks are unreachable, so re-check whether the ceremony
   still bothers anyone before doing the work.
-- [ ] Add a three-way sentinel reading across all AIS types (PRD §A3 revision)
+- [ ] Add a three-way sentinel reading across all AIS types
   value / not available / invalid on every numeric field, with a typed timestamp
   (codes 60–63) folded in. Requested by nexus; deferred from the Type 9/21 feature
-  because it changes every field type (breaking) and revises PRD §A3, which today
-  says the raw code is not exposed. ADR-0001 records the current policy. Needs its
+  because it changes every field type (breaking) and revises the sentinel policy,
+  which today says the raw code is not exposed. ADR-0001 records it. Needs its
   own grill before any code.
 - [ ] Parse NMEA 4.10 TAG blocks in marlin-nmea-envelope
   `RawSentence.tag_block` is raw bytes; consumers parse `c:` (Unix seconds)
@@ -260,7 +276,7 @@ track deliverables (not conversational state).
 - [x] `SentenceSource` trait with GAT for zero-copy borrows
 - [x] `OneShot` (datagram) + `Streaming` (TCP/serial) — one shared nom parser core
 - [x] `Parser` enum for runtime dispatch without `Box<dyn>` (0.2.0: implements `SentenceSource`; the only mode enum in the workspace, ADR-0005)
-- [x] TAG block recognition (`\...*hh\`) with advisory checksum (PRD decision 7)
+- [x] TAG block recognition (`\...*hh\`) with advisory checksum (ADR-0006)
 - [x] `$P…` proprietary detection → `talker = None`
 - [x] `pub fn parse(&[u8])` convenience entry point
 - [x] `#![no_std]` with `extern crate alloc`
@@ -271,10 +287,10 @@ track deliverables (not conversational state).
 
 ### Remaining (non-blocking polish)
 
-- [ ] Owned `RawSentence::to_owned()` → `RawSentence<'static>` (PRD §4.5 future work)
-- [ ] `criterion` benchmark suite (PRD §P4; nice-to-have)
+- [ ] Owned `RawSentence::to_owned()` → `RawSentence<'static>` (future work)
+- [ ] `criterion` benchmark suite (nice-to-have)
 - [ ] Dedicated `no_std` compile-test CI job
-- [ ] Optional `serde` feature behind a flag (PRD §D3; post-v1.0)
+- [ ] Optional `serde` feature behind a flag (post-v1.0)
   Covers the wire types of every crate, including the `marlin-ais` structs (not
   only the envelope). nexus maps into its own model by hand and does not need it
   (noted 2026-10-02).
@@ -309,7 +325,7 @@ track deliverables (not conversational state).
 
 - [x] **RMC** — recommended minimum (UTC + date + position + speed + course + magnetic variation), pre-2.3 / 2.3+ / 4.10+ forms (added v0.1.1 2026-05-08)
 - [x] **GLL** — geographic position with validity status and optional 2.3+ mode (added v0.1.1 2026-05-08)
-- [ ] Additional NMEA sentences: GSA, GSV, ZDA, DBT, MWV (PRD §11)
+- [ ] Additional NMEA sentences: GSA, GSV, ZDA, DBT, MWV
 - [ ] Golden-file fixtures from real receivers (synthetic today)
 - [ ] Example program under `examples/` showing log-file replay
 
@@ -322,7 +338,7 @@ track deliverables (not conversational state).
 - [x] `AisError` (non_exhaustive, thiserror) — envelope/armor/wrapper/payload variants plus the two reassembly variants `ReassemblyOutOfOrder` and `ReassemblyTimeout`, all emitted. `UnknownMessageType` (never emitted; unrouted types go to `Other`) and `ReassemblyChannelMismatch` (unreachable once partials are keyed on channel) removed in 0.2.0
 - [x] `armor::decode` + `armor::decode_char` — ASCII-to-6-bit alphabet per IEC 61162-1
 - [x] `BitReader<'a>` — `u(n)`, `i(n)` (two's-complement at field width), `b()`, `string(chars)` (AIS Table 47), `remaining()`
-- [x] Past-end reads yield saturating zeros (panic-free contract, PRD §T5)
+- [x] Past-end reads yield saturating zeros (panic-free contract, ADR-0007)
 - [x] `AivdmHeader` + `parse_aivdm_wrapper` — fragment count, sequential id, channel, payload, fill bits; `is_own_ship` distinguishes `!AIVDM` from `!AIVDO`
 - [x] **Type 1/2/3** — `PositionReportA` + `NavStatus` + `ManeuverIndicator` + `rate_of_turn: Option<RateOfTurn>` (a measured rate, or `NoIndicator(TurnDirection)` for ±127; 0.2.0 fix: ±127 used to decode as ±720 °/min) + lat/lon/COG/heading sentinels → `None`
 - [x] **Type 5** — `StaticAndVoyageA` + `AisVersion` + `Eta` + per-sub-field sentinels, 424-bit payload
@@ -332,10 +348,10 @@ track deliverables (not conversational state).
 - [x] **Type 21** — `AidToNavigationReport` + `AtonType` (32 codes, Table 74): variable length 272–360 bits, name joined with its optional extension, ITU-R M.1371-5 Annex 8 §3.19, Table 73 (0.2.0)
 - [x] **Type 24A / 24B** — `StaticDataB24A` + `StaticDataB24B` + `decode_static_data_b` dispatcher (routes on part-number field). Part B `extent: Type24BExtent` is dimensions, or the mother-ship MMSI for an auxiliary craft (`98MIDxxxx`, ADR-0002), and `epfd` is decoded (0.2.0)
 - [x] Shared `Dimensions` + `EpfdType` + `trim_ais_string` helpers; public `sentinel` wire codes and `is_auxiliary_craft_mmsi` (0.2.0, ADR-0001)
-- [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/9/18/19/21/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
-- [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — fragment buffers keyed on `(channel, sequential_id)` for every lookup (0.2.0 fix: continuation fragments used to match on sequential id alone, so the same id live on A and B lost both messages); in-order enforcement; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`tick(now_ms)` (caller owns the clock and the reassembler stores the last tick, ADR-0004 — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
+- [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }`; bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/9/18/19/21/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
+- [x] **Multi-sentence reassembly** (`AisReassembler`) — fragment buffers keyed on `(channel, sequential_id)` for every lookup (0.2.0 fix: continuation fragments used to match on sequential id alone, so the same id live on A and B lost both messages); in-order enforcement; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`tick(now_ms)` (caller owns the clock and the reassembler stores the last tick, ADR-0004 — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
 - [x] **`AisFragmentParser<P>` generic wrapper** — mirrors `Nmea0183Parser` pattern (0.2.0: the crate's own `Parser` enum removed, wraps the envelope's instead, ADR-0005); composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `tick(now_ms)` passthrough drives the reassembler clock for time-based expiry
-- [x] **cargo-fuzz targets** (PRD §F1) — `ais_armor`, `ais_bit_reader`, `ais_parser`. 15 s smoke runs each: 9 M / 1.5 M / 1.25 M executions, zero panics. `just fuzz-smoke-all` and `just fuzz-release` wrap up the set
+- [x] **cargo-fuzz targets** — `ais_armor`, `ais_bit_reader`, `ais_parser`. 15 s smoke runs each: 9 M / 1.5 M / 1.25 M executions, zero panics. `just fuzz-smoke-all` and `just fuzz-release` wrap up the set
 
 ### Remaining (non-blocking)
 
@@ -376,7 +392,7 @@ track deliverables (not conversational state).
 - [x] Per-crate `README.md` (envelope, nmea-0183, ais)
 - [x] `justfile` for common recipes
 - [x] GitHub Actions CI (build + test + clippy + fmt + doc + MSRV 1.82 + 30 s fuzz smoke)
-- [x] Per-crate `CHANGELOG.md` for the Rust crates (envelope, nmea-0183, ais), starting at 0.1.0 (PRD §10.2). The Python binding's CHANGELOG already lives at `bindings/python/CHANGELOG.md`.
+- [x] Per-crate `CHANGELOG.md` for the Rust crates (envelope, nmea-0183, ais), starting at 0.1.0. The Python binding's CHANGELOG already lives at `bindings/python/CHANGELOG.md`.
 - [x] `docs.rs` metadata (`package.metadata.docs.rs`) for feature-aware docs at publish time
 
 ---
@@ -418,7 +434,7 @@ track deliverables (not conversational state).
 
 #### Documentation + examples
 
-- [x] Six example programs (PRD §10 deliverable 7 + stdin reader + live AIS dashboard)
+- [x] Six example programs (four core demos + stdin reader + live AIS dashboard)
 - [x] `bindings/python/GUIDE.md` — usage guide covering streaming, asyncio
       integration, per-protocol filtering, context managers, and dataclass
       serialization
@@ -437,13 +453,13 @@ track deliverables (not conversational state).
 
 Must complete before publishing to crates.io:
 
-- [x] One CPU-hour fuzz run on each of `envelope`, `ais_armor`, `ais_bit_reader`, `ais_parser`, zero findings (PRD §F2). Completed 2026-04-28: 2.69 B total executions across the four targets (envelope 306 M, ais_armor 1.79 B, ais_bit_reader 341 M, ais_parser 251 M), zero panics, zero sanitizer hits, zero artifacts. Re-run with `just fuzz-release` before any future tag push.
-- [ ] Replace synthetic fixtures with ≥ 5 real captures per sentence / message type (PRD §G3). Document source of each in fixtures README
+- [x] One CPU-hour fuzz run on each of `envelope`, `ais_armor`, `ais_bit_reader`, `ais_parser`, zero findings. Completed 2026-04-28: 2.69 B total executions across the four targets (envelope 306 M, ais_armor 1.79 B, ais_bit_reader 341 M, ais_parser 251 M), zero panics, zero sanitizer hits, zero artifacts. Re-run with `just fuzz-release` before any future tag push.
+- [ ] Replace synthetic fixtures with ≥ 5 real captures per sentence / message type. Document source of each in fixtures README
 - [ ] **Validate PSXN decoder against real captures.** Implementation matches legacy Python semantics but hasn't been cross-checked against a live Seapath/MRU feed. Candidates: `$PSXN,10,...` with known roll/pitch/heave; `$PSXN,11,...` quality-0 variant; any TCMS source using an `sqh` layout
 - [ ] **Validate PRDID dialects against real captures.** Dialect orderings come from public integration guides and TSS/Teledyne convention reading. Need live samples from each hardware type
-- [ ] Validate AIS decoders against real AIVDM captures — specifically lat/lon sign handling (PRD §A4) and 27/28-bit signed coordinate edge cases
+- [ ] Validate AIS decoders against real AIVDM captures — specifically lat/lon sign handling and 27/28-bit signed coordinate edge cases
 - [x] MSRV double-check: whole workspace compiles on 1.82 (verified 2026-04-28)
-- [x] Curate fuzz corpus down to a small regression suite (PRD §F3); commit it. Lives at `fuzz/seeds/<target>/`; auto-bootstrapped on every `just fuzz`
+- [x] Curate fuzz corpus down to a small regression suite; commit it. Lives at `fuzz/seeds/<target>/`; auto-bootstrapped on every `just fuzz`
 - [ ] Resolve remaining open API questions (checksum policy, `Error::Truncated`) so we don't ship with breaking changes imminent
 - [x] Reserve final crate names on crates.io. Published 2026-04-28: [marlin-nmea-envelope 0.1.0](https://crates.io/crates/marlin-nmea-envelope), [marlin-nmea-0183 0.1.0](https://crates.io/crates/marlin-nmea-0183), [marlin-ais 0.1.0](https://crates.io/crates/marlin-ais)
 - [x] Tag `v0.1.0`, draft release notes from commit history. **Tag created locally, not pushed; awaiting fuzz-release pass.**
@@ -454,9 +470,9 @@ Must complete before publishing to crates.io:
 
 Tracked here so we don't forget:
 
-- AIS message types beyond 1/2/3/5/18/19/24A/24B (PRD §11)
-- AIS Type 24 part-A/part-B pairing (higher-layer concern; PRD §A6)
-- Additional NMEA sentences (GSA, GSV, ZDA, DBT, MWV, etc. — PRD §11)
+- AIS message types beyond 1/2/3/5/9/18/19/21/24A/24B
+- AIS Type 24 part-A/part-B pairing (higher-layer concern)
+- Additional NMEA sentences (GSA, GSV, ZDA, DBT, MWV, etc.)
 - NMEA 2000 (entirely separate protocol; would be a new crate)
 - Encoding / serialization (v0.1 is read-only)
 - WASM target verification

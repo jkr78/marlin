@@ -123,7 +123,7 @@ def test_parse_raises_on_bad_input():
 
 
 def test_tag_block_preserved():
-    # PRD §E4: a TAG block prefix `\...*hh\` is stripped from `raw` but its
+    # A TAG block `\...*hh\` is stripped from `raw` but its
     # content surfaces on the `tag_block` getter.
     bytes_in = _tag_sentence(b"c:1577836800", b"GPGGA,1,2,3")
     s = parse(bytes_in)

@@ -3,7 +3,7 @@
 
 Designed for live capture: `nc <host> <port> | parse_stdin.py`. Frames
 both NMEA and AIVDM envelopes (AIS payload not decoded — pipe through
-decode_aivdm_log.py for that). Non-PRD addition (user-requested).
+decode_aivdm_log.py for that).
 """
 
 import sys
