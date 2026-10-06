@@ -93,8 +93,9 @@ bytes → marlin-nmea-envelope → RawSentence → parse_aivdm_wrapper
   enum, and the dispatcher: `decode_message` for a bit buffer, `decode`
   for a single-fragment `RawSentence`.
 - `parser` — `AisFragmentParser<P>` runs the whole pipeline over any
-  envelope `SentenceSource`. The `Parser` enum picks one-shot or
-  streaming at runtime.
+  envelope `SentenceSource`. For a source mode chosen at runtime it
+  wraps the envelope's `Parser` enum, which the crate re-exports; the
+  crate has no mode enum of its own (ADR-0005).
 - `shared_types` — `Dimensions`, `EpfdType`, `is_auxiliary_craft_mmsi`,
   the public `sentinel` constants, and the crate-private readers for
   longitude, latitude, COG, heading, and SOG that the position decoders
@@ -159,7 +160,7 @@ touches no state.
   evicts the oldest and queues `AisError::ReassemblyTimeout`.
 - Expiry by age is opt-in. `with_timeout_ms` sets the limit. The crate
   never reads a clock, so the caller advances it with `tick(now_ms)`
-  (also on `AisFragmentParser` and `Parser`); the reassembler keeps that
+  (also on `AisFragmentParser`); the reassembler keeps that
   time and stamps each fragment with it (ADR-0004). A partial opened
   before the first tick has no stamp and can only be evicted by the
   slot cap.

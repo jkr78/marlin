@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Re-exports of `marlin_nmea_envelope::{OneShot, Parser, Streaming}`,
+  beside the existing `RawSentence` re-export, so a caller needs no
+  direct dependency on the envelope crate to build a source.
+
 - `marlin_ais::sentinel` — public wire codes for "not available" and
   "this value or higher" (position, SOG, COG, heading, ROT, altitude,
   dimensions, timestamp) so consumers stop hardcoding them.
@@ -67,6 +71,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   types.
 
 ### Changed (BREAKING)
+
+- The `Parser` source-mode enum is removed. `AisFragmentParser<P>`
+  now covers that case by wrapping `marlin_nmea_envelope::Parser`,
+  which implements `SentenceSource` (ADR-0005), and the whole wrapper
+  API (`with_reassembler`, `reassembler()`, `inner()`, `tick`) is
+  available in that form. Replacements: `Parser::one_shot()` →
+  `AisFragmentParser::new(OneShot::new())`; `Parser::streaming()` →
+  `AisFragmentParser::new(Streaming::new())`;
+  `Parser::streaming_with_capacity(n)` →
+  `AisFragmentParser::new(Streaming::with_capacity(n))`. For a source
+  mode chosen at runtime, pass `Parser::one_shot()` or
+  `Parser::streaming()` from the envelope crate as the source.
 
 - `PositionReportA.rate_of_turn` is `Option<RateOfTurn>` instead of
   `Option<f32>`. Raw `0..=±126` decode to `RateOfTurn::DegPerMin(f32)` as

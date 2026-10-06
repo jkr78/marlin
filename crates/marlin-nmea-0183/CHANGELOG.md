@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Re-exports of `marlin_nmea_envelope::{OneShot, Parser, Streaming}`,
+  beside the existing `RawSentence` re-export, so a caller needs no
+  direct dependency on the envelope crate to build a source.
+
+### Changed (BREAKING)
+
+- The `Parser` source-mode enum is removed. `Nmea0183Parser<P>`
+  now covers that case by wrapping `marlin_nmea_envelope::Parser`,
+  which implements `SentenceSource` (ADR-0005). Replacements:
+  `Parser::one_shot()` → `Nmea0183Parser::new(OneShot::new())`;
+  `Parser::streaming()` → `Nmea0183Parser::new(Streaming::new())`;
+  `Parser::streaming_with_capacity(n)` →
+  `Nmea0183Parser::new(Streaming::with_capacity(n))`;
+  `Parser::one_shot_with_options(o)` →
+  `Nmea0183Parser::with_options(OneShot::new(), o)`;
+  `Parser::streaming_with_options(o)` →
+  `Nmea0183Parser::with_options(Streaming::new(), o)`. For a source
+  mode chosen at runtime, pass `Parser::one_shot()` or
+  `Parser::streaming()` from the envelope crate as the source.
+
 ### Fixed
 
 - The Cargo description and the crate-level docs now list every

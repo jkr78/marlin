@@ -259,7 +259,7 @@ track deliverables (not conversational state).
 
 - [x] `SentenceSource` trait with GAT for zero-copy borrows
 - [x] `OneShot` (datagram) + `Streaming` (TCP/serial) — one shared nom parser core
-- [x] `Parser` enum for runtime dispatch without `Box<dyn>`
+- [x] `Parser` enum for runtime dispatch without `Box<dyn>` (0.2.0: implements `SentenceSource`; the only mode enum in the workspace, ADR-0005)
 - [x] TAG block recognition (`\...*hh\`) with advisory checksum (PRD decision 7)
 - [x] `$P…` proprietary detection → `talker = None`
 - [x] `pub fn parse(&[u8])` convenience entry point
@@ -300,7 +300,7 @@ track deliverables (not conversational state).
 - [x] Coordinate decode (ddmm.mmmm + hemisphere → signed decimal degrees)
 - [x] `DecodeOptions` with `with_psxn_layout` / `with_prdid_dialect` builders
 - [x] `decode` (default options) + `decode_with` (explicit options)
-- [x] `Nmea0183Parser<P>` generic wrapper + `Parser` enum
+- [x] `Nmea0183Parser<P>` generic wrapper (0.2.0: the crate's own `Parser` enum removed, wraps the envelope's instead, ADR-0005)
 - [x] `Nmea0183Error` unified error
 - [x] Per-sentence `decode_*` functions public (extension points)
 - [x] Full rustdoc, README
@@ -334,7 +334,7 @@ track deliverables (not conversational state).
 - [x] Shared `Dimensions` + `EpfdType` + `trim_ais_string` helpers; public `sentinel` wire codes and `is_auxiliary_craft_mmsi` (0.2.0, ADR-0001)
 - [x] **`AisMessage` wrapper + `AisMessageBody` enum + top-level `decode_message` / `decode`** — `AisMessage { is_own_ship, body }` (PRD §A7 wrapper-struct shape); bit-level `decode_message(bits, total_bits, is_own_ship)` primitive; `decode(&RawSentence)` single-fragment convenience; routes Type 1/2/3/5/9/18/19/21/24A/24B to typed variants, everything else (reserved Type 24 parts and unknown msg_type values) to `Other { msg_type, raw_payload, total_bits }`
 - [x] **Multi-sentence reassembly** (`AisReassembler`, PRD §A5) — fragment buffers keyed on `(channel, sequential_id)` for every lookup (0.2.0 fix: continuation fragments used to match on sequential id alone, so the same id live on A and B lost both messages); in-order enforcement; bounded-slots eviction (`DEFAULT_MAX_PARTIALS = 16`) plus optional clock-based TTL via `with_timeout_ms`/`tick(now_ms)` (caller owns the clock and the reassembler stores the last tick, ADR-0004 — keeps sans-I/O + `no_std`); `VecDeque<AisError>` pending-queue so multiple simultaneous evictions each surface one `ReassemblyTimeout`
-- [x] **`AisFragmentParser<P>` generic wrapper + `Parser` enum** — mirrors `Nmea0183Parser` pattern; composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `tick(now_ms)` passthrough drives the reassembler clock for time-based expiry
+- [x] **`AisFragmentParser<P>` generic wrapper** — mirrors `Nmea0183Parser` pattern (0.2.0: the crate's own `Parser` enum removed, wraps the envelope's instead, ADR-0005); composes envelope → `parse_aivdm_wrapper` → `AisReassembler` → `armor::decode` → `decode_message` into a single `feed`/`next_message` loop; surfaces reassembly timeouts between fragments. `tick(now_ms)` passthrough drives the reassembler clock for time-based expiry
 - [x] **cargo-fuzz targets** (PRD §F1) — `ais_armor`, `ais_bit_reader`, `ais_parser`. 15 s smoke runs each: 9 M / 1.5 M / 1.25 M executions, zero panics. `just fuzz-smoke-all` and `just fuzz-release` wrap up the set
 
 ### Remaining (non-blocking)

@@ -4,8 +4,9 @@
 //! This is the AIS-layer analogue of `marlin_nmea_0183::Nmea0183Parser`.
 //! It composes four pieces this crate already exposes:
 //!
-//! 1. An envelope-level [`SentenceSource`] (`OneShot` / `Streaming`)
-//!    that yields [`RawSentence`] values.
+//! 1. An envelope-level [`SentenceSource`] that yields [`RawSentence`]
+//!    values: `OneShot`, `Streaming`, or the envelope's `Parser` enum
+//!    for a source mode chosen at runtime.
 //! 2. [`parse_aivdm_wrapper`](crate::parse_aivdm_wrapper) to pull the
 //!    AIVDM/AIVDO header out of each `RawSentence`.
 //! 3. [`AisReassembler`] to glue multi-fragment messages back together.
@@ -22,7 +23,7 @@
 //! }
 //! ```
 
-use marlin_nmea_envelope::{OneShot, RawSentence, SentenceSource, Streaming};
+use marlin_nmea_envelope::{RawSentence, SentenceSource};
 
 use crate::{
     armor, decode_message, parse_aivdm_wrapper, AisError, AisMessage, AisReassembler,
@@ -34,6 +35,12 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// Typed AIS parser wrapping any envelope-level [`SentenceSource`].
+///
+/// To choose the source mode at runtime, wrap
+/// [`marlin_nmea_envelope::Parser`] (re-exported as [`crate::Parser`]):
+/// it is a [`SentenceSource`] like [`crate::OneShot`] and
+/// [`crate::Streaming`], and the whole API of this type is available
+/// on it.
 ///
 /// Carries its own [`AisReassembler`] so multi-sentence messages are
 /// transparently glued back together. Each [`next_message`](Self::next_message)
@@ -126,7 +133,7 @@ where
     /// - `Some(Err(AisError::NotAnAisSentence))` — a non-AIS sentence
     ///   (e.g. `$GPGGA`) leaked through the envelope parser. Callers
     ///   that mix AIS and NMEA on the same channel should run a
-    ///   `marlin_nmea_0183::Parser` alongside this one, or strip
+    ///   `marlin_nmea_0183::Nmea0183Parser` alongside this one, or strip
     ///   non-AIS traffic before feeding here.
     /// - `Some(Err(AisError::Reassembly...))` — fragment-ordering issue
     ///   or an eviction (slots full, or past the TTL as of the last
@@ -180,73 +187,6 @@ impl<P: Default> Default for AisFragmentParser<P> {
 }
 
 // ---------------------------------------------------------------------------
-// Runtime-dispatch enum
-// ---------------------------------------------------------------------------
-
-/// Runtime selector between one-shot and streaming AIS parsers,
-/// mirroring `marlin_nmea_envelope::Parser`.
-///
-/// Dispatch is a match (static, inlined) — no heap allocation, no
-/// vtable lookup.
-#[derive(Debug)]
-pub enum Parser {
-    /// Single-sentence-per-feed mode; wraps
-    /// [`AisFragmentParser`]`<`[`OneShot`]`>`.
-    OneShot(AisFragmentParser<OneShot>),
-    /// Buffered streaming mode; wraps
-    /// [`AisFragmentParser`]`<`[`Streaming`]`>`.
-    Streaming(AisFragmentParser<Streaming>),
-}
-
-impl Parser {
-    /// Construct a one-shot parser with a default-sized reassembler.
-    #[must_use]
-    pub fn one_shot() -> Self {
-        Self::OneShot(AisFragmentParser::new(OneShot::new()))
-    }
-
-    /// Construct a streaming parser with the envelope's default
-    /// maximum buffer size and a default-sized reassembler.
-    #[must_use]
-    pub fn streaming() -> Self {
-        Self::Streaming(AisFragmentParser::new(Streaming::new()))
-    }
-
-    /// Construct a streaming parser with a specified maximum envelope
-    /// buffer size.
-    #[must_use]
-    pub fn streaming_with_capacity(max_size: usize) -> Self {
-        Self::Streaming(AisFragmentParser::new(Streaming::with_capacity(max_size)))
-    }
-
-    /// Push raw bytes into the active parser.
-    pub fn feed(&mut self, bytes: &[u8]) {
-        match self {
-            Self::OneShot(p) => p.feed(bytes),
-            Self::Streaming(p) => p.feed(bytes),
-        }
-    }
-
-    /// Advance the reassembler's clock. See
-    /// [`AisFragmentParser::tick`].
-    pub fn tick(&mut self, now_ms: u64) {
-        match self {
-            Self::OneShot(p) => p.tick(now_ms),
-            Self::Streaming(p) => p.tick(now_ms),
-        }
-    }
-
-    /// Pull the next typed AIS message. See
-    /// [`AisFragmentParser::next_message`] for the full semantics.
-    pub fn next_message(&mut self) -> Option<Result<AisMessage, AisError>> {
-        match self {
-            Self::OneShot(p) => p.next_message(),
-            Self::Streaming(p) => p.next_message(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -258,6 +198,8 @@ impl Parser {
     clippy::indexing_slicing
 )]
 mod tests {
+    use marlin_nmea_envelope::{OneShot, Streaming};
+
     use super::*;
     use crate::{testing::build_aivdm, AisMessageBody};
     use alloc::vec::Vec;
@@ -268,7 +210,7 @@ mod tests {
 
     #[test]
     fn one_shot_single_fragment_classic_type1() {
-        let mut p = Parser::one_shot();
+        let mut p = AisFragmentParser::new(OneShot::new());
         let sentence = build_aivdm(1, 1, None, Some(b'A'), b"13aGmP0P00PD;88MD5MTDww@2<0L", 0);
         p.feed(&sentence);
         let msg = p.next_message().unwrap().unwrap();
@@ -285,7 +227,7 @@ mod tests {
 
     #[test]
     fn one_shot_aivdo_sets_is_own_ship() {
-        let mut p = Parser::one_shot();
+        let mut p = AisFragmentParser::new(OneShot::new());
         p.feed(&crate::testing::build_with_address(
             b"!",
             b"AIVDO",
@@ -301,7 +243,7 @@ mod tests {
 
     #[test]
     fn streaming_decodes_multiple_single_fragment_sentences_per_feed() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         let s1 = build_aivdm(1, 1, None, Some(b'A'), b"13aGmP0P00PD;88MD5MTDww@2<0L", 0);
         let s2 = build_aivdm(1, 1, None, Some(b'A'), b"13aGmP0P00PD;88MD5MTDww@2<0L", 0);
         let mut combined = Vec::new();
@@ -333,7 +275,7 @@ mod tests {
 
     #[test]
     fn streaming_reassembles_two_fragment_type5() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         let frag1 = build_aivdm(2, 1, Some(3), Some(b'A'), TYPE5_FRAG_A, 0);
         let frag2 = build_aivdm(2, 2, Some(3), Some(b'A'), TYPE5_FRAG_B, 2);
         let mut combined = Vec::new();
@@ -359,7 +301,7 @@ mod tests {
 
     #[test]
     fn streaming_holds_state_across_feeds_for_multi_fragment() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         let frag1 = build_aivdm(2, 1, Some(3), Some(b'A'), TYPE5_FRAG_A, 0);
         let frag2 = build_aivdm(2, 2, Some(3), Some(b'A'), TYPE5_FRAG_B, 2);
 
@@ -380,7 +322,7 @@ mod tests {
 
     #[test]
     fn streaming_out_of_order_fragment_surfaces_error() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         // Fragment 1 of 2 arrives, followed directly by fragment 3 of 2
         // (nonsense) — the wrapper should surface MalformedWrapper
         // (caught by reassembler's frag_num > frag_count check).
@@ -404,7 +346,7 @@ mod tests {
 
     #[test]
     fn streaming_skipped_fragment_surfaces_out_of_order() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         // Fragment 1 of 3, then fragment 3 of 3 — the middle is missing.
         let frag1 = build_aivdm(3, 1, Some(4), Some(b'A'), b"AA", 0);
         let frag3 = build_aivdm(3, 3, Some(4), Some(b'A'), b"CC", 0);
@@ -427,7 +369,7 @@ mod tests {
 
     #[test]
     fn streaming_fragment_on_other_channel_is_out_of_order_and_keeps_partial() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         // Fragment 1 on A, fragment 2 on B: (B, 6) has no partial, so the
         // B fragment is stray. The (A, 6) partial survives and completes.
         let frag1_a = build_aivdm(2, 1, Some(6), Some(b'A'), TYPE5_FRAG_A, 0);
@@ -459,7 +401,7 @@ mod tests {
         // Spec §6.5 reproduction, end to end: (1,A), (1,B), (2,B), (2,A)
         // with the same sequential id yield two Type 5 messages and no
         // errors.
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         let frags = [
             build_aivdm(2, 1, Some(7), Some(b'A'), TYPE5_FRAG_A, 0),
             build_aivdm(2, 1, Some(7), Some(b'B'), TYPE5_FRAG_A, 0),
@@ -491,7 +433,7 @@ mod tests {
 
     #[test]
     fn streaming_forwards_envelope_checksum_error() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         // Hand-built AIVDM with a deliberately wrong checksum.
         p.feed(b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*FF\r\n");
         match p.next_message().unwrap() {
@@ -506,7 +448,7 @@ mod tests {
 
     #[test]
     fn streaming_surfaces_non_ais_sentence_error_and_recovers() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         let gga =
             crate::testing::build_with_address(b"$", b"GPGGA", b"1,2,3,4,5,6,7,8,9,10,11,12,13,14");
         let ais = build_aivdm(1, 1, None, Some(b'A'), b"13aGmP0P00PD;88MD5MTDww@2<0L", 0);
@@ -532,19 +474,19 @@ mod tests {
 
     #[test]
     fn streaming_returns_none_on_empty_buffer() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         assert!(p.next_message().is_none());
     }
 
     #[test]
     fn streaming_returns_none_on_partial_sentence() {
-        let mut p = Parser::streaming();
+        let mut p = AisFragmentParser::new(Streaming::new());
         p.feed(b"!AIVDM,1,1,,A,13aGmP0P"); // no `*hh` yet
         assert!(p.next_message().is_none());
     }
 
     // -----------------------------------------------------------------
-    // Generic wrapper (without the Parser enum) works too
+    // Explicit type annotations on the generic wrapper
     // -----------------------------------------------------------------
 
     #[test]
@@ -659,9 +601,10 @@ mod tests {
     }
 
     #[test]
-    fn parser_enum_tick_evicts_stale_partial() {
+    fn tick_through_envelope_parser_enum_evicts_stale_partial() {
         let reasm = AisReassembler::with_timeout_ms(16, 1_000);
-        let mut p = Parser::Streaming(AisFragmentParser::with_reassembler(Streaming::new(), reasm));
+        let mut p =
+            AisFragmentParser::with_reassembler(marlin_nmea_envelope::Parser::streaming(), reasm);
         p.tick(0);
         p.feed(&build_aivdm(2, 1, Some(1), Some(b'A'), b"aa", 0));
         p.feed(b"\r\n");
@@ -671,5 +614,33 @@ mod tests {
             Err(AisError::ReassemblyTimeout) => {}
             other => panic!("expected ReassemblyTimeout, got {other:?}"),
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Source mode chosen at runtime: wrap the envelope `Parser` enum
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn wraps_envelope_parser_enum_for_runtime_source_mode() {
+        let use_streaming = true;
+        let source = if use_streaming {
+            marlin_nmea_envelope::Parser::streaming()
+        } else {
+            marlin_nmea_envelope::Parser::one_shot()
+        };
+        let reasm = AisReassembler::with_timeout_ms(4, 1_000);
+        let mut p = AisFragmentParser::with_reassembler(source, reasm);
+        p.tick(0);
+        p.feed(&build_aivdm(
+            1,
+            1,
+            None,
+            Some(b'A'),
+            b"13aGmP0P00PD;88MD5MTDww@2<0L",
+            0,
+        ));
+        let msg = p.next_message().unwrap().unwrap();
+        assert!(matches!(msg.body, AisMessageBody::Type1(_)));
+        assert_eq!(p.reassembler().in_flight(), 0);
     }
 }

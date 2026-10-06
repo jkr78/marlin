@@ -23,7 +23,7 @@ use marlin_ais::{
     StaticDataB24B as RustStaticDataB24B, TurnDirection as RustTurnDirection,
     Type24BExtent as RustType24BExtent, DEFAULT_MAX_PARTIALS,
 };
-use marlin_nmea_envelope::{OneShot, Streaming};
+use marlin_nmea_envelope::Parser;
 
 use crate::envelope::DEFAULT_MAX_SIZE;
 use crate::errors::ais_err;
@@ -1708,22 +1708,6 @@ fn build_reassembler(timeout_ms: Option<u64>, clock_mode: ClockMode) -> AisReass
     reassembler
 }
 
-/// Internal mode-enum so the HRTB generic on `AisFragmentParser<P>` doesn't
-/// infect the Python class surface.
-///
-/// Do **not** "simplify" this into an `AisFragmentParser<P>` field with a
-/// generic bound. The HRTB nested-call trap (see the repo CLAUDE.md)
-/// means `&mut self` methods bounded by
-/// `for<'a> SentenceSource<Item<'a> = RawSentence<'a>>` can't delegate to
-/// other such methods — rustc emits "P does not live long enough". The
-/// mode-enum dodges the trap by matching on a concrete parser in each
-/// arm. Same structural rationale as `Nmea0183Inner` in `nmea.rs`.
-#[derive(Debug)]
-enum AisInner {
-    OneShot(AisFragmentParser<OneShot>),
-    Streaming(AisFragmentParser<Streaming>),
-}
-
 /// AIS parser with multi-fragment reassembly and selectable clock source.
 ///
 /// Three clock modes:
@@ -1737,7 +1721,7 @@ enum AisInner {
 ///   data.
 #[pyclass(name = "AisParser", module = "marlin.ais")]
 pub struct PyAisParser {
-    inner: AisInner,
+    inner: AisFragmentParser<Parser>,
     clock_mode: ClockMode,
     timeout_ms: Option<u64>,
 }
@@ -1749,9 +1733,9 @@ impl PyAisParser {
     fn one_shot(timeout_ms: Option<u64>, clock: Option<&str>) -> PyResult<Self> {
         let clock_mode = ClockMode::parse(clock)?;
         let reassembler = build_reassembler(timeout_ms, clock_mode);
-        let frag = AisFragmentParser::with_reassembler(OneShot::new(), reassembler);
+        let inner = AisFragmentParser::with_reassembler(Parser::one_shot(), reassembler);
         Ok(Self {
-            inner: AisInner::OneShot(frag),
+            inner,
             clock_mode,
             timeout_ms,
         })
@@ -1762,20 +1746,19 @@ impl PyAisParser {
     fn streaming(timeout_ms: Option<u64>, clock: Option<&str>, max_size: usize) -> PyResult<Self> {
         let clock_mode = ClockMode::parse(clock)?;
         let reassembler = build_reassembler(timeout_ms, clock_mode);
-        let frag =
-            AisFragmentParser::with_reassembler(Streaming::with_capacity(max_size), reassembler);
+        let inner = AisFragmentParser::with_reassembler(
+            Parser::streaming_with_capacity(max_size),
+            reassembler,
+        );
         Ok(Self {
-            inner: AisInner::Streaming(frag),
+            inner,
             clock_mode,
             timeout_ms,
         })
     }
 
     fn feed(&mut self, data: &[u8]) {
-        match &mut self.inner {
-            AisInner::OneShot(p) => p.feed(data),
-            AisInner::Streaming(p) => p.feed(data),
-        }
+        self.inner.feed(data);
     }
 
     /// Manual-clock tick — advance the reassembler's clock to `now_ms`.
@@ -1802,10 +1785,7 @@ impl PyAisParser {
         if let Some(now) = self.auto_time_ms(py)? {
             self.tick_inner(now);
         }
-        let result = match &mut self.inner {
-            AisInner::OneShot(p) => p.next_message(),
-            AisInner::Streaming(p) => p.next_message(),
-        };
+        let result = self.inner.next_message();
         match result {
             None => Ok(None),
             Some(Ok(msg)) => Ok(Some(PyAisMessage::from_rust(py, msg)?)),
@@ -1850,10 +1830,7 @@ impl PyAisParser {
 
 impl PyAisParser {
     fn tick_inner(&mut self, now_ms: u64) {
-        match &mut self.inner {
-            AisInner::OneShot(p) => p.tick(now_ms),
-            AisInner::Streaming(p) => p.tick(now_ms),
-        }
+        self.inner.tick(now_ms);
     }
 
     /// The monotonic clock reading an auto-clock `next_message()` ticks

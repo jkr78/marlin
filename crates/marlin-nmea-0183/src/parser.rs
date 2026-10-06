@@ -4,7 +4,7 @@
 //! module wraps them so callers get typed [`Nmea0183Message`] values
 //! directly, one `feed` / `next_message` loop instead of two.
 
-use marlin_nmea_envelope::{OneShot, RawSentence, SentenceSource, Streaming};
+use marlin_nmea_envelope::{RawSentence, SentenceSource};
 
 use crate::{decode_with, DecodeError, DecodeOptions, Nmea0183Message};
 
@@ -12,8 +12,7 @@ use crate::{decode_with, DecodeError, DecodeOptions, Nmea0183Message};
 // Unified error type
 // ---------------------------------------------------------------------------
 
-/// Errors surfacing from [`Nmea0183Parser::next_message`] (and from the
-/// [`Parser`] enum's delegating method).
+/// Errors surfacing from [`Nmea0183Parser::next_message`].
 ///
 /// The two variants distinguish **where** the failure happened:
 ///
@@ -64,8 +63,11 @@ pub enum Nmea0183Error {
 /// }
 /// ```
 ///
-/// For runtime mode selection (one-shot vs streaming) without
-/// generics infecting the call site, use the [`Parser`] enum instead.
+/// To choose the source mode at runtime, wrap
+/// [`marlin_nmea_envelope::Parser`] (re-exported as [`crate::Parser`]):
+/// it is a [`SentenceSource`] like [`crate::OneShot`] and
+/// [`crate::Streaming`], and the whole API of this type is available
+/// on it.
 #[derive(Debug)]
 pub struct Nmea0183Parser<P> {
     inner: P,
@@ -166,111 +168,6 @@ impl<P: Default> Default for Nmea0183Parser<P> {
 }
 
 // ---------------------------------------------------------------------------
-// Runtime-dispatch enum
-// ---------------------------------------------------------------------------
-
-/// Runtime selector between one-shot and streaming typed parsers.
-///
-/// This is the typed-layer analogue of
-/// [`marlin_nmea_envelope::Parser`]. Use it when the mode is a
-/// configuration choice rather than a compile-time decision:
-///
-/// ```
-/// use marlin_nmea_0183::Parser;
-///
-/// let use_streaming = true;
-/// let mut parser = if use_streaming {
-///     Parser::streaming()
-/// } else {
-///     Parser::one_shot()
-/// };
-/// parser.feed(b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n");
-/// let _ = parser.next_message().unwrap().unwrap();
-/// ```
-///
-/// Dispatch is a match (static, inlined); no heap allocation or
-/// vtable lookup.
-#[derive(Debug)]
-pub enum Parser {
-    /// Single-sentence-per-feed mode; wraps
-    /// [`Nmea0183Parser`]`<`[`OneShot`]`>`.
-    OneShot(Nmea0183Parser<OneShot>),
-    /// Buffered streaming mode; wraps
-    /// [`Nmea0183Parser`]`<`[`Streaming`]`>`.
-    Streaming(Nmea0183Parser<Streaming>),
-}
-
-impl Parser {
-    /// Construct a one-shot parser with default [`DecodeOptions`].
-    #[must_use]
-    pub fn one_shot() -> Self {
-        Self::OneShot(Nmea0183Parser::new(OneShot::new()))
-    }
-
-    /// Construct a one-shot parser with caller-provided options.
-    #[must_use]
-    pub fn one_shot_with_options(options: DecodeOptions) -> Self {
-        Self::OneShot(Nmea0183Parser::with_options(OneShot::new(), options))
-    }
-
-    /// Construct a streaming parser with the envelope's default
-    /// maximum buffer size.
-    #[must_use]
-    pub fn streaming() -> Self {
-        Self::Streaming(Nmea0183Parser::new(Streaming::new()))
-    }
-
-    /// Construct a streaming parser with a specified maximum buffer
-    /// size. See [`Streaming::with_capacity`] for the envelope-level
-    /// semantics.
-    #[must_use]
-    pub fn streaming_with_capacity(max_size: usize) -> Self {
-        Self::Streaming(Nmea0183Parser::new(Streaming::with_capacity(max_size)))
-    }
-
-    /// Construct a streaming parser with caller-provided options.
-    #[must_use]
-    pub fn streaming_with_options(options: DecodeOptions) -> Self {
-        Self::Streaming(Nmea0183Parser::with_options(Streaming::new(), options))
-    }
-
-    /// Borrow the current [`DecodeOptions`] regardless of variant.
-    #[must_use]
-    pub fn options(&self) -> &DecodeOptions {
-        match self {
-            Self::OneShot(p) => p.options(),
-            Self::Streaming(p) => p.options(),
-        }
-    }
-
-    /// Replace the [`DecodeOptions`] on the active variant.
-    pub fn set_options(&mut self, options: DecodeOptions) {
-        match self {
-            Self::OneShot(p) => p.set_options(options),
-            Self::Streaming(p) => p.set_options(options),
-        }
-    }
-
-    /// Push raw bytes into the active parser. See the per-mode docs
-    /// ([`OneShot`] vs [`Streaming`]) for semantics.
-    pub fn feed(&mut self, bytes: &[u8]) {
-        match self {
-            Self::OneShot(p) => p.feed(bytes),
-            Self::Streaming(p) => p.feed(bytes),
-        }
-    }
-
-    /// Pull the next typed message. See
-    /// [`Nmea0183Parser::next_message`] for semantics.
-    pub fn next_message(&mut self) -> Option<Result<Nmea0183Message<'_>, Nmea0183Error>> {
-        match self {
-            Self::OneShot(p) => p.next_message(),
-            Self::Streaming(p) => p.next_message(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -282,6 +179,8 @@ impl Parser {
     clippy::indexing_slicing
 )]
 mod tests {
+    use marlin_nmea_envelope::{OneShot, Streaming};
+
     use super::*;
     use crate::testing::build;
     use crate::{GgaFixQuality, PrdidData, PrdidDialect, PsxnLayout};
@@ -293,7 +192,7 @@ mod tests {
 
     #[test]
     fn one_shot_decodes_gga_bytes_into_typed_message() {
-        let mut parser = Parser::one_shot();
+        let mut parser = Nmea0183Parser::new(OneShot::new());
         parser.feed(b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47");
         let msg = parser.next_message().unwrap().unwrap();
         let gga = match msg {
@@ -307,7 +206,7 @@ mod tests {
 
     #[test]
     fn streaming_decodes_multiple_messages_from_one_feed() {
-        let mut parser = Parser::streaming();
+        let mut parser = Nmea0183Parser::new(Streaming::new());
         // Build three well-formed sentences back-to-back.
         let gga = build(b"GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
         let hdt = build(b"INHDT,100.0,T");
@@ -335,13 +234,13 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Options propagation: Parser honors DecodeOptions
+    // Options propagation: Nmea0183Parser honors DecodeOptions
     // -----------------------------------------------------------------
 
     #[test]
     fn parser_applies_configured_prdid_dialect() {
         let opts = DecodeOptions::default().with_prdid_dialect(PrdidDialect::PitchRollHeading);
-        let mut parser = Parser::one_shot_with_options(opts);
+        let mut parser = Nmea0183Parser::with_options(OneShot::new(), opts);
         parser.feed(&build(b"PRDID,1.0,2.0,180.0"));
 
         let msg = parser.next_message().unwrap().unwrap();
@@ -355,7 +254,7 @@ mod tests {
 
     #[test]
     fn parser_default_options_emit_raw_for_prdid() {
-        let mut parser = Parser::one_shot();
+        let mut parser = Nmea0183Parser::new(OneShot::new());
         parser.feed(&build(b"PRDID,1.0,2.0,180.0"));
         let msg = parser.next_message().unwrap().unwrap();
         match msg {
@@ -368,7 +267,7 @@ mod tests {
 
     #[test]
     fn parser_set_options_changes_subsequent_decodes() {
-        let mut parser = Parser::one_shot();
+        let mut parser = Nmea0183Parser::new(OneShot::new());
         // First: default options — PRDID is Raw.
         parser.feed(&build(b"PRDID,1.0,2.0,180.0"));
         assert!(matches!(
@@ -393,7 +292,7 @@ mod tests {
     fn parser_applies_psxn_layout() {
         let layout: PsxnLayout = "rphx".parse().unwrap();
         let opts = DecodeOptions::default().with_psxn_layout(layout);
-        let mut parser = Parser::one_shot_with_options(opts);
+        let mut parser = Nmea0183Parser::with_options(OneShot::new(), opts);
         // rphx: roll, pitch, heave, x, x, x
         parser.feed(&build(b"PSXN,10,tok,0.017453,0.034907,0.5,,,"));
         match parser.next_message().unwrap().unwrap() {
@@ -412,7 +311,7 @@ mod tests {
 
     #[test]
     fn parser_propagates_envelope_checksum_error() {
-        let mut parser = Parser::one_shot();
+        let mut parser = Nmea0183Parser::new(OneShot::new());
         // Intentionally wrong checksum (bytes match GPGGA,1,2 body but cksum is bogus).
         parser.feed(b"$GPGGA,1,2,3*FF");
         let err = parser.next_message().unwrap().unwrap_err();
@@ -424,7 +323,7 @@ mod tests {
 
     #[test]
     fn parser_propagates_decode_error_for_short_gga() {
-        let mut parser = Parser::one_shot();
+        let mut parser = Nmea0183Parser::new(OneShot::new());
         // Envelope-valid $GPGGA but only 3 fields (GGA needs 14).
         parser.feed(&build(b"GPGGA,1,2,3"));
         let err = parser.next_message().unwrap().unwrap_err();
@@ -446,7 +345,7 @@ mod tests {
 
     #[test]
     fn streaming_returns_none_on_partial_buffer() {
-        let mut parser = Parser::streaming();
+        let mut parser = Nmea0183Parser::new(Streaming::new());
         parser.feed(b"$GPGGA,1,2,3"); // no '*hh' yet
         assert!(parser.next_message().is_none());
     }
@@ -457,7 +356,7 @@ mod tests {
 
     #[test]
     fn parser_returns_unknown_for_unrecognised_sentence_type() {
-        let mut parser = Parser::one_shot();
+        let mut parser = Nmea0183Parser::new(OneShot::new());
         parser.feed(&build(b"GPABC,1,2,3")); // ABC is not a supported type
         let msg = parser.next_message().unwrap().unwrap();
         match msg {
@@ -524,5 +423,36 @@ mod tests {
             decode(&crate::testing::parse_raw(&tll)).unwrap(),
             Nmea0183Message::Tll(_)
         ));
+    }
+
+    // -----------------------------------------------------------------
+    // Source mode chosen at runtime: wrap the envelope `Parser` enum
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn wraps_envelope_parser_enum_for_runtime_source_mode() {
+        let use_streaming = true;
+        let source = if use_streaming {
+            marlin_nmea_envelope::Parser::streaming()
+        } else {
+            marlin_nmea_envelope::Parser::one_shot()
+        };
+        let opts = DecodeOptions::default().with_prdid_dialect(PrdidDialect::PitchRollHeading);
+        let mut parser = Nmea0183Parser::with_options(source, opts);
+        let mut combined = build(b"GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        combined.extend_from_slice(b"\r\n");
+        combined.extend_from_slice(&build(b"PRDID,1.0,2.0,180.0"));
+        combined.extend_from_slice(b"\r\n");
+        parser.feed(&combined);
+
+        assert!(matches!(
+            parser.next_message().unwrap().unwrap(),
+            Nmea0183Message::Gga(_)
+        ));
+        assert!(matches!(
+            parser.next_message().unwrap().unwrap(),
+            Nmea0183Message::Prdid(PrdidData::PitchRollHeading(_))
+        ));
+        assert!(parser.next_message().is_none());
     }
 }

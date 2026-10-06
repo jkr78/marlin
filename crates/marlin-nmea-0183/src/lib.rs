@@ -84,7 +84,7 @@ pub(crate) mod testing;
 
 pub use error::DecodeError;
 pub use message::Nmea0183Message;
-pub use parser::{Nmea0183Error, Nmea0183Parser, Parser};
+pub use parser::{Nmea0183Error, Nmea0183Parser};
 pub use sentences::{
     decode_gga, decode_gll, decode_hdg, decode_hdt, decode_prdid, decode_prdid_pitch_roll_heading,
     decode_prdid_roll_pitch_heading, decode_psxn, decode_rmc, decode_tll, decode_ttm, decode_vtg,
@@ -94,9 +94,11 @@ pub use sentences::{
     TllData, TtmData, UtcDate, UtcTime, VtgData, VtgMode,
 };
 
-// Re-export the envelope's `RawSentence` for convenience — most callers
-// of this crate will need it to pattern-match `Nmea0183Message::Unknown`.
-pub use marlin_nmea_envelope::RawSentence;
+// Re-export the envelope types a caller needs alongside this crate:
+// the sentence sources `Nmea0183Parser` wraps (`Parser` for a source
+// mode chosen at runtime), and `RawSentence` for pattern-matching
+// `Nmea0183Message::Unknown`.
+pub use marlin_nmea_envelope::{OneShot, Parser, RawSentence, Streaming};
 
 use marlin_nmea_envelope::RawSentence as Raw;
 

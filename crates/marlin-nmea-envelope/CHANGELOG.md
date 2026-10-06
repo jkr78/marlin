@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `Parser` implements `SentenceSource`, so the typed parsers in
+  `marlin-nmea-0183` and `marlin-ais` accept it wherever they accept
+  `OneShot` or `Streaming`. This is now the one place in the workspace
+  where the source mode is chosen at runtime (ADR-0005).
+- `Parser::one_shot_with_capacity`, and `From<OneShot>` /
+  `From<Streaming>` for `Parser`.
+
 ## [0.1.4] - 2026-07-07
 
 No behavioral changes. Lockstep version bump with the workspace release that
