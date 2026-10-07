@@ -111,8 +111,17 @@ accessor name)
 **Wire field**:
 One encoded item as the wire carries it: an AIS bit span, a comma-delimited
 0183 field, a KLV tag. The unit at which a field state is assigned; a struct
-that groups several wire fields has no state of its own.
+that groups several wire fields has no state of its own, unless the fields
+form a paired field.
 _Avoid_: slot, element, sub-field (for a wire field inside a grouping)
+
+**Paired field**:
+Two adjacent 0183 wire fields that together encode one quantity, a magnitude
+and its sign letter, such as latitude with its `N`/`S` hemisphere or magnetic
+variation with its `E`/`W` direction. The pair receives one field state; a
+half-filled pair is invalid, not not available.
+_Avoid_: composite field, coordinate pair (in prose), hemisphere field (for
+the pair)
 
 **Plain field**:
 A wire field the sender cannot put in any state but value, such as a one-bit
