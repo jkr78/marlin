@@ -62,22 +62,75 @@ _Avoid_: buffered mode, stream mode
 The receiving station's own AIS transmissions, framed as `!AIVDO`.
 _Avoid_: ownship, self, local vessel
 
-### Field values
+### Field state
+
+**Field state**:
+The decoded outcome of one wire field: a value, not available, sender error,
+invalid, or over-range.
+_Avoid_: reading, measurement, tri-state, three-way, slot
+
+**Value**:
+The field state holding a value the wire gave a meaning to and the decoder
+accepted.
+_Avoid_: valid, ok, present
 
 **Sentinel**:
 A reserved wire value that carries a status instead of a measurement.
 _Avoid_: magic number, placeholder
 
 **Not available**:
-The sentinel meaning the sender has no value for the field.
-_Avoid_: unknown, invalid, missing, null
+The field state meaning the sender supplied no value for the field, by
+sentinel code, empty 0183 field or omitted optional KLV tag.
+_Avoid_: unknown, invalid, missing, null, absent
+
+**Sender error**:
+The field state for a sentinel meaning the sender knows it has no usable
+value: a sensor fault or an unrepresentable reading. An out-of-range code
+with no known bound is a sender error, not over-range.
+_Avoid_: error indicator (MISB's wording for one case), flagged, fault
+
+**Invalid**:
+The field state for a wire value the decoder could not give a meaning,
+whether unparsable text or a number the spec leaves undefined.
+_Avoid_: rejected, malformed (reserved for sentence framing), unparsable,
+corrupt
 
 **Over-range**:
-A sentinel meaning the true value is at or above the field's maximum, so the
-decoded number is a lower bound (speed 102.2 kn or more, altitude 4094 m or
-more). Carries information; not available does not.
+The field state for a sentinel meaning the true value is at or beyond a
+known bound the field carries, so the decoded number is that bound (speed
+102.2 kn or more, altitude 4094 m or more). Carries information; not
+available does not.
 _Avoid_: saturated (past-end bit reads), floor (minimum payload length),
 clamped, capped
+
+**Raw code**:
+The undecoded wire integer a sentinel state retains.
+_Avoid_: wire value, magic number, raw (alone, in prose; fine as an
+accessor name)
+
+**Status field**:
+A field whose value qualifies other fields in the same message rather than
+measuring anything, such as the 0183 `A`/`V` data status or GGA fix quality.
+A void status does not change the field state of the fields it qualifies.
+_Avoid_: flag field, validity field
+
+**Message failure**:
+The decode outcome where no message is produced: the input could not be
+framed, its checksum did not verify, its layout differs from what the
+decoder expects, or a mandatory field is absent. A field's value never
+causes one.
+_Avoid_: decode error (the Rust type), rejection, drop
+
+**Layout**:
+The field count or bit length a decoder expects of a message. Fewer than
+the floor fails the message; more is ignored.
+_Avoid_: schema, format, shape (reserved for the Rust type of a field)
+
+**Floor**:
+The shortest payload length at which a message type's layout is still
+identifiable, taken from traffic seen in the wild rather than the standard's
+table. Fields past the transmitted end are not available.
+_Avoid_: minimum length, table length, nominal length
 
 **Turn indicator (TI)**:
 The onboard rate-of-turn sensor behind the ROT field. Codes ±127 mean "turning

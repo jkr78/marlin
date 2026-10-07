@@ -154,7 +154,10 @@ track deliverables (not conversational state).
   (codes 60–63) folded in. Requested by nexus; deferred from the Type 9/21 feature
   because it changes every field type (breaking) and revises the sentinel policy,
   which today says the raw code is not exposed. ADR-0001 records it. Needs its
-  own grill before any code.
+  own grill before any code. The same design covers two 0183 status-field
+  smells: an empty RMC status byte decodes to the fabricated
+  `DataStatus::Other(0)` instead of not available, and GGA fix quality treats
+  an empty field as `Invalid` but fails the sentence on two or more bytes.
 - [ ] Parse NMEA 4.10 TAG blocks in marlin-nmea-envelope
   `RawSentence.tag_block` is raw bytes; consumers parse `c:` (Unix seconds)
   themselves. A typed TAG block (`c:`, `s:`, `d:`, `g:`, `n:`, `r:`, `t:`) removes
@@ -387,12 +390,8 @@ track deliverables (not conversational state).
 
 ### Open
 
-- [ ] **Checksum enforcement policy.**
-  Today's parser is strict. Legacy devices emit `*00` as a "checksum disabled" sentinel or omit the checksum entirely. Options:
-  - **A**. Stay strict by default; add a `Parser::lax()` constructor that accepts `*00` as "unverified" (`checksum_ok = false`).
-  - **B**. Accept `*00` specifically as a disable sentinel.
-  - **C**. Status quo: strict, reject all malformed.
-  `RawSentence::checksum_ok` already exists to support (A) non-breaking. Not urgent — matters at TCMS integration.
+- [ ] **Checksum enforcement policy.** [envelope][ready]
+  Today's parser is strict. Legacy devices emit `*00` as a "checksum disabled" sentinel or omit the checksum entirely. Decided 2026-10-07 during the field-state design: the knob lives on `marlin_nmea_envelope::Parser` only, strict by default; a relaxed parser yields a mismatching or unverifiable sentence as `Ok(RawSentence)` with `checksum_ok = false`. The typed crates (0183, AIS) never re-check and carry no knob of their own; typed messages do not gain a `checksum_ok` field. KLV `decode` never gets a knob (see the checksum-free reader card). Still to pick when built: whether `*00` is treated as "unverified" only under the relaxed policy (option A) or always (option B). Not urgent — matters at TCMS integration.
 
 - [ ] **`Error::Truncated` activation.**
   Variant defined but never emitted. Current behavior: partial `OneShot` buffers return `None`. For explicit "datagram truncated" signalling, add `flush()` on `OneShot`. Low priority; UDP callers handle by timeout today.
