@@ -114,6 +114,13 @@ measuring anything, such as the 0183 `A`/`V` data status or GGA fix quality.
 A void status does not change the field state of the fields it qualifies.
 _Avoid_: flag field, validity field
 
+**Status-carrying field**:
+A measurement field whose code space also carries defined statuses, such as
+the AIS timestamp (61–63: manual input, dead reckoning, inoperative) or rate
+of turn (±127: turning with no indicator). A status is a value of the field,
+not a field state; only the not-available code is a field state.
+_Avoid_: mixed field, sentinel field
+
 **Message failure**:
 The decode outcome where no message is produced: the input could not be
 framed, its checksum did not verify, its layout differs from what the
@@ -138,8 +145,9 @@ right/left at more than 5° per 30 s (no TI available)": a status, not a rate.
 _Avoid_: ROT sensor, gyro
 
 **Timestamp**:
-The UTC second of a report's position fix; codes 60–63 are sentinels (not
-available, manual input, dead reckoning, inoperative).
+The UTC second of a report's position fix. A status-carrying field: 60 is
+not available, 61–63 are positioning-system statuses (manual input, dead
+reckoning, inoperative).
 _Avoid_: time stamp, UTC second
 
 **Radio status**:
