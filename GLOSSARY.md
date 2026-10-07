@@ -108,6 +108,17 @@ The undecoded wire integer a sentinel state retains.
 _Avoid_: wire value, magic number, raw (alone, in prose; fine as an
 accessor name)
 
+**Wire field**:
+One encoded item as the wire carries it: an AIS bit span, a comma-delimited
+0183 field, a KLV tag. The unit at which a field state is assigned; a struct
+that groups several wire fields has no state of its own.
+_Avoid_: slot, element, sub-field (for a wire field inside a grouping)
+
+**Plain field**:
+A wire field the sender cannot put in any state but value, such as a one-bit
+flag or an opaque bit block, so it is decoded without a field state.
+_Avoid_: raw field, bare field, flag (as a category)
+
 **Status field**:
 A field whose value qualifies other fields in the same message rather than
 measuring anything, such as the 0183 `A`/`V` data status or GGA fix quality.
