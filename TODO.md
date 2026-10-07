@@ -8,6 +8,23 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Give AIS ship type a typed representation of Table 53
+  `ship_type` on Types 5, 19 and 24B is a raw `u8` with 0 as not
+  available; the field-state design keeps every other code, Table 53's
+  regional (100-199) and future-reserved (200-255) ranges included, as a
+  value because the crate claims no knowledge of the table. That leaves
+  one asymmetry: reserved codes on every enum field are the invalid
+  state, on `ship_type` they are values. A `ShipType` type dissolves it.
+  Table 53 is structured, not flat: the first digit is a vessel category
+  (wing-in-ground, fishing, towing, high-speed craft, passenger, cargo,
+  tanker, other, ...) and for several categories the second digit is a
+  hazardous-cargo class, so the honest shape is probably a category enum
+  plus a cargo-class enum, not 250 variants; it needs its own short
+  design round. Timing: 0.3.0 is already breaking, so landing it there
+  spares consumers a second break. May not be needed: the doc comment
+  says most callers use their own lookup, and nexus re-derives only code
+  0, which the not-available state now covers. Re-check that before
+  building. [marlin-ais][draft]
 - [ ] Compile-test the crate README examples
   No crate README is doctested: none is embedded with `include_str!`, so
   a README example can drift from the API without CI noticing. The
