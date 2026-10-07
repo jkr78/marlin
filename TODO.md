@@ -8,6 +8,19 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Expose the nmea-0183 field helpers for downstream proprietary decoders
+  The crate docs promise an extension story: a downstream crate builds
+  its own enum and delegates to the public per-sentence decoders. A
+  decoder for a sentence this crate does not know still needs the
+  field-level primitives (number, letter code, paired coordinate, text),
+  and those live in a private `util` module whose doc line wrongly
+  claims it is public. Publishing them means freezing their shape, so
+  wait until the field-state work has landed the `FieldState` producers
+  and the shared-crate trait surface has settled whether a construction
+  helper lives in `marlin-field`; a helper published there would make
+  most of this module redundant. May not be needed: no downstream user
+  has asked, and nexus decodes nothing proprietary beyond PSXN and
+  PRDID, which this crate already covers. [marlin-nmea-0183][draft]
 - [ ] Give AIS ship type a typed representation of Table 53
   `ship_type` on Types 5, 19 and 24B is a raw `u8` with 0 as not
   available; the field-state design keeps every other code, Table 53's
