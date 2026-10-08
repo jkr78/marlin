@@ -309,6 +309,12 @@ mod tests {
     }
 
     #[test]
+    fn decode_gga_non_finite_latitude_magnitude_is_invalid() {
+        let gga = decode(b"GPGGA,123519,nan,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
     fn decode_gga_latitude_beyond_90_degrees_is_invalid() {
         let gga = decode(b"GPGGA,123519,9500.000,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
         assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
