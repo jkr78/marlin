@@ -1,5 +1,7 @@
 # Python binding classes flatten Rust field-level sum types
 
+_Superseded by [ADR-0009](0009-python-bindings-carry-sum-types-as-variant-classes.md) from 0.3.0._
+
 A Rust enum with data in a *field* position (`RateOfTurn`, `Type24BExtent`) becomes
 sibling optional attributes on the binding class and on its dataclass mirror
 (`rate_of_turn` + `turn_direction`; `dimensions` + `mothership_mmsi`). On parser
