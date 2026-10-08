@@ -6,424 +6,148 @@ use pyo3::wrap_pyfunction;
 
 use marlin_klv::St0601 as RustSt0601;
 
-use crate::errors::klv_err;
+use crate::errors::{klv_encode_err, klv_err};
+use crate::field::{field_arg, from_py, repr_state, to_py, PyFieldState};
 
-/// Mutable MISB ST 0601 local set. Construct, set fields, then `klv.encode(...)`;
-/// or obtain one from `klv.decode(...)`. Each tag exposes an engineering-unit
-/// accessor (e.g. `sensor_latitude_degrees`) and a `raw_*` wire-integer escape hatch.
+/// Mutable MISB ST 0601 local set. Construct with the mandatory `timestamp_us`,
+/// assign fields, then `klv.encode(...)`; or obtain one from `klv.decode(...)`.
+///
+/// Every scaled tag is a `FieldState[float]` property in engineering units
+/// (`sensor_latitude_degrees`, `slant_range_meters`, ...): an omitted tag reads
+/// `FieldState.NotAvailable()`, the ST 0601 sentinel on a signed tag
+/// `FieldState.SenderError(code)`, a known tag with the wrong wire length
+/// `FieldState.Invalid(None)` with its bytes kept in `unknown`. A setter takes a
+/// `FieldState`, a bare number (which becomes `FieldState.Value`) or `None`
+/// (`FieldState.NotAvailable()`); nothing is clamped, `encode` rejects a value
+/// outside the tag's range.
 #[pyclass(name = "St0601", module = "marlin.klv")]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PySt0601 {
     inner: RustSt0601,
 }
 
-#[pymethods]
-impl PySt0601 {
-    #[new]
-    #[pyo3(signature = (timestamp_us = 0, version = None))]
-    fn new(timestamp_us: u64, version: Option<u8>) -> Self {
-        let inner = RustSt0601 {
-            timestamp_us,
-            version,
-            ..RustSt0601::default()
-        };
-        Self { inner }
-    }
+/// The `#[pymethods]` block of [`PySt0601`]: the hand-written members plus one
+/// `FieldState[float]` property per scaled tag, generated from the list.
+macro_rules! st0601_methods {
+    ($({ $field:ident, $setter:ident, $doc:literal }),+ $(,)?) => {
+        #[pymethods]
+        impl PySt0601 {
+            #[new]
+            #[pyo3(signature = (timestamp_us, version = None))]
+            fn new(timestamp_us: u64, version: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+                let mut inner = RustSt0601::new(timestamp_us);
+                inner.version = field_arg(version)?;
+                Ok(Self { inner })
+            }
 
-    #[getter]
-    fn timestamp_us(&self) -> u64 {
-        self.inner.timestamp_us
-    }
-    #[setter]
-    fn set_timestamp_us(&mut self, v: u64) {
-        self.inner.timestamp_us = v;
-    }
+            /// Tag 2: precision timestamp, microseconds since the UNIX epoch (UTC).
+            /// Mandatory: always encoded, always present in a decoded set.
+            #[getter]
+            fn timestamp_us(&self) -> u64 {
+                self.inner.timestamp_us
+            }
+            #[setter]
+            fn set_timestamp_us(&mut self, v: u64) {
+                self.inner.timestamp_us = v;
+            }
 
-    #[getter]
-    fn version(&self) -> Option<u8> {
-        self.inner.version
-    }
-    #[setter]
-    fn set_version(&mut self, v: Option<u8>) {
-        self.inner.version = v;
-    }
+            /// Tag 65: UAS LS document version number, a `FieldState[int]`.
+            #[getter]
+            fn version(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+                to_py(py, self.inner.version)
+            }
+            #[setter]
+            fn set_version(&mut self, v: &Bound<'_, PyAny>) -> PyResult<()> {
+                self.inner.version = from_py(v)?;
+                Ok(())
+            }
 
-    // ----- Tag 5: platform heading (u16) -----
-    #[getter]
-    fn raw_platform_heading(&self) -> Option<u16> {
-        self.inner.platform_heading
-    }
-    #[setter]
-    fn set_raw_platform_heading(&mut self, v: Option<u16>) {
-        self.inner.platform_heading = v;
-    }
-    #[getter]
-    fn platform_heading_degrees(&self) -> Option<f64> {
-        self.inner.platform_heading_degrees()
-    }
-    #[setter]
-    fn set_platform_heading_degrees(&mut self, v: f64) {
-        self.inner.set_platform_heading_degrees(v);
-    }
+            $(
+                #[doc = $doc]
+                #[getter]
+                fn $field(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+                    to_py(py, self.inner.$field)
+                }
+                #[setter]
+                fn $setter(&mut self, v: &Bound<'_, PyAny>) -> PyResult<()> {
+                    self.inner.$field = from_py(v)?;
+                    Ok(())
+                }
+            )+
 
-    // ----- Tag 6: platform pitch (i16) -----
-    #[getter]
-    fn raw_platform_pitch(&self) -> Option<i16> {
-        self.inner.platform_pitch
-    }
-    #[setter]
-    fn set_raw_platform_pitch(&mut self, v: Option<i16>) {
-        self.inner.platform_pitch = v;
-    }
-    #[getter]
-    fn platform_pitch_degrees(&self) -> Option<f64> {
-        self.inner.platform_pitch_degrees()
-    }
-    #[setter]
-    fn set_platform_pitch_degrees(&mut self, v: f64) {
-        self.inner.set_platform_pitch_degrees(v);
-    }
+            /// Tags the codec does not type, as `(tag, bytes)` in wire order, plus
+            /// the bytes of any known tag that arrived with the wrong wire length.
+            /// Read-only.
+            #[getter]
+            fn unknown(&self, py: Python<'_>) -> Vec<(u8, Py<PyAny>)> {
+                self.inner
+                    .unknown
+                    .iter()
+                    .map(|(t, v)| (*t, PyBytes::new(py, v).into_any().unbind()))
+                    .collect()
+            }
 
-    // ----- Tag 7: platform roll (i16) -----
-    #[getter]
-    fn raw_platform_roll(&self) -> Option<i16> {
-        self.inner.platform_roll
-    }
-    #[setter]
-    fn set_raw_platform_roll(&mut self, v: Option<i16>) {
-        self.inner.platform_roll = v;
-    }
-    #[getter]
-    fn platform_roll_degrees(&self) -> Option<f64> {
-        self.inner.platform_roll_degrees()
-    }
-    #[setter]
-    fn set_platform_roll_degrees(&mut self, v: f64) {
-        self.inner.set_platform_roll_degrees(v);
-    }
+            fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+                Ok(format!(
+                    "St0601(timestamp_us={}, version={})",
+                    self.inner.timestamp_us,
+                    repr_state(py, self.inner.version)?,
+                ))
+            }
+        }
+    };
+}
 
-    // ----- Tag 8: platform true airspeed (u8) -----
-    #[getter]
-    fn raw_platform_true_airspeed(&self) -> Option<u8> {
-        self.inner.platform_true_airspeed
-    }
-    #[setter]
-    fn set_raw_platform_true_airspeed(&mut self, v: Option<u8>) {
-        self.inner.platform_true_airspeed = v;
-    }
-    #[getter]
-    fn platform_true_airspeed_mps(&self) -> Option<f64> {
-        self.inner.platform_true_airspeed_mps()
-    }
-    #[setter]
-    fn set_platform_true_airspeed_mps(&mut self, v: f64) {
-        self.inner.set_platform_true_airspeed_mps(v);
-    }
-
-    // ----- Tag 13: sensor latitude (i32) -----
-    #[getter]
-    fn raw_sensor_latitude(&self) -> Option<i32> {
-        self.inner.sensor_latitude
-    }
-    #[setter]
-    fn set_raw_sensor_latitude(&mut self, v: Option<i32>) {
-        self.inner.sensor_latitude = v;
-    }
-    #[getter]
-    fn sensor_latitude_degrees(&self) -> Option<f64> {
-        self.inner.sensor_latitude_degrees()
-    }
-    #[setter]
-    fn set_sensor_latitude_degrees(&mut self, v: f64) {
-        self.inner.set_sensor_latitude_degrees(v);
-    }
-
-    // ----- Tag 14: sensor longitude (i32) -----
-    #[getter]
-    fn raw_sensor_longitude(&self) -> Option<i32> {
-        self.inner.sensor_longitude
-    }
-    #[setter]
-    fn set_raw_sensor_longitude(&mut self, v: Option<i32>) {
-        self.inner.sensor_longitude = v;
-    }
-    #[getter]
-    fn sensor_longitude_degrees(&self) -> Option<f64> {
-        self.inner.sensor_longitude_degrees()
-    }
-    #[setter]
-    fn set_sensor_longitude_degrees(&mut self, v: f64) {
-        self.inner.set_sensor_longitude_degrees(v);
-    }
-
-    // ----- Tag 15: sensor true altitude (u16) -----
-    #[getter]
-    fn raw_sensor_true_altitude(&self) -> Option<u16> {
-        self.inner.sensor_true_altitude
-    }
-    #[setter]
-    fn set_raw_sensor_true_altitude(&mut self, v: Option<u16>) {
-        self.inner.sensor_true_altitude = v;
-    }
-    #[getter]
-    fn sensor_true_altitude_meters(&self) -> Option<f64> {
-        self.inner.sensor_true_altitude_meters()
-    }
-    #[setter]
-    fn set_sensor_true_altitude_meters(&mut self, v: f64) {
-        self.inner.set_sensor_true_altitude_meters(v);
-    }
-
-    // ----- Tag 16: sensor horizontal field of view (u16) -----
-    #[getter]
-    fn raw_sensor_horizontal_fov(&self) -> Option<u16> {
-        self.inner.sensor_horizontal_fov
-    }
-    #[setter]
-    fn set_raw_sensor_horizontal_fov(&mut self, v: Option<u16>) {
-        self.inner.sensor_horizontal_fov = v;
-    }
-    #[getter]
-    fn sensor_horizontal_fov_degrees(&self) -> Option<f64> {
-        self.inner.sensor_horizontal_fov_degrees()
-    }
-    #[setter]
-    fn set_sensor_horizontal_fov_degrees(&mut self, v: f64) {
-        self.inner.set_sensor_horizontal_fov_degrees(v);
-    }
-
-    // ----- Tag 17: sensor vertical field of view (u16) -----
-    #[getter]
-    fn raw_sensor_vertical_fov(&self) -> Option<u16> {
-        self.inner.sensor_vertical_fov
-    }
-    #[setter]
-    fn set_raw_sensor_vertical_fov(&mut self, v: Option<u16>) {
-        self.inner.sensor_vertical_fov = v;
-    }
-    #[getter]
-    fn sensor_vertical_fov_degrees(&self) -> Option<f64> {
-        self.inner.sensor_vertical_fov_degrees()
-    }
-    #[setter]
-    fn set_sensor_vertical_fov_degrees(&mut self, v: f64) {
-        self.inner.set_sensor_vertical_fov_degrees(v);
-    }
-
-    // ----- Tag 18: sensor relative azimuth (u32) -----
-    #[getter]
-    fn raw_sensor_relative_azimuth(&self) -> Option<u32> {
-        self.inner.sensor_relative_azimuth
-    }
-    #[setter]
-    fn set_raw_sensor_relative_azimuth(&mut self, v: Option<u32>) {
-        self.inner.sensor_relative_azimuth = v;
-    }
-    #[getter]
-    fn sensor_relative_azimuth_degrees(&self) -> Option<f64> {
-        self.inner.sensor_relative_azimuth_degrees()
-    }
-    #[setter]
-    fn set_sensor_relative_azimuth_degrees(&mut self, v: f64) {
-        self.inner.set_sensor_relative_azimuth_degrees(v);
-    }
-
-    // ----- Tag 19: sensor relative elevation (i32) -----
-    #[getter]
-    fn raw_sensor_relative_elevation(&self) -> Option<i32> {
-        self.inner.sensor_relative_elevation
-    }
-    #[setter]
-    fn set_raw_sensor_relative_elevation(&mut self, v: Option<i32>) {
-        self.inner.sensor_relative_elevation = v;
-    }
-    #[getter]
-    fn sensor_relative_elevation_degrees(&self) -> Option<f64> {
-        self.inner.sensor_relative_elevation_degrees()
-    }
-    #[setter]
-    fn set_sensor_relative_elevation_degrees(&mut self, v: f64) {
-        self.inner.set_sensor_relative_elevation_degrees(v);
-    }
-
-    // ----- Tag 20: sensor relative roll (u32) -----
-    #[getter]
-    fn raw_sensor_relative_roll(&self) -> Option<u32> {
-        self.inner.sensor_relative_roll
-    }
-    #[setter]
-    fn set_raw_sensor_relative_roll(&mut self, v: Option<u32>) {
-        self.inner.sensor_relative_roll = v;
-    }
-    #[getter]
-    fn sensor_relative_roll_degrees(&self) -> Option<f64> {
-        self.inner.sensor_relative_roll_degrees()
-    }
-    #[setter]
-    fn set_sensor_relative_roll_degrees(&mut self, v: f64) {
-        self.inner.set_sensor_relative_roll_degrees(v);
-    }
-
-    // ----- Tag 21: slant range (u32) -----
-    #[getter]
-    fn raw_slant_range(&self) -> Option<u32> {
-        self.inner.slant_range
-    }
-    #[setter]
-    fn set_raw_slant_range(&mut self, v: Option<u32>) {
-        self.inner.slant_range = v;
-    }
-    #[getter]
-    fn slant_range_meters(&self) -> Option<f64> {
-        self.inner.slant_range_meters()
-    }
-    #[setter]
-    fn set_slant_range_meters(&mut self, v: f64) {
-        self.inner.set_slant_range_meters(v);
-    }
-
-    // ----- Tag 22: target width (u16) -----
-    #[getter]
-    fn raw_target_width(&self) -> Option<u16> {
-        self.inner.target_width
-    }
-    #[setter]
-    fn set_raw_target_width(&mut self, v: Option<u16>) {
-        self.inner.target_width = v;
-    }
-    #[getter]
-    fn target_width_meters(&self) -> Option<f64> {
-        self.inner.target_width_meters()
-    }
-    #[setter]
-    fn set_target_width_meters(&mut self, v: f64) {
-        self.inner.set_target_width_meters(v);
-    }
-
-    // ----- Tag 23: frame center latitude (i32) -----
-    #[getter]
-    fn raw_frame_center_latitude(&self) -> Option<i32> {
-        self.inner.frame_center_latitude
-    }
-    #[setter]
-    fn set_raw_frame_center_latitude(&mut self, v: Option<i32>) {
-        self.inner.frame_center_latitude = v;
-    }
-    #[getter]
-    fn frame_center_latitude_degrees(&self) -> Option<f64> {
-        self.inner.frame_center_latitude_degrees()
-    }
-    #[setter]
-    fn set_frame_center_latitude_degrees(&mut self, v: f64) {
-        self.inner.set_frame_center_latitude_degrees(v);
-    }
-
-    // ----- Tag 24: frame center longitude (i32) -----
-    #[getter]
-    fn raw_frame_center_longitude(&self) -> Option<i32> {
-        self.inner.frame_center_longitude
-    }
-    #[setter]
-    fn set_raw_frame_center_longitude(&mut self, v: Option<i32>) {
-        self.inner.frame_center_longitude = v;
-    }
-    #[getter]
-    fn frame_center_longitude_degrees(&self) -> Option<f64> {
-        self.inner.frame_center_longitude_degrees()
-    }
-    #[setter]
-    fn set_frame_center_longitude_degrees(&mut self, v: f64) {
-        self.inner.set_frame_center_longitude_degrees(v);
-    }
-
-    // ----- Tag 25: frame center elevation (u16) -----
-    #[getter]
-    fn raw_frame_center_elevation(&self) -> Option<u16> {
-        self.inner.frame_center_elevation
-    }
-    #[setter]
-    fn set_raw_frame_center_elevation(&mut self, v: Option<u16>) {
-        self.inner.frame_center_elevation = v;
-    }
-    #[getter]
-    fn frame_center_elevation_meters(&self) -> Option<f64> {
-        self.inner.frame_center_elevation_meters()
-    }
-    #[setter]
-    fn set_frame_center_elevation_meters(&mut self, v: f64) {
-        self.inner.set_frame_center_elevation_meters(v);
-    }
-
-    // ----- Tag 40: target location latitude (i32) -----
-    #[getter]
-    fn raw_target_location_latitude(&self) -> Option<i32> {
-        self.inner.target_location_latitude
-    }
-    #[setter]
-    fn set_raw_target_location_latitude(&mut self, v: Option<i32>) {
-        self.inner.target_location_latitude = v;
-    }
-    #[getter]
-    fn target_location_latitude_degrees(&self) -> Option<f64> {
-        self.inner.target_location_latitude_degrees()
-    }
-    #[setter]
-    fn set_target_location_latitude_degrees(&mut self, v: f64) {
-        self.inner.set_target_location_latitude_degrees(v);
-    }
-
-    // ----- Tag 41: target location longitude (i32) -----
-    #[getter]
-    fn raw_target_location_longitude(&self) -> Option<i32> {
-        self.inner.target_location_longitude
-    }
-    #[setter]
-    fn set_raw_target_location_longitude(&mut self, v: Option<i32>) {
-        self.inner.target_location_longitude = v;
-    }
-    #[getter]
-    fn target_location_longitude_degrees(&self) -> Option<f64> {
-        self.inner.target_location_longitude_degrees()
-    }
-    #[setter]
-    fn set_target_location_longitude_degrees(&mut self, v: f64) {
-        self.inner.set_target_location_longitude_degrees(v);
-    }
-
-    // ----- Tag 42: target location elevation (u16) -----
-    #[getter]
-    fn raw_target_location_elevation(&self) -> Option<u16> {
-        self.inner.target_location_elevation
-    }
-    #[setter]
-    fn set_raw_target_location_elevation(&mut self, v: Option<u16>) {
-        self.inner.target_location_elevation = v;
-    }
-    #[getter]
-    fn target_location_elevation_meters(&self) -> Option<f64> {
-        self.inner.target_location_elevation_meters()
-    }
-    #[setter]
-    fn set_target_location_elevation_meters(&mut self, v: f64) {
-        self.inner.set_target_location_elevation_meters(v);
-    }
-
-    // ----- Unrecognized tags: list of (tag, bytes) in wire order -----
-    #[getter]
-    fn unknown(&self, py: Python<'_>) -> Vec<(u8, Py<PyAny>)> {
-        self.inner
-            .unknown
-            .iter()
-            .map(|(t, v)| (*t, PyBytes::new(py, v).into_any().unbind()))
-            .collect()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "St0601(timestamp_us={}, version={:?})",
-            self.inner.timestamp_us, self.inner.version,
-        )
-    }
+st0601_methods! {
+    { platform_heading_degrees, set_platform_heading_degrees,
+      "Tag 5: platform heading in degrees (0..=360)." },
+    { platform_pitch_degrees, set_platform_pitch_degrees,
+      "Tag 6: platform pitch in degrees (-20..=20); \
+       the sentinel reads `FieldState.SenderError(-32768)`." },
+    { platform_roll_degrees, set_platform_roll_degrees,
+      "Tag 7: platform roll in degrees (-50..=50); \
+       the sentinel reads `FieldState.SenderError(-32768)`." },
+    { platform_true_airspeed_mps, set_platform_true_airspeed_mps,
+      "Tag 8: platform true airspeed in m/s (0..=255)." },
+    { sensor_latitude_degrees, set_sensor_latitude_degrees,
+      "Tag 13: sensor latitude in degrees WGS84 (-90..=90); \
+       the sentinel reads `FieldState.SenderError(-2147483648)`." },
+    { sensor_longitude_degrees, set_sensor_longitude_degrees,
+      "Tag 14: sensor longitude in degrees WGS84 (-180..=180); \
+       the sentinel reads `FieldState.SenderError(-2147483648)`." },
+    { sensor_true_altitude_meters, set_sensor_true_altitude_meters,
+      "Tag 15: sensor true altitude in meters MSL (-900..=19000)." },
+    { sensor_horizontal_fov_degrees, set_sensor_horizontal_fov_degrees,
+      "Tag 16: sensor horizontal field of view in degrees (0..=180)." },
+    { sensor_vertical_fov_degrees, set_sensor_vertical_fov_degrees,
+      "Tag 17: sensor vertical field of view in degrees (0..=180)." },
+    { sensor_relative_azimuth_degrees, set_sensor_relative_azimuth_degrees,
+      "Tag 18: sensor relative azimuth in degrees (0..=360)." },
+    { sensor_relative_elevation_degrees, set_sensor_relative_elevation_degrees,
+      "Tag 19: sensor relative elevation in degrees (-180..=180, negative = below horizon); \
+       the sentinel reads `FieldState.SenderError(-2147483648)`." },
+    { sensor_relative_roll_degrees, set_sensor_relative_roll_degrees,
+      "Tag 20: sensor relative roll in degrees (0..=360, clockwise from behind the camera)." },
+    { slant_range_meters, set_slant_range_meters,
+      "Tag 21: slant range in meters (0..=5000000)." },
+    { target_width_meters, set_target_width_meters,
+      "Tag 22: target width in meters (0..=10000)." },
+    { frame_center_latitude_degrees, set_frame_center_latitude_degrees,
+      "Tag 23: frame center latitude in degrees WGS84 (-90..=90); \
+       the sentinel reads `FieldState.SenderError(-2147483648)`." },
+    { frame_center_longitude_degrees, set_frame_center_longitude_degrees,
+      "Tag 24: frame center longitude in degrees WGS84 (-180..=180); \
+       the sentinel reads `FieldState.SenderError(-2147483648)`." },
+    { frame_center_elevation_meters, set_frame_center_elevation_meters,
+      "Tag 25: frame center elevation in meters MSL (-900..=19000)." },
+    { target_location_latitude_degrees, set_target_location_latitude_degrees,
+      "Tag 40: target location latitude in degrees WGS84 (-90..=90); \
+       the sentinel reads `FieldState.SenderError(-2147483648)`." },
+    { target_location_longitude_degrees, set_target_location_longitude_degrees,
+      "Tag 41: target location longitude in degrees WGS84 (-180..=180); \
+       the sentinel reads `FieldState.SenderError(-2147483648)`." },
+    { target_location_elevation_meters, set_target_location_elevation_meters,
+      "Tag 42: target location elevation in meters MSL (-900..=19000)." },
 }
 
 /// Read-only metadata for one ST 0601 tag: its wire `number`, the `St0601`
@@ -483,27 +207,31 @@ fn tag_name(number: u8) -> Option<String> {
     marlin_klv::tag_name(number).map(Into::into)
 }
 
-/// Decode a KLV datagram into an `St0601`. Raises `KlvError` on malformed input.
+/// Decode a KLV datagram into an `St0601`. Raises `KlvError` for a structural
+/// reason only: framing, the checksum, or the mandatory Tag 2 timestamp absent
+/// or malformed. A field's value never fails the set.
 #[pyfunction]
-fn decode(data: &[u8]) -> PyResult<PySt0601> {
+fn decode(py: Python<'_>, data: &[u8]) -> PyResult<PySt0601> {
     marlin_klv::decode(data)
         .map(|inner| PySt0601 { inner })
-        .map_err(klv_err)
+        .map_err(|err| klv_err(py, err))
 }
 
-/// Encode an `St0601` into a KLV datagram (`bytes`).
+/// Encode an `St0601` into a KLV datagram (`bytes`). Raises `KlvEncodeError`
+/// for a field in a state the wire cannot carry, or a value outside its tag's
+/// range or NaN.
 #[pyfunction]
 fn encode<'py>(py: Python<'py>, set: &PySt0601) -> PyResult<Bound<'py, PyBytes>> {
     let mut out = Vec::new();
-    marlin_klv::encode(&set.inner, &mut out).map_err(klv_err)?;
+    marlin_klv::encode(&set.inner, &mut out).map_err(|err| klv_encode_err(py, err))?;
     Ok(PyBytes::new(py, &out))
 }
 
 /// Cheap Tag 2 peek: return the precision timestamp (microseconds) without
 /// verifying the checksum. `None` when Tag 2 is absent.
 #[pyfunction]
-fn precision_timestamp(data: &[u8]) -> PyResult<Option<u64>> {
-    marlin_klv::precision_timestamp(data).map_err(klv_err)
+fn precision_timestamp(py: Python<'_>, data: &[u8]) -> PyResult<Option<u64>> {
+    marlin_klv::precision_timestamp(data).map_err(|err| klv_err(py, err))
 }
 
 pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {

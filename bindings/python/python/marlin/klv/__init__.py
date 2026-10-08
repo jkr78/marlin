@@ -3,6 +3,7 @@
 from .. import _core
 
 KlvError: type[Exception] = _core.KlvError
+KlvEncodeError: type[Exception] = _core.KlvEncodeError
 St0601 = _core.klv.St0601
 TagInfo = _core.klv.TagInfo
 UAS_LS_KEY: bytes = _core.klv.UAS_LS_KEY
@@ -15,6 +16,7 @@ tag_name = _core.klv.tag_name
 
 __all__ = [
     "UAS_LS_KEY",
+    "KlvEncodeError",
     "KlvError",
     "St0601",
     "TagInfo",
