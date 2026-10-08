@@ -156,9 +156,6 @@ impl PyFieldState {
 
 /// Converts a decoded `FieldState<T>` into its Python class, for the
 /// getters of the decoder bindings.
-// Consumed by the decoder bindings as each adopts `FieldState`; nothing
-// calls it until the first one does.
-#[allow(dead_code)]
 pub(crate) fn to_py<'py, T: IntoPyObject<'py>>(
     py: Python<'py>,
     state: FieldState<T>,
@@ -185,9 +182,6 @@ pub(crate) fn to_py<'py, T: IntoPyObject<'py>>(
 /// extraction error, if any, is raised as is: `TypeError` for an object
 /// of the wrong type, `OverflowError` for an integer outside the field's
 /// width.
-// Consumed by the decoder bindings as each adopts `FieldState`; nothing
-// calls it until the first one does.
-#[allow(dead_code)]
 pub(crate) fn from_py<'py, T: FromPyObjectOwned<'py>>(
     obj: &Bound<'py, PyAny>,
 ) -> PyResult<FieldState<T>> {
@@ -209,6 +203,15 @@ pub(crate) fn from_py<'py, T: FromPyObjectOwned<'py>>(
         }
         PyFieldState::Invalid { code: None } => FieldState::Invalid(Invalid::Unparsable),
     })
+}
+
+/// The `repr` of a decoded `FieldState<T>` as its Python class shows it,
+/// for the message `__repr__`s.
+pub(crate) fn repr_state<'py, T: IntoPyObject<'py>>(
+    py: Python<'py>,
+    state: FieldState<T>,
+) -> PyResult<String> {
+    to_py(py, state)?.__repr__(py)
 }
 
 /// Extracts a payload to the field's Rust type. The extraction error type

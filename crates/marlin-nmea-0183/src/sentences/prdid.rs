@@ -40,9 +40,10 @@
 
 use alloc::vec::Vec;
 
+use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
-use crate::util::optional_f32;
+use crate::util::number;
 use crate::DecodeError;
 
 // ---------------------------------------------------------------------------
@@ -54,11 +55,11 @@ use crate::DecodeError;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PrdidPitchRollHeading {
     /// Pitch in degrees.
-    pub pitch_deg: Option<f32>,
+    pub pitch_deg: FieldState<f32>,
     /// Roll in degrees.
-    pub roll_deg: Option<f32>,
+    pub roll_deg: FieldState<f32>,
     /// True heading in degrees (0..360).
-    pub heading_deg: Option<f32>,
+    pub heading_deg: FieldState<f32>,
 }
 
 /// PRDID decoded with field order `roll, pitch, heading` — an
@@ -68,11 +69,11 @@ pub struct PrdidPitchRollHeading {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PrdidRollPitchHeading {
     /// Roll in degrees.
-    pub roll_deg: Option<f32>,
+    pub roll_deg: FieldState<f32>,
     /// Pitch in degrees.
-    pub pitch_deg: Option<f32>,
+    pub pitch_deg: FieldState<f32>,
     /// True heading in degrees (0..360).
-    pub heading_deg: Option<f32>,
+    pub heading_deg: FieldState<f32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -141,8 +142,6 @@ const PRDID_MIN_FIELDS: usize = 3;
 ///
 /// - [`DecodeError::NotEnoughFields`] if a typed dialect was selected
 ///   and the sentence has fewer than 3 fields.
-/// - [`DecodeError::InvalidNumber`] / [`DecodeError::InvalidUtf8`] on
-///   per-field decode failures.
 ///
 /// Never errors for [`PrdidDialect::Unknown`] — preserves whatever
 /// fields the envelope parsed.
@@ -172,9 +171,7 @@ pub fn decode_prdid(
 /// # Errors
 ///
 /// - [`DecodeError::NotEnoughFields`] if the sentence has fewer than
-///   3 fields.
-/// - [`DecodeError::InvalidNumber`] / [`DecodeError::InvalidUtf8`] if
-///   any non-empty field is not a valid number.
+///   3 fields. A field that is not a number is invalid, not an error.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_prdid_pitch_roll_heading(
     raw: &RawSentence<'_>,
@@ -187,9 +184,9 @@ pub fn decode_prdid_pitch_roll_heading(
         });
     }
     Ok(PrdidPitchRollHeading {
-        pitch_deg: optional_f32(f[0], 0)?,
-        roll_deg: optional_f32(f[1], 1)?,
-        heading_deg: optional_f32(f[2], 2)?,
+        pitch_deg: number(f[0]),
+        roll_deg: number(f[1]),
+        heading_deg: number(f[2]),
     })
 }
 
@@ -211,9 +208,9 @@ pub fn decode_prdid_roll_pitch_heading(
         });
     }
     Ok(PrdidRollPitchHeading {
-        roll_deg: optional_f32(f[0], 0)?,
-        pitch_deg: optional_f32(f[1], 1)?,
-        heading_deg: optional_f32(f[2], 2)?,
+        roll_deg: number(f[0]),
+        pitch_deg: number(f[1]),
+        heading_deg: number(f[2]),
     })
 }
 
@@ -229,8 +226,10 @@ pub fn decode_prdid_roll_pitch_heading(
     clippy::indexing_slicing
 )]
 mod tests {
+    use marlin_field::Invalid;
+
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
 
     // -----------------------------------------------------------------
     // Envelope-level contract — proprietary, no talker
@@ -305,9 +304,9 @@ mod tests {
             PrdidData::PitchRollHeading(d) => d,
             other => panic!("expected PitchRollHeading, got {other:?}"),
         };
-        assert!((prh.pitch_deg.unwrap() - 1.0).abs() < 0.001);
-        assert!((prh.roll_deg.unwrap() - 2.0).abs() < 0.001);
-        assert!((prh.heading_deg.unwrap() - 180.0).abs() < 0.001);
+        assert!((prh.pitch_deg.value().unwrap() - 1.0).abs() < 0.001);
+        assert!((prh.roll_deg.value().unwrap() - 2.0).abs() < 0.001);
+        assert!((prh.heading_deg.value().unwrap() - 180.0).abs() < 0.001);
     }
 
     #[test]
@@ -339,9 +338,9 @@ mod tests {
         };
         // First field is roll under RPH, pitch under PRH — that's the
         // whole reason these are different dialects.
-        assert!((rph.roll_deg.unwrap() - 1.0).abs() < 0.001);
-        assert!((rph.pitch_deg.unwrap() - 2.0).abs() < 0.001);
-        assert!((rph.heading_deg.unwrap() - 180.0).abs() < 0.001);
+        assert!((rph.roll_deg.value().unwrap() - 1.0).abs() < 0.001);
+        assert!((rph.pitch_deg.value().unwrap() - 2.0).abs() < 0.001);
+        assert!((rph.heading_deg.value().unwrap() - 180.0).abs() < 0.001);
     }
 
     #[test]
@@ -359,11 +358,11 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Empty fields in typed dialects → None
+    // Empty fields in typed dialects → not available
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_prdid_typed_preserves_none_for_empty_fields() {
+    fn decode_prdid_typed_empty_fields_are_not_available() {
         let bytes = build(b"PRDID,,,");
         let raw = parse_raw(&bytes);
         let data = decode_prdid(&raw, PrdidDialect::PitchRollHeading).expect("decode");
@@ -371,9 +370,9 @@ mod tests {
             PrdidData::PitchRollHeading(d) => d,
             other => panic!("expected PitchRollHeading, got {other:?}"),
         };
-        assert_eq!(prh.pitch_deg, None);
-        assert_eq!(prh.roll_deg, None);
-        assert_eq!(prh.heading_deg, None);
+        assert_eq!(prh.pitch_deg, FieldState::NotAvailable);
+        assert_eq!(prh.roll_deg, FieldState::NotAvailable);
+        assert_eq!(prh.heading_deg, FieldState::NotAvailable);
     }
 
     // -----------------------------------------------------------------
@@ -394,13 +393,39 @@ mod tests {
     }
 
     #[test]
-    fn decode_prdid_typed_errors_on_invalid_number() {
+    fn decode_prdid_typed_unparsable_number_is_invalid_and_the_rest_decodes() {
         let bytes = build(b"PRDID,not-a-number,2.0,90.0");
         let raw = parse_raw(&bytes);
-        match decode_prdid(&raw, PrdidDialect::PitchRollHeading) {
-            Err(DecodeError::InvalidNumber { field_index: 0 }) => {}
-            other => panic!("expected InvalidNumber field 0, got {other:?}"),
-        }
+        let data = decode_prdid(&raw, PrdidDialect::PitchRollHeading).expect("decode");
+        let prh = match data {
+            PrdidData::PitchRollHeading(d) => d,
+            other => panic!("expected PitchRollHeading, got {other:?}"),
+        };
+        assert_eq!(prh.pitch_deg, FieldState::Invalid(Invalid::Unparsable));
+        assert!((prh.roll_deg.value().unwrap() - 2.0).abs() < 0.001);
+        assert!((prh.heading_deg.value().unwrap() - 90.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn decode_prdid_typed_every_unreadable_field_is_invalid() {
+        let bytes = build(b"PRDID,x,x,x");
+        let raw = parse_raw(&bytes);
+        let prh = decode_prdid_pitch_roll_heading(&raw).expect("decode");
+        assert_eq!(prh.pitch_deg, unparsable());
+        assert_eq!(prh.roll_deg, unparsable());
+        assert_eq!(prh.heading_deg, unparsable());
+        let rph = decode_prdid_roll_pitch_heading(&raw).expect("decode");
+        assert_eq!(rph.roll_deg, unparsable());
+        assert_eq!(rph.pitch_deg, unparsable());
+        assert_eq!(rph.heading_deg, unparsable());
+    }
+
+    #[test]
+    fn decode_prdid_roll_pitch_heading_unparsable_number_is_invalid() {
+        let bytes = build(b"PRDID,1.0,\xFF,90.0");
+        let raw = parse_raw(&bytes);
+        let rph = decode_prdid_roll_pitch_heading(&raw).expect("decode");
+        assert_eq!(rph.pitch_deg, FieldState::Invalid(Invalid::Unparsable));
     }
 
     // -----------------------------------------------------------------
@@ -438,7 +463,7 @@ mod tests {
         let msg = crate::decode_with(&raw, &opts).expect("dispatcher");
         match msg {
             crate::Nmea0183Message::Prdid(PrdidData::PitchRollHeading(prh)) => {
-                assert!((prh.pitch_deg.unwrap() - 1.0).abs() < 0.001);
+                assert!((prh.pitch_deg.value().unwrap() - 1.0).abs() < 0.001);
             }
             other => panic!("expected Prdid(PitchRollHeading), got {other:?}"),
         }

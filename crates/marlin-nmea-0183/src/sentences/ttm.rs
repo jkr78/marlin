@@ -7,14 +7,17 @@
 
 use alloc::string::String;
 
+use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::sentences::status::TargetStatus;
 use crate::sentences::utc_time::UtcTime;
-use crate::util::{optional_f32, optional_string, optional_u16};
+use crate::util::{code, number, optional, reference_target, text};
 use crate::DecodeError;
 
-/// Bearing/course reference, shared by TTM fields 3 and 6.
+/// Bearing/course reference, shared by TTM fields 3 and 6. An unnamed
+/// byte decodes to the invalid field state with the byte as its raw
+/// code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AngleReference {
@@ -22,21 +25,21 @@ pub enum AngleReference {
     True,
     /// `R` — relative to own ship's heading.
     Relative,
-    /// Any byte not covered above; raw byte preserved.
-    Other(u8),
 }
 
 impl AngleReference {
-    pub(crate) fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Option<Self> {
         match b {
-            b'T' | b't' => Self::True,
-            b'R' | b'r' => Self::Relative,
-            other => Self::Other(other),
+            b'T' | b't' => Some(Self::True),
+            b'R' | b'r' => Some(Self::Relative),
+            _ => None,
         }
     }
 }
 
-/// Speed & distance units governing TTM fields 1, 4, 7.
+/// Speed & distance units governing TTM fields 1, 4, 7. An unnamed
+/// byte decodes to the invalid field state with the byte as its raw
+/// code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DistanceUnits {
@@ -46,22 +49,21 @@ pub enum DistanceUnits {
     Kilometers,
     /// `S` — statute miles / mph.
     Statute,
-    /// Any byte not covered above; raw byte preserved.
-    Other(u8),
 }
 
 impl DistanceUnits {
-    pub(crate) fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Option<Self> {
         match b {
-            b'N' | b'n' => Self::Nautical,
-            b'K' | b'k' => Self::Kilometers,
-            b'S' | b's' => Self::Statute,
-            other => Self::Other(other),
+            b'N' | b'n' => Some(Self::Nautical),
+            b'K' | b'k' => Some(Self::Kilometers),
+            b'S' | b's' => Some(Self::Statute),
+            _ => None,
         }
     }
 }
 
-/// How a target was acquired (TTM field 14).
+/// How a target was acquired (TTM field 14). An unnamed byte decodes
+/// to the invalid field state with the byte as its raw code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AcquisitionType {
@@ -71,17 +73,15 @@ pub enum AcquisitionType {
     Manual,
     /// `R` — reported (from another source).
     Reported,
-    /// Any byte not covered above; raw byte preserved.
-    Other(u8),
 }
 
 impl AcquisitionType {
-    pub(crate) fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Option<Self> {
         match b {
-            b'A' | b'a' => Self::Automatic,
-            b'M' | b'm' => Self::Manual,
-            b'R' | b'r' => Self::Reported,
-            other => Self::Other(other),
+            b'A' | b'a' => Some(Self::Automatic),
+            b'M' | b'm' => Some(Self::Manual),
+            b'R' | b'r' => Some(Self::Reported),
+            _ => None,
         }
     }
 }
@@ -92,37 +92,41 @@ pub struct TtmData {
     /// Two-byte talker ID (e.g. `Some(*b"RA")` for radar).
     pub talker: Option<[u8; 2]>,
     /// Target number (00–99 per spec; wider values tolerated).
-    pub target_number: Option<u16>,
+    pub target_number: FieldState<u16>,
     /// Distance from own ship, in the unit given by [`units`](Self::units).
-    pub distance: Option<f32>,
+    pub distance: FieldState<f32>,
     /// Bearing to the target, degrees.
-    pub bearing_deg: Option<f32>,
+    pub bearing_deg: FieldState<f32>,
     /// Reference frame of [`bearing_deg`](Self::bearing_deg).
-    pub bearing_reference: Option<AngleReference>,
+    pub bearing_reference: FieldState<AngleReference>,
     /// Target speed, in the unit given by [`units`](Self::units).
-    pub speed: Option<f32>,
+    pub speed: FieldState<f32>,
     /// Target course, degrees.
-    pub course_deg: Option<f32>,
+    pub course_deg: FieldState<f32>,
     /// Reference frame of [`course_deg`](Self::course_deg).
-    pub course_reference: Option<AngleReference>,
+    pub course_reference: FieldState<AngleReference>,
     /// Distance at closest point of approach, in [`units`](Self::units).
-    pub cpa: Option<f32>,
+    pub cpa: FieldState<f32>,
     /// Time to CPA in minutes; negative means range is increasing
     /// (target receding).
-    pub tcpa: Option<f32>,
+    pub tcpa: FieldState<f32>,
     /// Units governing [`distance`](Self::distance),
     /// [`speed`](Self::speed), and [`cpa`](Self::cpa).
-    pub units: Option<DistanceUnits>,
+    pub units: FieldState<DistanceUnits>,
     /// Target label.
-    pub name: Option<String>,
+    pub name: FieldState<String>,
     /// Tracking state.
-    pub status: Option<TargetStatus>,
+    pub status: FieldState<TargetStatus>,
     /// `true` when this target is flagged (`R`) as the reference target.
-    pub reference_target: bool,
-    /// UTC time of the data (NMEA 3.0+). `None` if absent or empty.
-    pub utc_time: Option<UtcTime>,
-    /// How the target was acquired (NMEA 3.0+). `None` if absent/empty.
-    pub acquisition: Option<AcquisitionType>,
+    /// An empty or absent field is `Value(false)`, the standard's
+    /// encoding of "not the reference target"; never not available.
+    pub reference_target: FieldState<bool>,
+    /// UTC time of the data (NMEA 3.0+). Not available if absent or
+    /// empty.
+    pub utc_time: FieldState<UtcTime>,
+    /// How the target was acquired (NMEA 3.0+). Not available if absent
+    /// or empty.
+    pub acquisition: FieldState<AcquisitionType>,
 }
 
 /// Minimum fields: target number through target status (indices 0–11).
@@ -135,9 +139,6 @@ const TTM_MIN_FIELDS: usize = 12;
 /// # Errors
 ///
 /// - [`DecodeError::NotEnoughFields`] if fewer than 12 fields.
-/// - [`DecodeError::InvalidNumber`] on a malformed numeric field.
-/// - [`DecodeError::InvalidUtf8`] on a non-UTF-8 target name.
-/// - [`DecodeError::InvalidUtcTime`] on a malformed non-empty UTC field.
 #[allow(clippy::indexing_slicing)] // indices 0..12 validated; 12..15 via get
 pub fn decode_ttm(raw: &RawSentence<'_>) -> Result<TtmData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -147,49 +148,23 @@ pub fn decode_ttm(raw: &RawSentence<'_>) -> Result<TtmData, DecodeError> {
             got: f.len(),
         });
     }
-
-    let target_number = optional_u16(f[0], 0)?;
-    let distance = optional_f32(f[1], 1)?;
-    let bearing_deg = optional_f32(f[2], 2)?;
-    let bearing_reference = f[3].first().copied().map(AngleReference::from_byte);
-    let speed = optional_f32(f[4], 4)?;
-    let course_deg = optional_f32(f[5], 5)?;
-    let course_reference = f[6].first().copied().map(AngleReference::from_byte);
-    let cpa = optional_f32(f[7], 7)?;
-    let tcpa = optional_f32(f[8], 8)?;
-    let units = f[9].first().copied().map(DistanceUnits::from_byte);
-    let name = optional_string(f[10], 10)?;
-    let status = f[11].first().copied().map(TargetStatus::from_byte);
-    let reference_target = matches!(
-        f.get(12).and_then(|b| b.first().copied()),
-        Some(b'R' | b'r')
-    );
-    let utc_time = match f.get(13) {
-        Some(bytes) => UtcTime::parse_optional(bytes, 13)?,
-        None => None,
-    };
-    let acquisition = f
-        .get(14)
-        .and_then(|b| b.first().copied())
-        .map(AcquisitionType::from_byte);
-
     Ok(TtmData {
         talker: raw.talker,
-        target_number,
-        distance,
-        bearing_deg,
-        bearing_reference,
-        speed,
-        course_deg,
-        course_reference,
-        cpa,
-        tcpa,
-        units,
-        name,
-        status,
-        reference_target,
-        utc_time,
-        acquisition,
+        target_number: number(f[0]),
+        distance: number(f[1]),
+        bearing_deg: number(f[2]),
+        bearing_reference: code(f[3], AngleReference::from_byte),
+        speed: number(f[4]),
+        course_deg: number(f[5]),
+        course_reference: code(f[6], AngleReference::from_byte),
+        cpa: number(f[7]),
+        tcpa: number(f[8]),
+        units: code(f[9], DistanceUnits::from_byte),
+        name: text(f[10]),
+        status: code(f[11], TargetStatus::from_byte),
+        reference_target: reference_target(optional(f, 12)),
+        utc_time: number(optional(f, 13)),
+        acquisition: code(optional(f, 14), AcquisitionType::from_byte),
     })
 }
 
@@ -201,66 +176,198 @@ pub fn decode_ttm(raw: &RawSentence<'_>) -> Result<TtmData, DecodeError> {
     clippy::indexing_slicing
 )]
 mod tests {
+    use alloc::string::ToString;
+
+    use marlin_field::{Invalid, RawCode};
+
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
+
+    fn decode(body: &[u8]) -> TtmData {
+        let bytes = build(body);
+        let raw = parse_raw(&bytes);
+        decode_ttm(&raw).expect("parse")
+    }
 
     // Full 15-field RATTM (radar talker), statute units, reported acquisition.
     #[test]
     fn decode_rattm_full() {
-        let bytes = build(b"RATTM,12,1.23,45.6,T,7.8,90.1,R,2.5,-11.0,S,TGT1,T,R,123519.00,R");
-        let raw = parse_raw(&bytes);
-        let ttm = decode_ttm(&raw).expect("parse");
+        let ttm = decode(b"RATTM,12,1.23,45.6,T,7.8,90.1,R,2.5,-11.0,S,TGT1,T,R,123519.00,R");
         assert_eq!(ttm.talker, Some(*b"RA"));
-        assert_eq!(ttm.target_number, Some(12));
-        assert!((ttm.distance.unwrap() - 1.23).abs() < 0.001);
-        assert!((ttm.bearing_deg.unwrap() - 45.6).abs() < 0.01);
-        assert!((ttm.speed.unwrap() - 7.8).abs() < 0.01);
-        assert!((ttm.course_deg.unwrap() - 90.1).abs() < 0.01);
-        assert!((ttm.cpa.unwrap() - 2.5).abs() < 0.01);
-        assert_eq!(ttm.bearing_reference, Some(AngleReference::True));
-        assert_eq!(ttm.course_reference, Some(AngleReference::Relative));
-        assert!((ttm.tcpa.unwrap() - -11.0).abs() < 0.001, "negative TCPA");
-        assert_eq!(ttm.units, Some(DistanceUnits::Statute));
-        assert_eq!(ttm.name.as_deref(), Some("TGT1"));
-        assert_eq!(ttm.status, Some(TargetStatus::Tracking));
-        assert!(ttm.reference_target);
+        assert_eq!(ttm.target_number, FieldState::Value(12));
+        assert!((ttm.distance.value().unwrap() - 1.23).abs() < 0.001);
+        assert!((ttm.bearing_deg.value().unwrap() - 45.6).abs() < 0.01);
+        assert!((ttm.speed.value().unwrap() - 7.8).abs() < 0.01);
+        assert!((ttm.course_deg.value().unwrap() - 90.1).abs() < 0.01);
+        assert!((ttm.cpa.value().unwrap() - 2.5).abs() < 0.01);
+        assert_eq!(
+            ttm.bearing_reference,
+            FieldState::Value(AngleReference::True)
+        );
+        assert_eq!(
+            ttm.course_reference,
+            FieldState::Value(AngleReference::Relative)
+        );
+        assert!(
+            (ttm.tcpa.value().unwrap() - -11.0).abs() < 0.001,
+            "negative TCPA"
+        );
+        assert_eq!(ttm.units, FieldState::Value(DistanceUnits::Statute));
+        assert_eq!(ttm.name, FieldState::Value("TGT1".to_string()));
+        assert_eq!(ttm.status, FieldState::Value(TargetStatus::Tracking));
+        assert_eq!(ttm.reference_target, FieldState::Value(true));
         assert_eq!(
             ttm.utc_time,
-            Some(UtcTime {
+            FieldState::Value(UtcTime {
                 hour: 12,
                 minute: 35,
                 second: 19,
                 millisecond: 0
             })
         );
-        assert_eq!(ttm.acquisition, Some(AcquisitionType::Reported));
+        assert_eq!(
+            ttm.acquisition,
+            FieldState::Value(AcquisitionType::Reported)
+        );
     }
 
     // Base 13-field TTM: no utc_time / acquisition.
     #[test]
-    fn decode_ttm_base_13_fields_optional_trailing_none() {
-        let bytes = build(b"RATTM,3,5.0,180.0,T,10.0,270.0,T,1.0,5.0,N,,Q,");
-        let raw = parse_raw(&bytes);
-        let ttm = decode_ttm(&raw).expect("parse");
-        assert_eq!(ttm.target_number, Some(3));
-        assert_eq!(ttm.units, Some(DistanceUnits::Nautical));
-        assert_eq!(ttm.name, None);
-        assert_eq!(ttm.status, Some(TargetStatus::Query));
-        assert!(!ttm.reference_target);
-        assert_eq!(ttm.utc_time, None);
-        assert_eq!(ttm.acquisition, None);
+    fn decode_ttm_base_13_fields_optional_trailing_not_available() {
+        let ttm = decode(b"RATTM,3,5.0,180.0,T,10.0,270.0,T,1.0,5.0,N,,Q,");
+        assert_eq!(ttm.target_number, FieldState::Value(3));
+        assert_eq!(ttm.units, FieldState::Value(DistanceUnits::Nautical));
+        assert_eq!(ttm.name, FieldState::NotAvailable);
+        assert_eq!(ttm.status, FieldState::Value(TargetStatus::Query));
+        assert_eq!(ttm.reference_target, FieldState::Value(false));
+        assert_eq!(ttm.utc_time, FieldState::NotAvailable);
+        assert_eq!(ttm.acquisition, FieldState::NotAvailable);
     }
 
     #[test]
-    fn decode_ttm_unknown_codes_preserved() {
-        let bytes = build(b"RATTM,1,1.0,2.0,X,3.0,4.0,Y,5.0,6.0,Z,N1,W,,,B");
-        let raw = parse_raw(&bytes);
-        let ttm = decode_ttm(&raw).expect("parse");
-        assert_eq!(ttm.bearing_reference, Some(AngleReference::Other(b'X')));
-        assert_eq!(ttm.course_reference, Some(AngleReference::Other(b'Y')));
-        assert_eq!(ttm.units, Some(DistanceUnits::Other(b'Z')));
-        assert_eq!(ttm.status, Some(TargetStatus::Other(b'W')));
-        assert_eq!(ttm.acquisition, Some(AcquisitionType::Other(b'B')));
+    fn decode_ttm_every_empty_field_is_not_available() {
+        let ttm = decode(b"RATTM,,,,,,,,,,,,,,,");
+        assert_eq!(ttm.target_number, FieldState::NotAvailable);
+        assert_eq!(ttm.distance, FieldState::NotAvailable);
+        assert_eq!(ttm.bearing_deg, FieldState::NotAvailable);
+        assert_eq!(ttm.bearing_reference, FieldState::NotAvailable);
+        assert_eq!(ttm.speed, FieldState::NotAvailable);
+        assert_eq!(ttm.course_deg, FieldState::NotAvailable);
+        assert_eq!(ttm.course_reference, FieldState::NotAvailable);
+        assert_eq!(ttm.cpa, FieldState::NotAvailable);
+        assert_eq!(ttm.tcpa, FieldState::NotAvailable);
+        assert_eq!(ttm.units, FieldState::NotAvailable);
+        assert_eq!(ttm.name, FieldState::NotAvailable);
+        assert_eq!(ttm.status, FieldState::NotAvailable);
+        assert_eq!(ttm.reference_target, FieldState::Value(false));
+        assert_eq!(ttm.utc_time, FieldState::NotAvailable);
+        assert_eq!(ttm.acquisition, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_ttm_every_unreadable_field_is_invalid() {
+        let ttm = decode(b"RATTM,x,x,x,TR,x,x,TR,x,x,NK,\xFF,LQ,RR,x,AM");
+        assert_eq!(ttm.target_number, unparsable());
+        assert_eq!(ttm.distance, unparsable());
+        assert_eq!(ttm.bearing_deg, unparsable());
+        assert_eq!(ttm.bearing_reference, unparsable());
+        assert_eq!(ttm.speed, unparsable());
+        assert_eq!(ttm.course_deg, unparsable());
+        assert_eq!(ttm.course_reference, unparsable());
+        assert_eq!(ttm.cpa, unparsable());
+        assert_eq!(ttm.tcpa, unparsable());
+        assert_eq!(ttm.units, unparsable());
+        assert_eq!(ttm.name, unparsable());
+        assert_eq!(ttm.status, unparsable());
+        assert_eq!(ttm.reference_target, unparsable());
+        assert_eq!(ttm.utc_time, unparsable());
+        assert_eq!(ttm.acquisition, unparsable());
+    }
+
+    #[test]
+    fn decode_ttm_every_unit_and_acquisition_letter() {
+        for (letter, expected) in [
+            (b"N", DistanceUnits::Nautical),
+            (b"K", DistanceUnits::Kilometers),
+            (b"S", DistanceUnits::Statute),
+            (b"k", DistanceUnits::Kilometers),
+        ] {
+            let mut body = b"RATTM,3,5.0,180.0,T,10.0,270.0,T,1.0,5.0,".to_vec();
+            body.extend_from_slice(letter);
+            body.extend_from_slice(b",,Q,");
+            assert_eq!(decode(&body).units, FieldState::Value(expected));
+        }
+        for (letter, expected) in [
+            (b"A", AcquisitionType::Automatic),
+            (b"M", AcquisitionType::Manual),
+            (b"R", AcquisitionType::Reported),
+            (b"m", AcquisitionType::Manual),
+        ] {
+            let mut body = b"RATTM,3,5.0,180.0,T,10.0,270.0,T,1.0,5.0,N,,Q,,,".to_vec();
+            body.extend_from_slice(letter);
+            assert_eq!(decode(&body).acquisition, FieldState::Value(expected));
+        }
+    }
+
+    #[test]
+    fn decode_ttm_unnamed_codes_are_invalid_with_the_byte() {
+        fn undefined<T>(byte: u8) -> FieldState<T> {
+            FieldState::Invalid(Invalid::Undefined(RawCode(byte.into())))
+        }
+        let ttm = decode(b"RATTM,1,1.0,2.0,X,3.0,4.0,Y,5.0,6.0,Z,N1,W,,,B");
+        assert_eq!(ttm.bearing_reference, undefined(b'X'));
+        assert_eq!(ttm.course_reference, undefined(b'Y'));
+        assert_eq!(ttm.units, undefined(b'Z'));
+        assert_eq!(ttm.status, undefined(b'W'));
+        assert_eq!(ttm.acquisition, undefined(b'B'));
+    }
+
+    #[test]
+    fn decode_ttm_two_byte_codes_are_invalid_without_a_code() {
+        let ttm = decode(b"RATTM,1,1.0,2.0,TR,3.0,4.0,T,5.0,6.0,NK,N1,LQ,RR,,AM");
+        assert_eq!(
+            ttm.bearing_reference,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
+        assert_eq!(ttm.units, FieldState::Invalid(Invalid::Unparsable));
+        assert_eq!(ttm.status, FieldState::Invalid(Invalid::Unparsable));
+        assert_eq!(
+            ttm.reference_target,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
+        assert_eq!(ttm.acquisition, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_ttm_empty_codes_are_not_available() {
+        let ttm = decode(b"RATTM,1,1.0,2.0,,3.0,4.0,,5.0,6.0,,,,,,");
+        assert_eq!(ttm.bearing_reference, FieldState::NotAvailable);
+        assert_eq!(ttm.course_reference, FieldState::NotAvailable);
+        assert_eq!(ttm.units, FieldState::NotAvailable);
+        assert_eq!(ttm.status, FieldState::NotAvailable);
+        assert_eq!(ttm.acquisition, FieldState::NotAvailable);
+        assert_eq!(ttm.reference_target, FieldState::Value(false));
+    }
+
+    #[test]
+    fn decode_ttm_non_utf8_name_is_invalid() {
+        let ttm = decode(b"RATTM,1,1.0,2.0,T,3.0,4.0,T,5.0,6.0,N,\xFF,T,");
+        assert_eq!(ttm.name, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_ttm_unnamed_reference_flag_is_invalid_with_the_byte() {
+        let ttm = decode(b"RATTM,1,1.0,2.0,T,3.0,4.0,T,5.0,6.0,N,n,T,X");
+        assert_eq!(
+            ttm.reference_target,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'X'))))
+        );
+    }
+
+    #[test]
+    fn decode_ttm_unparsable_utc_is_invalid() {
+        let ttm = decode(b"RATTM,1,1.0,2.0,T,3.0,4.0,T,5.0,6.0,N,n,T,,12,A");
+        assert_eq!(ttm.utc_time, FieldState::Invalid(Invalid::Unparsable));
     }
 
     #[test]
@@ -277,12 +384,10 @@ mod tests {
     }
 
     #[test]
-    fn decode_ttm_rejects_malformed_number() {
-        let bytes = build(b"RATTM,1,bad,2.0,T,3.0,4.0,T,5.0,6.0,N,name,T,");
-        let raw = parse_raw(&bytes);
-        match decode_ttm(&raw) {
-            Err(DecodeError::InvalidNumber { field_index: 1 }) => {}
-            other => panic!("expected InvalidNumber 1, got {other:?}"),
-        }
+    fn decode_ttm_unparsable_number_is_invalid_and_the_rest_decodes() {
+        let ttm = decode(b"RATTM,1,bad,2.0,T,3.0,4.0,T,5.0,6.0,N,name,T,");
+        assert_eq!(ttm.distance, FieldState::Invalid(Invalid::Unparsable));
+        assert!((ttm.bearing_deg.value().unwrap() - 2.0).abs() < 0.001);
+        assert_eq!(ttm.status, FieldState::Value(TargetStatus::Tracking));
     }
 }

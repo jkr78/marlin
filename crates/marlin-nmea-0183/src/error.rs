@@ -2,6 +2,15 @@
 
 /// Errors that can occur while decoding a typed NMEA sentence.
 ///
+/// A decode fails only for a structural reason: the sentence has fewer
+/// fields than the decoder's floor. A field's value never fails the
+/// sentence; an empty field decodes to [`FieldState::NotAvailable`](crate::FieldState::NotAvailable)
+/// and a field the decoder cannot give a meaning decodes to
+/// [`FieldState::Invalid`](crate::FieldState::Invalid). No 0183 field is
+/// mandatory, so a sentence with every field empty is well formed, and
+/// fields past the newest known version are ignored. `decode` on a
+/// known sentence type with enough fields never returns `Err`.
+///
 /// `#[non_exhaustive]` so new variants can be added in minor versions
 /// without a breaking change. Consumers must include a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -14,44 +23,5 @@ pub enum DecodeError {
         expected: usize,
         /// Number of fields actually present.
         got: usize,
-    },
-
-    /// A field that should have been a number was not a valid number.
-    #[error("field {field_index} is not a valid number")]
-    InvalidNumber {
-        /// 0-based position of the bad field within the sentence payload.
-        field_index: usize,
-    },
-
-    /// A coordinate field was syntactically valid but out of range
-    /// (latitude outside ±90°, longitude outside ±180°).
-    #[error("field {field_index} is out of range for its type")]
-    OutOfRange {
-        /// 0-based position of the bad field within the sentence payload.
-        field_index: usize,
-    },
-
-    /// A coordinate field's hemisphere byte was not one of `N`/`S` (for
-    /// latitude) or `E`/`W` (for longitude).
-    #[error("field {field_index} has an invalid hemisphere indicator")]
-    InvalidHemisphere {
-        /// 0-based position of the bad field within the sentence payload.
-        field_index: usize,
-    },
-
-    /// A field contained bytes that are not valid UTF-8. Real NMEA
-    /// content is always ASCII; this usually indicates corruption.
-    #[error("field {field_index} contains invalid UTF-8")]
-    InvalidUtf8 {
-        /// 0-based position of the bad field within the sentence payload.
-        field_index: usize,
-    },
-
-    /// A UTC time field had an invalid structure (wrong length, bad
-    /// separator, out-of-range hour/minute/second).
-    #[error("field {field_index} is not a valid UTC time (hhmmss[.ss])")]
-    InvalidUtcTime {
-        /// 0-based position of the bad field within the sentence payload.
-        field_index: usize,
     },
 }

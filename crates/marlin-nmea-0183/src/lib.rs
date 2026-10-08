@@ -36,7 +36,7 @@
 //! # Quickstart
 //!
 //! ```
-//! use marlin_nmea_0183::{Nmea0183Message, Nmea0183Parser, Streaming};
+//! use marlin_nmea_0183::{FieldState, Nmea0183Message, Nmea0183Parser, Streaming};
 //!
 //! // Classic NMEA 0183 GGA example (checksum 0x47 = XOR of body bytes).
 //! let mut parser = Nmea0183Parser::new(Streaming::new());
@@ -45,7 +45,8 @@
 //! match parser.next_message().unwrap().unwrap() {
 //!     Nmea0183Message::Gga(gga) => {
 //!         assert_eq!(gga.talker, Some(*b"GP"));
-//!         assert_eq!(gga.satellites_used, Some(8));
+//!         assert_eq!(gga.satellites_used, FieldState::Value(8));
+//!         assert_eq!(gga.dgps_age_s, FieldState::NotAvailable);
 //!     }
 //!     _ => panic!("expected GGA"),
 //! }
@@ -72,6 +73,14 @@
 //! [`Nmea0183Message::Unknown`] with the raw sentence preserved. They
 //! are **not** silently dropped and **not** returned as errors — the
 //! caller decides what to do with them.
+//!
+//! Every decoded field the wire can leave empty, or fill with text the
+//! decoder cannot read, is a [`FieldState`]: an empty field is
+//! [`FieldState::NotAvailable`], unreadable text is
+//! [`FieldState::Invalid`], and a field's value never fails the
+//! sentence. The only [`DecodeError`] is a sentence below its field
+//! floor. The type comes from the `marlin-field` crate and is re-exported
+//! here with [`Invalid`], [`Kind`] and [`RawCode`].
 
 #![no_std]
 
@@ -93,10 +102,15 @@ pub use sentences::{
     decode_gga, decode_gll, decode_hdg, decode_hdt, decode_prdid, decode_prdid_pitch_roll_heading,
     decode_prdid_roll_pitch_heading, decode_psxn, decode_rmc, decode_tll, decode_ttm, decode_vtg,
     AcquisitionType, AngleReference, DataStatus, DistanceUnits, GgaData, GgaFixQuality, GllData,
-    HdgData, HdtData, PrdidData, PrdidDialect, PrdidPitchRollHeading, PrdidRollPitchHeading,
-    PsxnData, PsxnLayout, PsxnLayoutParseError, PsxnSlot, RmcData, RmcNavStatus, TargetStatus,
-    TllData, TtmData, UtcDate, UtcTime, VtgData, VtgMode,
+    HdgData, HdtData, ParseUtcDateError, ParseUtcTimeError, PrdidData, PrdidDialect,
+    PrdidPitchRollHeading, PrdidRollPitchHeading, PsxnData, PsxnLayout, PsxnLayoutParseError,
+    PsxnSlot, RmcData, RmcNavStatus, TargetStatus, TllData, TtmData, UtcDate, UtcTime, VtgData,
+    VtgMode,
 };
+
+// The field-state type every decoded field carries, re-exported so a
+// caller needs no direct dependency on `marlin-field`.
+pub use marlin_field::{FieldState, Invalid, Kind, RawCode};
 
 // Re-export the envelope types a caller needs alongside this crate:
 // the sentence sources `Nmea0183Parser` wraps (`Parser` for a source
@@ -124,9 +138,10 @@ use marlin_nmea_envelope::RawSentence as Raw;
 ///
 /// # Errors
 ///
-/// Returns [`DecodeError`] when a sentence of a **recognized** type has
-/// malformed fields (wrong field count, invalid number, invalid
-/// coordinate, etc.). Unknown types are **not** errors — see above.
+/// Returns [`DecodeError::NotEnoughFields`] when a sentence of a
+/// **recognized** type has fewer fields than the decoder's floor. A
+/// field's value never fails the sentence: it decodes to a
+/// [`FieldState`]. Unknown types are **not** errors — see above.
 pub fn decode<'a>(raw: &Raw<'a>) -> Result<Nmea0183Message<'a>, DecodeError> {
     decode_with(raw, &DecodeOptions::default())
 }
@@ -139,9 +154,9 @@ pub fn decode<'a>(raw: &Raw<'a>) -> Result<Nmea0183Message<'a>, DecodeError> {
 ///
 /// # Errors
 ///
-/// Propagates the same [`DecodeError`] variants as each per-sentence
-/// decoder. Unknown sentence types are **not** errors — they return
-/// [`Nmea0183Message::Unknown`] wrapping the input.
+/// Returns [`DecodeError::NotEnoughFields`] from the per-sentence
+/// decoder, the only decode error. Unknown sentence types are **not**
+/// errors — they return [`Nmea0183Message::Unknown`] wrapping the input.
 pub fn decode_with<'a>(
     raw: &Raw<'a>,
     options: &DecodeOptions,

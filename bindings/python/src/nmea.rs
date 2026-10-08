@@ -2,6 +2,12 @@
 //!
 //! Each typed message variant is its own `#[pyclass]`. The `Nmea0183Message`
 //! Rust enum has no single Python class — variants are a structural union.
+//!
+//! Every field the wire can leave empty, or fill with text the decoder
+//! cannot read, is a `marlin.field.FieldState`: a getter returns the
+//! variant class, and a constructor accepts a `FieldState`, a bare value
+//! (coerced to `FieldState.Value`) or `None` (coerced to
+//! `FieldState.NotAvailable()`).
 
 use core::str::FromStr;
 
@@ -9,6 +15,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyModule};
 use pyo3::wrap_pyfunction;
 
+use marlin_field::FieldState;
 use marlin_nmea_0183::{
     decode as rust_decode, decode_gga as rust_decode_gga, decode_gll as rust_decode_gll,
     decode_hdg as rust_decode_hdg, decode_hdt as rust_decode_hdt,
@@ -29,13 +36,15 @@ use marlin_nmea_envelope::Parser;
 
 use crate::envelope::{PyRawSentence, DEFAULT_MAX_SIZE};
 use crate::errors::{decode_err, envelope_err};
+use crate::field::{from_py, repr_state, to_py, PyFieldState};
 
 // ---------- Enums ----------
 
 /// GPS fix quality indicator (binding class for `GgaFixQuality`).
 ///
-/// `GgaFixQuality::Other(u8)` carries a raw byte this fieldless Python
-/// enum cannot represent; it collapses to `INVALID` for v0.1.
+/// The sender's own statement of fix quality; `NO_FIX` is a value the
+/// sender reported. A digit the standard leaves undefined decodes to
+/// `FieldState.Invalid(digit)` on the message instead of a member here.
 #[pyclass(
     name = "GgaFixQuality",
     frozen,
@@ -46,8 +55,8 @@ use crate::errors::{decode_err, envelope_err};
 )]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyGgaFixQuality {
-    #[pyo3(name = "INVALID")]
-    Invalid = 0,
+    #[pyo3(name = "NO_FIX")]
+    NoFix = 0,
     #[pyo3(name = "GPS_FIX")]
     GpsFix = 1,
     #[pyo3(name = "DGPS_FIX")]
@@ -66,14 +75,12 @@ pub enum PyGgaFixQuality {
     Simulator = 8,
 }
 
-impl From<RustGgaFixQuality> for PyGgaFixQuality {
-    // `Other(u8)` collapses to `Invalid` via the wildcard below — fieldless
-    // Python enum cannot carry the raw byte. `match_same_arms` would fire on
-    // the intentional `Invalid => Invalid` + `_ => Invalid` pair.
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustGgaFixQuality) -> Self {
-        match v {
-            RustGgaFixQuality::Invalid => Self::Invalid,
+impl TryFrom<RustGgaFixQuality> for PyGgaFixQuality {
+    type Error = PyErr;
+
+    fn try_from(v: RustGgaFixQuality) -> PyResult<Self> {
+        Ok(match v {
+            RustGgaFixQuality::NoFix => Self::NoFix,
             RustGgaFixQuality::GpsFix => Self::GpsFix,
             RustGgaFixQuality::DgpsFix => Self::DgpsFix,
             RustGgaFixQuality::PpsFix => Self::PpsFix,
@@ -82,15 +89,15 @@ impl From<RustGgaFixQuality> for PyGgaFixQuality {
             RustGgaFixQuality::DeadReckoning => Self::DeadReckoning,
             RustGgaFixQuality::ManualInput => Self::ManualInput,
             RustGgaFixQuality::Simulator => Self::Simulator,
-            _ => Self::Invalid,
-        }
+            other => return Err(unsupported_variant("GgaFixQuality", &other)),
+        })
     }
 }
 
 /// VTG mode indicator (binding class for `VtgMode`).
 ///
-/// `VtgMode::Other(u8)` collapses to `NOT_VALID` for v0.1 — same
-/// information-loss rationale as `PyGgaFixQuality`.
+/// An unnamed letter decodes to `FieldState.Invalid(byte)` on the
+/// message instead of a member here.
 #[pyclass(name = "VtgMode", frozen, eq, eq_int, hash, module = "marlin.nmea")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyVtgMode {
@@ -108,28 +115,28 @@ pub enum PyVtgMode {
     Simulator = 5,
 }
 
-impl From<RustVtgMode> for PyVtgMode {
-    // `Other(u8)` collapses to `NotValid` via the wildcard — same rationale
-    // as `PyGgaFixQuality`; silence `match_same_arms` for the pair.
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustVtgMode) -> Self {
-        match v {
+impl TryFrom<RustVtgMode> for PyVtgMode {
+    type Error = PyErr;
+
+    fn try_from(v: RustVtgMode) -> PyResult<Self> {
+        Ok(match v {
             RustVtgMode::Autonomous => Self::Autonomous,
             RustVtgMode::Differential => Self::Differential,
             RustVtgMode::Estimated => Self::Estimated,
             RustVtgMode::NotValid => Self::NotValid,
             RustVtgMode::Manual => Self::Manual,
             RustVtgMode::Simulator => Self::Simulator,
-            _ => Self::NotValid,
-        }
+            other => return Err(unsupported_variant("VtgMode", &other)),
+        })
     }
 }
 
 /// A/V validity status carried by RMC and GLL (binding class for `DataStatus`).
 ///
-/// `DataStatus::Other(u8)` collapses to `VOID` for v0.1 — fieldless
-/// Python enum cannot carry the raw byte. Same trade-off as
-/// `PyGgaFixQuality` and `PyVtgMode`.
+/// A status field: it qualifies the other fields of its sentence and
+/// does not change their state. An empty byte is
+/// `FieldState.NotAvailable()` on the message; an unnamed byte is
+/// `FieldState.Invalid(byte)`.
 #[pyclass(name = "DataStatus", frozen, eq, eq_int, hash, module = "marlin.nmea")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyDataStatus {
@@ -139,24 +146,22 @@ pub enum PyDataStatus {
     Void = 1,
 }
 
-impl From<RustDataStatus> for PyDataStatus {
-    // `Other(u8)` collapses to `Void` via the wildcard — fieldless Python
-    // enum cannot carry the raw byte. Defaulting to `Void` is the
-    // safety-conservative choice since callers reject non-Active fixes.
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustDataStatus) -> Self {
-        match v {
+impl TryFrom<RustDataStatus> for PyDataStatus {
+    type Error = PyErr;
+
+    fn try_from(v: RustDataStatus) -> PyResult<Self> {
+        Ok(match v {
             RustDataStatus::Active => Self::Active,
             RustDataStatus::Void => Self::Void,
-            _ => Self::Void,
-        }
+            other => return Err(unsupported_variant("DataStatus", &other)),
+        })
     }
 }
 
 /// RMC nav-status indicator (NMEA 4.10+, binding class for `RmcNavStatus`).
 ///
-/// `RmcNavStatus::Other(u8)` collapses to `NOT_VALID`; same fieldless-
-/// enum information loss as the other discriminator types here.
+/// An unnamed letter decodes to `FieldState.Invalid(byte)` on the
+/// message instead of a member here.
 #[pyclass(
     name = "RmcNavStatus",
     frozen,
@@ -177,22 +182,24 @@ pub enum PyRmcNavStatus {
     NotValid = 3,
 }
 
-impl From<RustRmcNavStatus> for PyRmcNavStatus {
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustRmcNavStatus) -> Self {
-        match v {
+impl TryFrom<RustRmcNavStatus> for PyRmcNavStatus {
+    type Error = PyErr;
+
+    fn try_from(v: RustRmcNavStatus) -> PyResult<Self> {
+        Ok(match v {
             RustRmcNavStatus::Safe => Self::Safe,
             RustRmcNavStatus::Caution => Self::Caution,
             RustRmcNavStatus::Unsafe => Self::Unsafe,
             RustRmcNavStatus::NotValid => Self::NotValid,
-            _ => Self::NotValid,
-        }
+            other => return Err(unsupported_variant("RmcNavStatus", &other)),
+        })
     }
 }
 
-/// Radar target tracking state (binding class for `TargetStatus`). `Other(u8)`
-/// collapses to `UNKNOWN` — a fieldless Python enum cannot carry the
-/// raw byte (same trade-off as `PyVtgMode`).
+/// Radar target tracking state (binding class for `TargetStatus`).
+///
+/// An unnamed letter decodes to `FieldState.Invalid(byte)` on the
+/// message instead of a member here.
 #[pyclass(
     name = "TargetStatus",
     frozen,
@@ -209,24 +216,25 @@ pub enum PyTargetStatus {
     Query = 1,
     #[pyo3(name = "TRACKING")]
     Tracking = 2,
-    #[pyo3(name = "UNKNOWN")]
-    Unknown = 3,
 }
 
-impl From<RustTargetStatus> for PyTargetStatus {
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustTargetStatus) -> Self {
-        match v {
+impl TryFrom<RustTargetStatus> for PyTargetStatus {
+    type Error = PyErr;
+
+    fn try_from(v: RustTargetStatus) -> PyResult<Self> {
+        Ok(match v {
             RustTargetStatus::Lost => Self::Lost,
             RustTargetStatus::Query => Self::Query,
             RustTargetStatus::Tracking => Self::Tracking,
-            _ => Self::Unknown,
-        }
+            other => return Err(unsupported_variant("TargetStatus", &other)),
+        })
     }
 }
 
-/// Bearing/course reference (binding class for `AngleReference`). `Other(u8)` →
-/// `UNKNOWN`.
+/// Bearing/course reference (binding class for `AngleReference`).
+///
+/// An unnamed letter decodes to `FieldState.Invalid(byte)` on the
+/// message instead of a member here.
 #[pyclass(
     name = "AngleReference",
     frozen,
@@ -241,23 +249,24 @@ pub enum PyAngleReference {
     True = 0,
     #[pyo3(name = "RELATIVE")]
     Relative = 1,
-    #[pyo3(name = "UNKNOWN")]
-    Unknown = 2,
 }
 
-impl From<RustAngleReference> for PyAngleReference {
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustAngleReference) -> Self {
-        match v {
+impl TryFrom<RustAngleReference> for PyAngleReference {
+    type Error = PyErr;
+
+    fn try_from(v: RustAngleReference) -> PyResult<Self> {
+        Ok(match v {
             RustAngleReference::True => Self::True,
             RustAngleReference::Relative => Self::Relative,
-            _ => Self::Unknown,
-        }
+            other => return Err(unsupported_variant("AngleReference", &other)),
+        })
     }
 }
 
-/// Speed/distance units (binding class for `DistanceUnits`). `Other(u8)` →
-/// `UNKNOWN`.
+/// Speed/distance units (binding class for `DistanceUnits`).
+///
+/// An unnamed letter decodes to `FieldState.Invalid(byte)` on the
+/// message instead of a member here.
 #[pyclass(
     name = "DistanceUnits",
     frozen,
@@ -274,24 +283,25 @@ pub enum PyDistanceUnits {
     Kilometers = 1,
     #[pyo3(name = "STATUTE")]
     Statute = 2,
-    #[pyo3(name = "UNKNOWN")]
-    Unknown = 3,
 }
 
-impl From<RustDistanceUnits> for PyDistanceUnits {
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustDistanceUnits) -> Self {
-        match v {
+impl TryFrom<RustDistanceUnits> for PyDistanceUnits {
+    type Error = PyErr;
+
+    fn try_from(v: RustDistanceUnits) -> PyResult<Self> {
+        Ok(match v {
             RustDistanceUnits::Nautical => Self::Nautical,
             RustDistanceUnits::Kilometers => Self::Kilometers,
             RustDistanceUnits::Statute => Self::Statute,
-            _ => Self::Unknown,
-        }
+            other => return Err(unsupported_variant("DistanceUnits", &other)),
+        })
     }
 }
 
-/// Target acquisition type (binding class for `AcquisitionType`). `Other(u8)` →
-/// `UNKNOWN`.
+/// Target acquisition type (binding class for `AcquisitionType`).
+///
+/// An unnamed letter decodes to `FieldState.Invalid(byte)` on the
+/// message instead of a member here.
 #[pyclass(
     name = "AcquisitionType",
     frozen,
@@ -308,19 +318,18 @@ pub enum PyAcquisitionType {
     Manual = 1,
     #[pyo3(name = "REPORTED")]
     Reported = 2,
-    #[pyo3(name = "UNKNOWN")]
-    Unknown = 3,
 }
 
-impl From<RustAcquisitionType> for PyAcquisitionType {
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustAcquisitionType) -> Self {
-        match v {
+impl TryFrom<RustAcquisitionType> for PyAcquisitionType {
+    type Error = PyErr;
+
+    fn try_from(v: RustAcquisitionType) -> PyResult<Self> {
+        Ok(match v {
             RustAcquisitionType::Automatic => Self::Automatic,
             RustAcquisitionType::Manual => Self::Manual,
             RustAcquisitionType::Reported => Self::Reported,
-            _ => Self::Unknown,
-        }
+            other => return Err(unsupported_variant("AcquisitionType", &other)),
+        })
     }
 }
 
@@ -418,55 +427,100 @@ impl From<RustUtcDate> for PyUtcDate {
     }
 }
 
+// ---------- Field-state helpers ----------
+
+/// A constructor argument for a field-state attribute: absent or `None`
+/// is `NotAvailable`, a `FieldState` passes through, a bare value is
+/// `Value`; the payload is extracted to `T` and the extraction error is
+/// raised as is.
+fn arg<'py, T: FromPyObjectOwned<'py>>(obj: Option<&Bound<'py, PyAny>>) -> PyResult<FieldState<T>> {
+    obj.map_or(Ok(FieldState::NotAvailable), from_py)
+}
+
+/// A decoded state whose payload is a Rust enum, converted to the
+/// binding enum. The Rust enums are `#[non_exhaustive]`, so a variant
+/// these bindings do not know is an error, never a fabricated member.
+fn enum_state<R, P: TryFrom<R, Error = PyErr>>(state: FieldState<R>) -> PyResult<FieldState<P>> {
+    Ok(match state {
+        FieldState::Value(v) => FieldState::Value(P::try_from(v)?),
+        FieldState::AtLeast(v) => FieldState::AtLeast(P::try_from(v)?),
+        FieldState::NotAvailable => FieldState::NotAvailable,
+        FieldState::SenderError(code) => FieldState::SenderError(code),
+        FieldState::Invalid(why) => FieldState::Invalid(why),
+    })
+}
+
+fn unsupported_variant(enum_name: &str, variant: &dyn core::fmt::Debug) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(format!(
+        "marlin Python bindings encountered an unsupported {enum_name} variant {variant:?} — bindings need updating"
+    ))
+}
+
 // ---------- Gga ----------
 
 /// Frozen `$__GGA` message (binding class for `GgaData`).
+///
+/// Every field but `talker` is a `FieldState`; the constructor coerces a
+/// bare value to `FieldState.Value` and `None` to
+/// `FieldState.NotAvailable()`.
 #[pyclass(name = "Gga", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyGga {
     talker: Option<[u8; 2]>,
-    utc: Option<PyUtcTime>,
-    latitude_deg: Option<f64>,
-    longitude_deg: Option<f64>,
-    fix_quality: PyGgaFixQuality,
-    satellites_used: Option<u8>,
-    hdop: Option<f32>,
-    altitude_m: Option<f32>,
-    geoid_separation_m: Option<f32>,
-    dgps_age_s: Option<f32>,
-    dgps_station_id: Option<u16>,
+    utc: FieldState<PyUtcTime>,
+    latitude_deg: FieldState<f64>,
+    longitude_deg: FieldState<f64>,
+    fix_quality: FieldState<PyGgaFixQuality>,
+    satellites_used: FieldState<u8>,
+    hdop: FieldState<f32>,
+    altitude_m: FieldState<f32>,
+    geoid_separation_m: FieldState<f32>,
+    dgps_age_s: FieldState<f32>,
+    dgps_station_id: FieldState<u16>,
 }
 
 #[pymethods]
 impl PyGga {
     #[new]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        talker,
+        utc = None,
+        latitude_deg = None,
+        longitude_deg = None,
+        fix_quality = None,
+        satellites_used = None,
+        hdop = None,
+        altitude_m = None,
+        geoid_separation_m = None,
+        dgps_age_s = None,
+        dgps_station_id = None,
+    ))]
     fn new(
         talker: Option<&[u8]>,
-        utc: Option<PyUtcTime>,
-        latitude_deg: Option<f64>,
-        longitude_deg: Option<f64>,
-        fix_quality: PyGgaFixQuality,
-        satellites_used: Option<u8>,
-        hdop: Option<f32>,
-        altitude_m: Option<f32>,
-        geoid_separation_m: Option<f32>,
-        dgps_age_s: Option<f32>,
-        dgps_station_id: Option<u16>,
+        utc: Option<&Bound<'_, PyAny>>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        fix_quality: Option<&Bound<'_, PyAny>>,
+        satellites_used: Option<&Bound<'_, PyAny>>,
+        hdop: Option<&Bound<'_, PyAny>>,
+        altitude_m: Option<&Bound<'_, PyAny>>,
+        geoid_separation_m: Option<&Bound<'_, PyAny>>,
+        dgps_age_s: Option<&Bound<'_, PyAny>>,
+        dgps_station_id: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let talker = normalize_talker(talker)?;
         Ok(Self {
-            talker,
-            utc,
-            latitude_deg,
-            longitude_deg,
-            fix_quality,
-            satellites_used,
-            hdop,
-            altitude_m,
-            geoid_separation_m,
-            dgps_age_s,
-            dgps_station_id,
+            talker: normalize_talker(talker)?,
+            utc: arg(utc)?,
+            latitude_deg: arg(latitude_deg)?,
+            longitude_deg: arg(longitude_deg)?,
+            fix_quality: arg(fix_quality)?,
+            satellites_used: arg(satellites_used)?,
+            hdop: arg(hdop)?,
+            altitude_m: arg(altitude_m)?,
+            geoid_separation_m: arg(geoid_separation_m)?,
+            dgps_age_s: arg(dgps_age_s)?,
+            dgps_station_id: arg(dgps_station_id)?,
         })
     }
 
@@ -475,108 +529,121 @@ impl PyGga {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn utc(&self) -> Option<PyUtcTime> {
-        self.utc.clone()
+    fn utc(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.utc.clone())
     }
     #[getter]
-    fn latitude_deg(&self) -> Option<f64> {
-        self.latitude_deg
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
     }
     #[getter]
-    fn longitude_deg(&self) -> Option<f64> {
-        self.longitude_deg
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
     }
     #[getter]
-    fn fix_quality(&self) -> PyGgaFixQuality {
-        self.fix_quality
+    fn fix_quality(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.fix_quality)
     }
     #[getter]
-    fn satellites_used(&self) -> Option<u8> {
-        self.satellites_used
+    fn satellites_used(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.satellites_used)
     }
     #[getter]
-    fn hdop(&self) -> Option<f32> {
-        self.hdop
+    fn hdop(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.hdop)
     }
     #[getter]
-    fn altitude_m(&self) -> Option<f32> {
-        self.altitude_m
+    fn altitude_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.altitude_m)
     }
     #[getter]
-    fn geoid_separation_m(&self) -> Option<f32> {
-        self.geoid_separation_m
+    fn geoid_separation_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.geoid_separation_m)
     }
     #[getter]
-    fn dgps_age_s(&self) -> Option<f32> {
-        self.dgps_age_s
+    fn dgps_age_s(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.dgps_age_s)
     }
     #[getter]
-    fn dgps_station_id(&self) -> Option<u16> {
-        self.dgps_station_id
+    fn dgps_station_id(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.dgps_station_id)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Gga(talker={}, fix_quality={:?}, lat={:?}, lon={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Gga(talker={}, fix_quality={}, lat={}, lon={})",
             repr_talker(self.talker),
-            self.fix_quality,
-            self.latitude_deg,
-            self.longitude_deg,
-        )
+            repr_state(py, self.fix_quality)?,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+        ))
     }
 }
 
-impl From<GgaData> for PyGga {
-    fn from(d: GgaData) -> Self {
-        Self {
+impl TryFrom<GgaData> for PyGga {
+    type Error = PyErr;
+
+    fn try_from(d: GgaData) -> PyResult<Self> {
+        Ok(Self {
             talker: d.talker,
             utc: d.utc.map(PyUtcTime::from),
             latitude_deg: d.latitude_deg,
             longitude_deg: d.longitude_deg,
-            fix_quality: d.fix_quality.into(),
+            fix_quality: enum_state(d.fix_quality)?,
             satellites_used: d.satellites_used,
             hdop: d.hdop,
             altitude_m: d.altitude_m,
             geoid_separation_m: d.geoid_separation_m,
             dgps_age_s: d.dgps_age_s,
             dgps_station_id: d.dgps_station_id,
-        }
+        })
     }
 }
 
 // ---------- Vtg ----------
 
 /// Frozen `$__VTG` message (binding class for `VtgData`).
+///
+/// Every field but `talker` is a `FieldState`; the constructor coerces a
+/// bare value to `FieldState.Value` and `None` to
+/// `FieldState.NotAvailable()`.
 #[pyclass(name = "Vtg", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyVtg {
     talker: Option<[u8; 2]>,
-    course_true_deg: Option<f32>,
-    course_magnetic_deg: Option<f32>,
-    speed_knots: Option<f32>,
-    speed_kmh: Option<f32>,
-    mode: Option<PyVtgMode>,
+    course_true_deg: FieldState<f32>,
+    course_magnetic_deg: FieldState<f32>,
+    speed_knots: FieldState<f32>,
+    speed_kmh: FieldState<f32>,
+    mode: FieldState<PyVtgMode>,
 }
 
 #[pymethods]
 impl PyVtg {
     #[new]
+    #[pyo3(signature = (
+        talker,
+        course_true_deg = None,
+        course_magnetic_deg = None,
+        speed_knots = None,
+        speed_kmh = None,
+        mode = None,
+    ))]
     fn new(
         talker: Option<&[u8]>,
-        course_true_deg: Option<f32>,
-        course_magnetic_deg: Option<f32>,
-        speed_knots: Option<f32>,
-        speed_kmh: Option<f32>,
-        mode: Option<PyVtgMode>,
+        course_true_deg: Option<&Bound<'_, PyAny>>,
+        course_magnetic_deg: Option<&Bound<'_, PyAny>>,
+        speed_knots: Option<&Bound<'_, PyAny>>,
+        speed_kmh: Option<&Bound<'_, PyAny>>,
+        mode: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let talker = normalize_talker(talker)?;
         Ok(Self {
-            talker,
-            course_true_deg,
-            course_magnetic_deg,
-            speed_knots,
-            speed_kmh,
-            mode,
+            talker: normalize_talker(talker)?,
+            course_true_deg: arg(course_true_deg)?,
+            course_magnetic_deg: arg(course_magnetic_deg)?,
+            speed_knots: arg(speed_knots)?,
+            speed_kmh: arg(speed_kmh)?,
+            mode: arg(mode)?,
         })
     }
 
@@ -585,68 +652,73 @@ impl PyVtg {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn course_true_deg(&self) -> Option<f32> {
-        self.course_true_deg
+    fn course_true_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_true_deg)
     }
     #[getter]
-    fn course_magnetic_deg(&self) -> Option<f32> {
-        self.course_magnetic_deg
+    fn course_magnetic_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_magnetic_deg)
     }
     #[getter]
-    fn speed_knots(&self) -> Option<f32> {
-        self.speed_knots
+    fn speed_knots(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed_knots)
     }
     #[getter]
-    fn speed_kmh(&self) -> Option<f32> {
-        self.speed_kmh
+    fn speed_kmh(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed_kmh)
     }
     #[getter]
-    fn mode(&self) -> Option<PyVtgMode> {
-        self.mode
+    fn mode(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.mode)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Vtg(talker={}, course_true={:?}, speed_knots={:?}, mode={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Vtg(talker={}, course_true={}, speed_knots={}, mode={})",
             repr_talker(self.talker),
-            self.course_true_deg,
-            self.speed_knots,
-            self.mode,
-        )
+            repr_state(py, self.course_true_deg)?,
+            repr_state(py, self.speed_knots)?,
+            repr_state(py, self.mode)?,
+        ))
     }
 }
 
-impl From<VtgData> for PyVtg {
-    fn from(d: VtgData) -> Self {
-        Self {
+impl TryFrom<VtgData> for PyVtg {
+    type Error = PyErr;
+
+    fn try_from(d: VtgData) -> PyResult<Self> {
+        Ok(Self {
             talker: d.talker,
             course_true_deg: d.course_true_deg,
             course_magnetic_deg: d.course_magnetic_deg,
             speed_knots: d.speed_knots,
             speed_kmh: d.speed_kmh,
-            mode: d.mode.map(PyVtgMode::from),
-        }
+            mode: enum_state(d.mode)?,
+        })
     }
 }
 
 // ---------- Hdt ----------
 
 /// Frozen `$__HDT` message (binding class for `HdtData`).
+///
+/// `heading_true_deg` is a `FieldState`; the constructor coerces a bare
+/// value to `FieldState.Value` and `None` to `FieldState.NotAvailable()`.
 #[pyclass(name = "Hdt", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyHdt {
     talker: Option<[u8; 2]>,
-    heading_true_deg: Option<f32>,
+    heading_true_deg: FieldState<f32>,
 }
 
 #[pymethods]
 impl PyHdt {
     #[new]
-    fn new(talker: Option<&[u8]>, heading_true_deg: Option<f32>) -> PyResult<Self> {
-        let talker = normalize_talker(talker)?;
+    #[pyo3(signature = (talker, heading_true_deg = None))]
+    fn new(talker: Option<&[u8]>, heading_true_deg: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         Ok(Self {
-            talker,
-            heading_true_deg,
+            talker: normalize_talker(talker)?,
+            heading_true_deg: arg(heading_true_deg)?,
         })
     }
 
@@ -655,16 +727,16 @@ impl PyHdt {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn heading_true_deg(&self) -> Option<f32> {
-        self.heading_true_deg
+    fn heading_true_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.heading_true_deg)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Hdt(talker={}, heading_true_deg={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Hdt(talker={}, heading_true_deg={})",
             repr_talker(self.talker),
-            self.heading_true_deg,
-        )
+            repr_state(py, self.heading_true_deg)?,
+        ))
     }
 }
 
@@ -680,29 +752,34 @@ impl From<HdtData> for PyHdt {
 // ---------- Hdg ----------
 
 /// Frozen `$__HDG` message (binding class for `HdgData`).
+///
+/// Every field but `talker` is a `FieldState`; the deviation and the
+/// variation are paired fields, invalid when only the magnitude or only
+/// the `E`/`W` letter arrived.
 #[pyclass(name = "Hdg", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyHdg {
     talker: Option<[u8; 2]>,
-    heading_magnetic_deg: Option<f32>,
-    deviation_deg: Option<f32>,
-    variation_deg: Option<f32>,
+    heading_magnetic_deg: FieldState<f32>,
+    deviation_deg: FieldState<f32>,
+    variation_deg: FieldState<f32>,
 }
 
 #[pymethods]
 impl PyHdg {
     #[new]
+    #[pyo3(signature = (talker, heading_magnetic_deg = None, deviation_deg = None, variation_deg = None))]
     fn new(
         talker: Option<&[u8]>,
-        heading_magnetic_deg: Option<f32>,
-        deviation_deg: Option<f32>,
-        variation_deg: Option<f32>,
+        heading_magnetic_deg: Option<&Bound<'_, PyAny>>,
+        deviation_deg: Option<&Bound<'_, PyAny>>,
+        variation_deg: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
             talker: normalize_talker(talker)?,
-            heading_magnetic_deg,
-            deviation_deg,
-            variation_deg,
+            heading_magnetic_deg: arg(heading_magnetic_deg)?,
+            deviation_deg: arg(deviation_deg)?,
+            variation_deg: arg(variation_deg)?,
         })
     }
 
@@ -711,26 +788,26 @@ impl PyHdg {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn heading_magnetic_deg(&self) -> Option<f32> {
-        self.heading_magnetic_deg
+    fn heading_magnetic_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.heading_magnetic_deg)
     }
     #[getter]
-    fn deviation_deg(&self) -> Option<f32> {
-        self.deviation_deg
+    fn deviation_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.deviation_deg)
     }
     #[getter]
-    fn variation_deg(&self) -> Option<f32> {
-        self.variation_deg
+    fn variation_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.variation_deg)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Hdg(talker={}, heading_magnetic={:?}, deviation={:?}, variation={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Hdg(talker={}, heading_magnetic={}, deviation={}, variation={})",
             repr_talker(self.talker),
-            self.heading_magnetic_deg,
-            self.deviation_deg,
-            self.variation_deg,
-        )
+            repr_state(py, self.heading_magnetic_deg)?,
+            repr_state(py, self.deviation_deg)?,
+            repr_state(py, self.variation_deg)?,
+        ))
     }
 }
 
@@ -748,25 +825,29 @@ impl From<HdgData> for PyHdg {
 // ---------- Ttm ----------
 
 /// Frozen `$__TTM` message (binding class for `TtmData`).
+///
+/// Every field but `talker` is a `FieldState`. `reference_target` is
+/// `FieldState.Value(False)` for an empty or absent field, never
+/// `FieldState.NotAvailable()`.
 #[pyclass(name = "Ttm", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyTtm {
     talker: Option<[u8; 2]>,
-    target_number: Option<u16>,
-    distance: Option<f32>,
-    bearing_deg: Option<f32>,
-    bearing_reference: Option<PyAngleReference>,
-    speed: Option<f32>,
-    course_deg: Option<f32>,
-    course_reference: Option<PyAngleReference>,
-    cpa: Option<f32>,
-    tcpa: Option<f32>,
-    units: Option<PyDistanceUnits>,
-    name: Option<String>,
-    status: Option<PyTargetStatus>,
-    reference_target: bool,
-    utc_time: Option<PyUtcTime>,
-    acquisition: Option<PyAcquisitionType>,
+    target_number: FieldState<u16>,
+    distance: FieldState<f32>,
+    bearing_deg: FieldState<f32>,
+    bearing_reference: FieldState<PyAngleReference>,
+    speed: FieldState<f32>,
+    course_deg: FieldState<f32>,
+    course_reference: FieldState<PyAngleReference>,
+    cpa: FieldState<f32>,
+    tcpa: FieldState<f32>,
+    units: FieldState<PyDistanceUnits>,
+    name: FieldState<String>,
+    status: FieldState<PyTargetStatus>,
+    reference_target: FieldState<bool>,
+    utc_time: FieldState<PyUtcTime>,
+    acquisition: FieldState<PyAcquisitionType>,
 }
 
 #[pymethods]
@@ -776,114 +857,120 @@ impl PyTtm {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn target_number(&self) -> Option<u16> {
-        self.target_number
+    fn target_number(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.target_number)
     }
     #[getter]
-    fn distance(&self) -> Option<f32> {
-        self.distance
+    fn distance(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.distance)
     }
     #[getter]
-    fn bearing_deg(&self) -> Option<f32> {
-        self.bearing_deg
+    fn bearing_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.bearing_deg)
     }
     #[getter]
-    fn bearing_reference(&self) -> Option<PyAngleReference> {
-        self.bearing_reference
+    fn bearing_reference(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.bearing_reference)
     }
     #[getter]
-    fn speed(&self) -> Option<f32> {
-        self.speed
+    fn speed(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed)
     }
     #[getter]
-    fn course_deg(&self) -> Option<f32> {
-        self.course_deg
+    fn course_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_deg)
     }
     #[getter]
-    fn course_reference(&self) -> Option<PyAngleReference> {
-        self.course_reference
+    fn course_reference(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_reference)
     }
     #[getter]
-    fn cpa(&self) -> Option<f32> {
-        self.cpa
+    fn cpa(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.cpa)
     }
     #[getter]
-    fn tcpa(&self) -> Option<f32> {
-        self.tcpa
+    fn tcpa(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.tcpa)
     }
     #[getter]
-    fn units(&self) -> Option<PyDistanceUnits> {
-        self.units
+    fn units(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.units)
     }
     #[getter]
-    fn name(&self) -> Option<String> {
-        self.name.clone()
+    fn name(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.name.clone())
     }
     #[getter]
-    fn status(&self) -> Option<PyTargetStatus> {
-        self.status
+    fn status(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.status)
     }
     #[getter]
-    fn reference_target(&self) -> bool {
-        self.reference_target
+    fn reference_target(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.reference_target)
     }
     #[getter]
-    fn utc_time(&self) -> Option<PyUtcTime> {
-        self.utc_time.clone()
+    fn utc_time(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.utc_time.clone())
     }
     #[getter]
-    fn acquisition(&self) -> Option<PyAcquisitionType> {
-        self.acquisition
+    fn acquisition(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.acquisition)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Ttm(talker={}, target_number={:?}, name={:?}, status={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Ttm(talker={}, target_number={}, name={}, status={})",
             repr_talker(self.talker),
-            self.target_number,
-            self.name,
-            self.status,
-        )
+            repr_state(py, self.target_number)?,
+            repr_state(py, self.name.clone())?,
+            repr_state(py, self.status)?,
+        ))
     }
 }
 
-impl From<TtmData> for PyTtm {
-    fn from(d: TtmData) -> Self {
-        Self {
+impl TryFrom<TtmData> for PyTtm {
+    type Error = PyErr;
+
+    fn try_from(d: TtmData) -> PyResult<Self> {
+        Ok(Self {
             talker: d.talker,
             target_number: d.target_number,
             distance: d.distance,
             bearing_deg: d.bearing_deg,
-            bearing_reference: d.bearing_reference.map(PyAngleReference::from),
+            bearing_reference: enum_state(d.bearing_reference)?,
             speed: d.speed,
             course_deg: d.course_deg,
-            course_reference: d.course_reference.map(PyAngleReference::from),
+            course_reference: enum_state(d.course_reference)?,
             cpa: d.cpa,
             tcpa: d.tcpa,
-            units: d.units.map(PyDistanceUnits::from),
+            units: enum_state(d.units)?,
             name: d.name,
-            status: d.status.map(PyTargetStatus::from),
+            status: enum_state(d.status)?,
             reference_target: d.reference_target,
             utc_time: d.utc_time.map(PyUtcTime::from),
-            acquisition: d.acquisition.map(PyAcquisitionType::from),
-        }
+            acquisition: enum_state(d.acquisition)?,
+        })
     }
 }
 
 // ---------- Tll ----------
 
 /// Frozen `$__TLL` message (binding class for `TllData`).
+///
+/// Every field but `talker` is a `FieldState`. `reference_target` is
+/// `FieldState.Value(False)` for an empty or absent field, never
+/// `FieldState.NotAvailable()`.
 #[pyclass(name = "Tll", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyTll {
     talker: Option<[u8; 2]>,
-    target_number: Option<u16>,
-    latitude_deg: Option<f64>,
-    longitude_deg: Option<f64>,
-    name: Option<String>,
-    utc_time: Option<PyUtcTime>,
-    status: Option<PyTargetStatus>,
-    reference_target: bool,
+    target_number: FieldState<u16>,
+    latitude_deg: FieldState<f64>,
+    longitude_deg: FieldState<f64>,
+    name: FieldState<String>,
+    utc_time: FieldState<PyUtcTime>,
+    status: FieldState<PyTargetStatus>,
+    reference_target: FieldState<bool>,
 }
 
 #[pymethods]
@@ -893,57 +980,59 @@ impl PyTll {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn target_number(&self) -> Option<u16> {
-        self.target_number
+    fn target_number(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.target_number)
     }
     #[getter]
-    fn latitude_deg(&self) -> Option<f64> {
-        self.latitude_deg
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
     }
     #[getter]
-    fn longitude_deg(&self) -> Option<f64> {
-        self.longitude_deg
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
     }
     #[getter]
-    fn name(&self) -> Option<String> {
-        self.name.clone()
+    fn name(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.name.clone())
     }
     #[getter]
-    fn utc_time(&self) -> Option<PyUtcTime> {
-        self.utc_time.clone()
+    fn utc_time(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.utc_time.clone())
     }
     #[getter]
-    fn status(&self) -> Option<PyTargetStatus> {
-        self.status
+    fn status(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.status)
     }
     #[getter]
-    fn reference_target(&self) -> bool {
-        self.reference_target
+    fn reference_target(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.reference_target)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Tll(talker={}, target_number={:?}, lat={:?}, lon={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Tll(talker={}, target_number={}, lat={}, lon={})",
             repr_talker(self.talker),
-            self.target_number,
-            self.latitude_deg,
-            self.longitude_deg,
-        )
+            repr_state(py, self.target_number)?,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+        ))
     }
 }
 
-impl From<TllData> for PyTll {
-    fn from(d: TllData) -> Self {
-        Self {
+impl TryFrom<TllData> for PyTll {
+    type Error = PyErr;
+
+    fn try_from(d: TllData) -> PyResult<Self> {
+        Ok(Self {
             talker: d.talker,
             target_number: d.target_number,
             latitude_deg: d.latitude_deg,
             longitude_deg: d.longitude_deg,
             name: d.name,
             utc_time: d.utc_time.map(PyUtcTime::from),
-            status: d.status.map(PyTargetStatus::from),
+            status: enum_state(d.status)?,
             reference_target: d.reference_target,
-        }
+        })
     }
 }
 
@@ -952,55 +1041,68 @@ impl From<TllData> for PyTll {
 /// Frozen `$__RMC` message (binding class for `RmcData`).
 ///
 /// Single-sentence carrier of UTC time + date + position + speed +
-/// course + magnetic variation. Safety-critical consumers should
-/// reject [`Self::status`] of `DataStatus.VOID` before using the
-/// position or velocity values.
+/// course + magnetic variation. Every field but `talker` is a
+/// `FieldState`. Safety-critical consumers should reject a `status` of
+/// `FieldState.Value(DataStatus.VOID)` before using the position or
+/// velocity values; the status does not change their state.
 #[pyclass(name = "Rmc", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyRmc {
     talker: Option<[u8; 2]>,
-    utc: Option<PyUtcTime>,
-    status: PyDataStatus,
-    latitude_deg: Option<f64>,
-    longitude_deg: Option<f64>,
-    speed_knots: Option<f32>,
-    course_true_deg: Option<f32>,
-    date: Option<PyUtcDate>,
-    magnetic_variation_deg: Option<f32>,
-    mode: Option<PyVtgMode>,
-    nav_status: Option<PyRmcNavStatus>,
+    utc: FieldState<PyUtcTime>,
+    status: FieldState<PyDataStatus>,
+    latitude_deg: FieldState<f64>,
+    longitude_deg: FieldState<f64>,
+    speed_knots: FieldState<f32>,
+    course_true_deg: FieldState<f32>,
+    date: FieldState<PyUtcDate>,
+    magnetic_variation_deg: FieldState<f32>,
+    mode: FieldState<PyVtgMode>,
+    nav_status: FieldState<PyRmcNavStatus>,
 }
 
 #[pymethods]
 impl PyRmc {
     #[new]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        talker,
+        utc = None,
+        status = None,
+        latitude_deg = None,
+        longitude_deg = None,
+        speed_knots = None,
+        course_true_deg = None,
+        date = None,
+        magnetic_variation_deg = None,
+        mode = None,
+        nav_status = None,
+    ))]
     fn new(
         talker: Option<&[u8]>,
-        utc: Option<PyUtcTime>,
-        status: PyDataStatus,
-        latitude_deg: Option<f64>,
-        longitude_deg: Option<f64>,
-        speed_knots: Option<f32>,
-        course_true_deg: Option<f32>,
-        date: Option<PyUtcDate>,
-        magnetic_variation_deg: Option<f32>,
-        mode: Option<PyVtgMode>,
-        nav_status: Option<PyRmcNavStatus>,
+        utc: Option<&Bound<'_, PyAny>>,
+        status: Option<&Bound<'_, PyAny>>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        speed_knots: Option<&Bound<'_, PyAny>>,
+        course_true_deg: Option<&Bound<'_, PyAny>>,
+        date: Option<&Bound<'_, PyAny>>,
+        magnetic_variation_deg: Option<&Bound<'_, PyAny>>,
+        mode: Option<&Bound<'_, PyAny>>,
+        nav_status: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let talker = normalize_talker(talker)?;
         Ok(Self {
-            talker,
-            utc,
-            status,
-            latitude_deg,
-            longitude_deg,
-            speed_knots,
-            course_true_deg,
-            date,
-            magnetic_variation_deg,
-            mode,
-            nav_status,
+            talker: normalize_talker(talker)?,
+            utc: arg(utc)?,
+            status: arg(status)?,
+            latitude_deg: arg(latitude_deg)?,
+            longitude_deg: arg(longitude_deg)?,
+            speed_knots: arg(speed_knots)?,
+            course_true_deg: arg(course_true_deg)?,
+            date: arg(date)?,
+            magnetic_variation_deg: arg(magnetic_variation_deg)?,
+            mode: arg(mode)?,
+            nav_status: arg(nav_status)?,
         })
     }
 
@@ -1009,74 +1111,76 @@ impl PyRmc {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn utc(&self) -> Option<PyUtcTime> {
-        self.utc.clone()
+    fn utc(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.utc.clone())
     }
     #[getter]
-    fn status(&self) -> PyDataStatus {
-        self.status
+    fn status(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.status)
     }
     #[getter]
-    fn latitude_deg(&self) -> Option<f64> {
-        self.latitude_deg
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
     }
     #[getter]
-    fn longitude_deg(&self) -> Option<f64> {
-        self.longitude_deg
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
     }
     #[getter]
-    fn speed_knots(&self) -> Option<f32> {
-        self.speed_knots
+    fn speed_knots(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed_knots)
     }
     #[getter]
-    fn course_true_deg(&self) -> Option<f32> {
-        self.course_true_deg
+    fn course_true_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_true_deg)
     }
     #[getter]
-    fn date(&self) -> Option<PyUtcDate> {
-        self.date.clone()
+    fn date(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.date.clone())
     }
     #[getter]
-    fn magnetic_variation_deg(&self) -> Option<f32> {
-        self.magnetic_variation_deg
+    fn magnetic_variation_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.magnetic_variation_deg)
     }
     #[getter]
-    fn mode(&self) -> Option<PyVtgMode> {
-        self.mode
+    fn mode(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.mode)
     }
     #[getter]
-    fn nav_status(&self) -> Option<PyRmcNavStatus> {
-        self.nav_status
+    fn nav_status(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.nav_status)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Rmc(talker={}, status={:?}, lat={:?}, lon={:?}, sog_kn={:?}, cog_true={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Rmc(talker={}, status={}, lat={}, lon={}, sog_kn={}, cog_true={})",
             repr_talker(self.talker),
-            self.status,
-            self.latitude_deg,
-            self.longitude_deg,
-            self.speed_knots,
-            self.course_true_deg,
-        )
+            repr_state(py, self.status)?,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+            repr_state(py, self.speed_knots)?,
+            repr_state(py, self.course_true_deg)?,
+        ))
     }
 }
 
-impl From<RmcData> for PyRmc {
-    fn from(d: RmcData) -> Self {
-        Self {
+impl TryFrom<RmcData> for PyRmc {
+    type Error = PyErr;
+
+    fn try_from(d: RmcData) -> PyResult<Self> {
+        Ok(Self {
             talker: d.talker,
             utc: d.utc.map(PyUtcTime::from),
-            status: d.status.into(),
+            status: enum_state(d.status)?,
             latitude_deg: d.latitude_deg,
             longitude_deg: d.longitude_deg,
             speed_knots: d.speed_knots,
             course_true_deg: d.course_true_deg,
             date: d.date.map(PyUtcDate::from),
             magnetic_variation_deg: d.magnetic_variation_deg,
-            mode: d.mode.map(PyVtgMode::from),
-            nav_status: d.nav_status.map(PyRmcNavStatus::from),
-        }
+            mode: enum_state(d.mode)?,
+            nav_status: enum_state(d.nav_status)?,
+        })
     }
 }
 
@@ -1085,38 +1189,47 @@ impl From<RmcData> for PyRmc {
 /// Frozen `$__GLL` message (binding class for `GllData`).
 ///
 /// Position-only sentence with UTC time and an A/V validity status.
-/// Safety-critical consumers should reject `DataStatus.VOID` before
-/// using the position values.
+/// Every field but `talker` is a `FieldState`. Safety-critical
+/// consumers should reject a `status` of
+/// `FieldState.Value(DataStatus.VOID)` before using the position
+/// values; the status does not change their state.
 #[pyclass(name = "Gll", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyGll {
     talker: Option<[u8; 2]>,
-    latitude_deg: Option<f64>,
-    longitude_deg: Option<f64>,
-    utc: Option<PyUtcTime>,
-    status: PyDataStatus,
-    mode: Option<PyVtgMode>,
+    latitude_deg: FieldState<f64>,
+    longitude_deg: FieldState<f64>,
+    utc: FieldState<PyUtcTime>,
+    status: FieldState<PyDataStatus>,
+    mode: FieldState<PyVtgMode>,
 }
 
 #[pymethods]
 impl PyGll {
     #[new]
+    #[pyo3(signature = (
+        talker,
+        latitude_deg = None,
+        longitude_deg = None,
+        utc = None,
+        status = None,
+        mode = None,
+    ))]
     fn new(
         talker: Option<&[u8]>,
-        latitude_deg: Option<f64>,
-        longitude_deg: Option<f64>,
-        utc: Option<PyUtcTime>,
-        status: PyDataStatus,
-        mode: Option<PyVtgMode>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        utc: Option<&Bound<'_, PyAny>>,
+        status: Option<&Bound<'_, PyAny>>,
+        mode: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let talker = normalize_talker(talker)?;
         Ok(Self {
-            talker,
-            latitude_deg,
-            longitude_deg,
-            utc,
-            status,
-            mode,
+            talker: normalize_talker(talker)?,
+            latitude_deg: arg(latitude_deg)?,
+            longitude_deg: arg(longitude_deg)?,
+            utc: arg(utc)?,
+            status: arg(status)?,
+            mode: arg(mode)?,
         })
     }
 
@@ -1125,47 +1238,49 @@ impl PyGll {
         self.talker.map(|t| PyBytes::new(py, &t))
     }
     #[getter]
-    fn latitude_deg(&self) -> Option<f64> {
-        self.latitude_deg
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
     }
     #[getter]
-    fn longitude_deg(&self) -> Option<f64> {
-        self.longitude_deg
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
     }
     #[getter]
-    fn utc(&self) -> Option<PyUtcTime> {
-        self.utc.clone()
+    fn utc(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.utc.clone())
     }
     #[getter]
-    fn status(&self) -> PyDataStatus {
-        self.status
+    fn status(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.status)
     }
     #[getter]
-    fn mode(&self) -> Option<PyVtgMode> {
-        self.mode
+    fn mode(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.mode)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Gll(talker={}, status={:?}, lat={:?}, lon={:?})",
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Gll(talker={}, status={}, lat={}, lon={})",
             repr_talker(self.talker),
-            self.status,
-            self.latitude_deg,
-            self.longitude_deg,
-        )
+            repr_state(py, self.status)?,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+        ))
     }
 }
 
-impl From<GllData> for PyGll {
-    fn from(d: GllData) -> Self {
-        Self {
+impl TryFrom<GllData> for PyGll {
+    type Error = PyErr;
+
+    fn try_from(d: GllData) -> PyResult<Self> {
+        Ok(Self {
             talker: d.talker,
             latitude_deg: d.latitude_deg,
             longitude_deg: d.longitude_deg,
             utc: d.utc.map(PyUtcTime::from),
-            status: d.status.into(),
-            mode: d.mode.map(PyVtgMode::from),
-        }
+            status: enum_state(d.status)?,
+            mode: enum_state(d.mode)?,
+        })
     }
 }
 
@@ -1232,7 +1347,7 @@ pub enum PyPsxnSlot {
 impl From<RustPsxnSlot> for PyPsxnSlot {
     // Wildcard collapses future `#[non_exhaustive]` variants onto
     // `Ignored`; silence `match_same_arms` for the `Ignored => Ignored` +
-    // `_ => Ignored` pair — same pattern as PyGgaFixQuality.
+    // `_ => Ignored` pair.
     #[allow(clippy::match_same_arms)]
     fn from(v: RustPsxnSlot) -> Self {
         match v {
@@ -1282,8 +1397,7 @@ pub enum PyPrdidDialect {
 
 impl From<RustPrdidDialect> for PyPrdidDialect {
     // Wildcard collapses future `#[non_exhaustive]` variants onto
-    // `Unknown`; silence `match_same_arms` for the pair — same pattern
-    // as PyGgaFixQuality.
+    // `Unknown`; silence `match_same_arms` for the pair.
     #[allow(clippy::match_same_arms)]
     fn from(v: RustPrdidDialect) -> Self {
         match v {
@@ -1407,15 +1521,18 @@ impl PyDecodeOptions {
 ///
 /// PSXN is proprietary — there is no talker. `PsxnLayout` describes
 /// how the six on-wire slots decode into these five motion quantities;
-/// the output shape is fixed regardless of layout.
+/// the output shape is fixed regardless of layout. Every field is a
+/// `FieldState`: a quantity no slot carries under the layout is
+/// `FieldState.NotAvailable()`, and a derived angle the slot values
+/// cannot produce is `FieldState.Invalid(None)`.
 #[pyclass(name = "Psxn", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyPsxn {
-    id: Option<u16>,
-    token: Option<Vec<u8>>,
-    roll_deg: Option<f32>,
-    pitch_deg: Option<f32>,
-    heave_m: Option<f32>,
+    id: FieldState<u16>,
+    token: FieldState<Vec<u8>>,
+    roll_deg: FieldState<f32>,
+    pitch_deg: FieldState<f32>,
+    heave_m: FieldState<f32>,
 }
 
 #[pymethods]
@@ -1423,47 +1540,50 @@ impl PyPsxn {
     #[new]
     #[pyo3(signature = (id = None, token = None, roll_deg = None, pitch_deg = None, heave_m = None))]
     fn new(
-        id: Option<u16>,
-        token: Option<Vec<u8>>,
-        roll_deg: Option<f32>,
-        pitch_deg: Option<f32>,
-        heave_m: Option<f32>,
-    ) -> Self {
-        Self {
-            id,
-            token,
-            roll_deg,
-            pitch_deg,
-            heave_m,
-        }
+        id: Option<&Bound<'_, PyAny>>,
+        token: Option<&Bound<'_, PyAny>>,
+        roll_deg: Option<&Bound<'_, PyAny>>,
+        pitch_deg: Option<&Bound<'_, PyAny>>,
+        heave_m: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            id: arg(id)?,
+            token: arg(token)?,
+            roll_deg: arg(roll_deg)?,
+            pitch_deg: arg(pitch_deg)?,
+            heave_m: arg(heave_m)?,
+        })
     }
 
     #[getter]
-    fn id(&self) -> Option<u16> {
-        self.id
+    fn id(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.id)
     }
     #[getter]
-    fn token<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
-        self.token.as_deref().map(|t| PyBytes::new(py, t))
+    fn token(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.token.as_ref().map(|t| PyBytes::new(py, t)))
     }
     #[getter]
-    fn roll_deg(&self) -> Option<f32> {
-        self.roll_deg
+    fn roll_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.roll_deg)
     }
     #[getter]
-    fn pitch_deg(&self) -> Option<f32> {
-        self.pitch_deg
+    fn pitch_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.pitch_deg)
     }
     #[getter]
-    fn heave_m(&self) -> Option<f32> {
-        self.heave_m
+    fn heave_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.heave_m)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Psxn(id={:?}, roll={:?}, pitch={:?}, heave={:?})",
-            self.id, self.roll_deg, self.pitch_deg, self.heave_m
-        )
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Psxn(id={}, roll={}, pitch={}, heave={})",
+            repr_state(py, self.id)?,
+            repr_state(py, self.roll_deg)?,
+            repr_state(py, self.pitch_deg)?,
+            repr_state(py, self.heave_m)?,
+        ))
     }
 }
 
@@ -1482,41 +1602,46 @@ impl From<PsxnData> for PyPsxn {
 // ---------- Prdid (tagged union) ----------
 
 /// Frozen `$PRDID` body for the `pitch, roll, heading` dialect
-/// (binding class for `PrdidPitchRollHeading`).
+/// (binding class for `PrdidPitchRollHeading`). Every field is a
+/// `FieldState`.
 // Field names match the Rust struct and are Python-visible via getters;
 // `_deg` conveys the unit and must stay.
 #[allow(clippy::struct_field_names)]
 #[pyclass(name = "PrdidPitchRollHeading", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyPrdidPitchRollHeading {
-    pitch_deg: Option<f32>,
-    roll_deg: Option<f32>,
-    heading_deg: Option<f32>,
+    pitch_deg: FieldState<f32>,
+    roll_deg: FieldState<f32>,
+    heading_deg: FieldState<f32>,
 }
 
 #[pymethods]
 impl PyPrdidPitchRollHeading {
     #[new]
     #[pyo3(signature = (pitch_deg = None, roll_deg = None, heading_deg = None))]
-    fn new(pitch_deg: Option<f32>, roll_deg: Option<f32>, heading_deg: Option<f32>) -> Self {
-        Self {
-            pitch_deg,
-            roll_deg,
-            heading_deg,
-        }
+    fn new(
+        pitch_deg: Option<&Bound<'_, PyAny>>,
+        roll_deg: Option<&Bound<'_, PyAny>>,
+        heading_deg: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            pitch_deg: arg(pitch_deg)?,
+            roll_deg: arg(roll_deg)?,
+            heading_deg: arg(heading_deg)?,
+        })
     }
 
     #[getter]
-    fn pitch_deg(&self) -> Option<f32> {
-        self.pitch_deg
+    fn pitch_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.pitch_deg)
     }
     #[getter]
-    fn roll_deg(&self) -> Option<f32> {
-        self.roll_deg
+    fn roll_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.roll_deg)
     }
     #[getter]
-    fn heading_deg(&self) -> Option<f32> {
-        self.heading_deg
+    fn heading_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.heading_deg)
     }
 }
 
@@ -1531,41 +1656,46 @@ impl From<RustPrdidPitchRollHeading> for PyPrdidPitchRollHeading {
 }
 
 /// Frozen `$PRDID` body for the `roll, pitch, heading` dialect
-/// (binding class for `PrdidRollPitchHeading`).
+/// (binding class for `PrdidRollPitchHeading`). Every field is a
+/// `FieldState`.
 // Field names match the Rust struct and are Python-visible via getters;
 // `_deg` conveys the unit and must stay.
 #[allow(clippy::struct_field_names)]
 #[pyclass(name = "PrdidRollPitchHeading", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyPrdidRollPitchHeading {
-    roll_deg: Option<f32>,
-    pitch_deg: Option<f32>,
-    heading_deg: Option<f32>,
+    roll_deg: FieldState<f32>,
+    pitch_deg: FieldState<f32>,
+    heading_deg: FieldState<f32>,
 }
 
 #[pymethods]
 impl PyPrdidRollPitchHeading {
     #[new]
     #[pyo3(signature = (roll_deg = None, pitch_deg = None, heading_deg = None))]
-    fn new(roll_deg: Option<f32>, pitch_deg: Option<f32>, heading_deg: Option<f32>) -> Self {
-        Self {
-            roll_deg,
-            pitch_deg,
-            heading_deg,
-        }
+    fn new(
+        roll_deg: Option<&Bound<'_, PyAny>>,
+        pitch_deg: Option<&Bound<'_, PyAny>>,
+        heading_deg: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            roll_deg: arg(roll_deg)?,
+            pitch_deg: arg(pitch_deg)?,
+            heading_deg: arg(heading_deg)?,
+        })
     }
 
     #[getter]
-    fn roll_deg(&self) -> Option<f32> {
-        self.roll_deg
+    fn roll_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.roll_deg)
     }
     #[getter]
-    fn pitch_deg(&self) -> Option<f32> {
-        self.pitch_deg
+    fn pitch_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.pitch_deg)
     }
     #[getter]
-    fn heading_deg(&self) -> Option<f32> {
-        self.heading_deg
+    fn heading_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.heading_deg)
     }
 }
 
@@ -1628,33 +1758,33 @@ impl PyPrdid {
     #[staticmethod]
     #[pyo3(signature = (pitch_deg = None, roll_deg = None, heading_deg = None))]
     fn pitch_roll_heading(
-        pitch_deg: Option<f32>,
-        roll_deg: Option<f32>,
-        heading_deg: Option<f32>,
-    ) -> Self {
-        Self {
+        pitch_deg: Option<&Bound<'_, PyAny>>,
+        roll_deg: Option<&Bound<'_, PyAny>>,
+        heading_deg: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
             variant: PrdidVariant::PitchRollHeading(PyPrdidPitchRollHeading::new(
                 pitch_deg,
                 roll_deg,
                 heading_deg,
-            )),
-        }
+            )?),
+        })
     }
 
     #[staticmethod]
     #[pyo3(signature = (roll_deg = None, pitch_deg = None, heading_deg = None))]
     fn roll_pitch_heading(
-        roll_deg: Option<f32>,
-        pitch_deg: Option<f32>,
-        heading_deg: Option<f32>,
-    ) -> Self {
-        Self {
+        roll_deg: Option<&Bound<'_, PyAny>>,
+        pitch_deg: Option<&Bound<'_, PyAny>>,
+        heading_deg: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
             variant: PrdidVariant::RollPitchHeading(PyPrdidRollPitchHeading::new(
                 roll_deg,
                 pitch_deg,
                 heading_deg,
-            )),
-        }
+            )?),
+        })
     }
 
     #[staticmethod]
@@ -1862,14 +1992,14 @@ fn owned_message_from_borrowed(msg: Nmea0183Message<'_>) -> OwnedMessage {
 impl OwnedMessage {
     fn into_pyany(self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match self {
-            Self::Gga(d) => Py::new(py, PyGga::from(d))?.into_any(),
-            Self::Gll(d) => Py::new(py, PyGll::from(d))?.into_any(),
+            Self::Gga(d) => Py::new(py, PyGga::try_from(d)?)?.into_any(),
+            Self::Gll(d) => Py::new(py, PyGll::try_from(d)?)?.into_any(),
             Self::Hdt(d) => Py::new(py, PyHdt::from(d))?.into_any(),
-            Self::Rmc(d) => Py::new(py, PyRmc::from(d))?.into_any(),
-            Self::Vtg(d) => Py::new(py, PyVtg::from(d))?.into_any(),
+            Self::Rmc(d) => Py::new(py, PyRmc::try_from(d)?)?.into_any(),
+            Self::Vtg(d) => Py::new(py, PyVtg::try_from(d)?)?.into_any(),
             Self::Hdg(d) => Py::new(py, PyHdg::from(d))?.into_any(),
-            Self::Ttm(d) => Py::new(py, PyTtm::from(d))?.into_any(),
-            Self::Tll(d) => Py::new(py, PyTll::from(d))?.into_any(),
+            Self::Ttm(d) => Py::new(py, PyTtm::try_from(d)?)?.into_any(),
+            Self::Tll(d) => Py::new(py, PyTll::try_from(d)?)?.into_any(),
             Self::Psxn(d) => Py::new(py, PyPsxn::from(d))?.into_any(),
             Self::Prdid(d) => Py::new(py, PyPrdid::from(d))?.into_any(),
             Self::Unknown {
@@ -1971,8 +2101,8 @@ fn py_decode_with(
 fn py_decode_gga(raw: &PyRawSentence) -> PyResult<PyGga> {
     let rust_raw = raw.to_rust();
     rust_decode_gga(&rust_raw)
-        .map(PyGga::from)
         .map_err(decode_err)
+        .and_then(PyGga::try_from)
 }
 
 #[pyfunction]
@@ -1980,8 +2110,8 @@ fn py_decode_gga(raw: &PyRawSentence) -> PyResult<PyGga> {
 fn py_decode_vtg(raw: &PyRawSentence) -> PyResult<PyVtg> {
     let rust_raw = raw.to_rust();
     rust_decode_vtg(&rust_raw)
-        .map(PyVtg::from)
         .map_err(decode_err)
+        .and_then(PyVtg::try_from)
 }
 
 #[pyfunction]
@@ -2007,8 +2137,8 @@ fn py_decode_hdg(raw: &PyRawSentence) -> PyResult<PyHdg> {
 fn py_decode_ttm(raw: &PyRawSentence) -> PyResult<PyTtm> {
     let rust_raw = raw.to_rust();
     rust_decode_ttm(&rust_raw)
-        .map(PyTtm::from)
         .map_err(decode_err)
+        .and_then(PyTtm::try_from)
 }
 
 #[pyfunction]
@@ -2016,8 +2146,8 @@ fn py_decode_ttm(raw: &PyRawSentence) -> PyResult<PyTtm> {
 fn py_decode_tll(raw: &PyRawSentence) -> PyResult<PyTll> {
     let rust_raw = raw.to_rust();
     rust_decode_tll(&rust_raw)
-        .map(PyTll::from)
         .map_err(decode_err)
+        .and_then(PyTll::try_from)
 }
 
 #[pyfunction]
@@ -2025,8 +2155,8 @@ fn py_decode_tll(raw: &PyRawSentence) -> PyResult<PyTll> {
 fn py_decode_rmc(raw: &PyRawSentence) -> PyResult<PyRmc> {
     let rust_raw = raw.to_rust();
     rust_decode_rmc(&rust_raw)
-        .map(PyRmc::from)
         .map_err(decode_err)
+        .and_then(PyRmc::try_from)
 }
 
 #[pyfunction]
@@ -2034,8 +2164,8 @@ fn py_decode_rmc(raw: &PyRawSentence) -> PyResult<PyRmc> {
 fn py_decode_gll(raw: &PyRawSentence) -> PyResult<PyGll> {
     let rust_raw = raw.to_rust();
     rust_decode_gll(&rust_raw)
-        .map(PyGll::from)
         .map_err(decode_err)
+        .and_then(PyGll::try_from)
 }
 
 #[pyfunction]

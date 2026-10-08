@@ -40,6 +40,7 @@ name = "marlin-nmea-0183"
 version = "0.2.0"
 dependencies = [
  "libm",
+ "marlin-field",
  "marlin-nmea-envelope",
  "thiserror",
 ]

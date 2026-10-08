@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from marlin.field import FieldState
 from marlin.nmea import Nmea0183Parser
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "envelope"
@@ -35,6 +36,13 @@ def _to_json_safe(obj: Any) -> Any:
         return [_to_json_safe(x) for x in obj]
     if isinstance(obj, dict):
         return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, FieldState):
+        # A field state: the variant class, its tag and its own payload
+        # fields (`value`, `bound`, `code`), not the computed accessors.
+        state: dict[str, Any] = {"__class__": type(obj).__name__, "kind": obj.kind}
+        for name in getattr(type(obj), "__match_args__", ()):
+            state[name] = _to_json_safe(getattr(obj, name))
+        return state
     # PyO3 int-backed enum pyclass — prefer the wire int.
     try:
         return {"__enum__": type(obj).__name__, "value": int(obj)}

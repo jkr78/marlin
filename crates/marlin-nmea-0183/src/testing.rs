@@ -6,7 +6,14 @@
 
 use alloc::vec::Vec;
 
+use marlin_field::{FieldState, Invalid};
 use marlin_nmea_envelope::RawSentence;
+
+/// The invalid state of a field whose text the decoder could not read,
+/// for assertions across fields of different types.
+pub(crate) fn unparsable<T>() -> FieldState<T> {
+    FieldState::Invalid(Invalid::Unparsable)
+}
 
 /// Parse a byte slice containing one complete sentence into a typed
 /// `RawSentence`. Panics if the envelope rejects the bytes — test

@@ -7,8 +7,11 @@
 /// - `A` — Active / valid / data reliable
 /// - `V` — Void / invalid / data not reliable
 ///
-/// Safety-critical consumers reject [`Self::Void`] before acting on
-/// the position or velocity values in the same sentence.
+/// A status field: it qualifies the other fields of its sentence and
+/// does not change their field state. Safety-critical consumers reject
+/// [`Self::Void`] before acting on the position or velocity values in
+/// the same sentence. An empty field is not available; an unnamed byte
+/// is invalid with the byte as its raw code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DataStatus {
@@ -16,16 +19,14 @@ pub enum DataStatus {
     Active,
     /// `V` — data is void; receiver flagged it as unreliable.
     Void,
-    /// Any byte not covered above; raw byte preserved.
-    Other(u8),
 }
 
 impl DataStatus {
-    pub(crate) fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Option<Self> {
         match b {
-            b'A' | b'a' => Self::Active,
-            b'V' | b'v' => Self::Void,
-            other => Self::Other(other),
+            b'A' | b'a' => Some(Self::Active),
+            b'V' | b'v' => Some(Self::Void),
+            _ => None,
         }
     }
 }
@@ -36,6 +37,9 @@ impl DataStatus {
 /// - `L` — Lost (target no longer tracked)
 /// - `Q` — Query (target being acquired)
 /// - `T` — Tracking (target under track)
+///
+/// An unnamed byte decodes to the invalid field state with the byte as
+/// its raw code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TargetStatus {
@@ -45,45 +49,15 @@ pub enum TargetStatus {
     Query,
     /// `T` — target under track.
     Tracking,
-    /// Any byte not covered above; raw byte preserved.
-    Other(u8),
 }
 
 impl TargetStatus {
-    pub(crate) fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Option<Self> {
         match b {
-            b'L' | b'l' => Self::Lost,
-            b'Q' | b'q' => Self::Query,
-            b'T' | b't' => Self::Tracking,
-            other => Self::Other(other),
+            b'L' | b'l' => Some(Self::Lost),
+            b'Q' | b'q' => Some(Self::Query),
+            b'T' | b't' => Some(Self::Tracking),
+            _ => None,
         }
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_active_and_void() {
-        assert_eq!(DataStatus::from_byte(b'A'), DataStatus::Active);
-        assert_eq!(DataStatus::from_byte(b'a'), DataStatus::Active);
-        assert_eq!(DataStatus::from_byte(b'V'), DataStatus::Void);
-        assert_eq!(DataStatus::from_byte(b'v'), DataStatus::Void);
-    }
-
-    #[test]
-    fn unknown_byte_preserved() {
-        assert_eq!(DataStatus::from_byte(b'X'), DataStatus::Other(b'X'));
-    }
-
-    #[test]
-    fn target_status_maps_lqt_case_insensitive() {
-        assert_eq!(TargetStatus::from_byte(b'L'), TargetStatus::Lost);
-        assert_eq!(TargetStatus::from_byte(b'Q'), TargetStatus::Query);
-        assert_eq!(TargetStatus::from_byte(b'T'), TargetStatus::Tracking);
-        assert_eq!(TargetStatus::from_byte(b't'), TargetStatus::Tracking);
-        assert_eq!(TargetStatus::from_byte(b'Z'), TargetStatus::Other(b'Z'));
     }
 }

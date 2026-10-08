@@ -42,14 +42,15 @@ track deliverables (not conversational state).
   its own enum and delegates to the public per-sentence decoders. A
   decoder for a sentence this crate does not know still needs the
   field-level primitives (number, letter code, paired coordinate, text),
-  and those live in a private `util` module whose doc line wrongly
-  claims it is public. Publishing them means freezing their shape, so
-  wait until the field-state work has landed the `FieldState` producers
-  and the shared-crate trait surface has settled whether a construction
-  helper lives in `marlin-field`; a helper published there would make
-  most of this module redundant. May not be needed: no downstream user
-  has asked, and nexus decodes nothing proprietary beyond PSXN and
-  PRDID, which this crate already covers. [marlin-nmea-0183][draft]
+  and those live in a private `util` module (its doc line used to
+  claim it was public; corrected with the field-state work). The
+  `FieldState` producers (`number`, `code`, `text`, `paired`,
+  `reference_target`) landed there in 0.3.0 as `pub(crate)`; the
+  shared-crate trait surface settled on no construction helper in
+  `marlin-field`, so publishing means freezing these producers' shape.
+  May not be needed: no downstream user has asked, and nexus decodes
+  nothing proprietary beyond PSXN and PRDID, which this crate already
+  covers. [marlin-nmea-0183][draft]
 - [ ] Give AIS ship type a typed representation of Table 53
   `ship_type` on Types 5, 19 and 24B is a raw `u8` with 0 as not
   available; the field-state design keeps every other code, Table 53's

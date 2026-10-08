@@ -1,8 +1,9 @@
 //! HDT — True Heading.
 
+use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
-use crate::util::optional_f32;
+use crate::util::number;
 use crate::DecodeError;
 
 /// Decoded fields of a `$__HDT` sentence.
@@ -15,8 +16,8 @@ pub struct HdtData {
     /// Two-byte talker ID (e.g. `Some(*b"IN")` for an INS,
     /// `Some(*b"HE")` for a heading sensor).
     pub talker: Option<[u8; 2]>,
-    /// True heading in degrees (0..360). `None` for an empty field.
-    pub heading_true_deg: Option<f32>,
+    /// True heading in degrees (0..360).
+    pub heading_true_deg: FieldState<f32>,
 }
 
 /// Minimum fields for a HDT payload: heading + `T` unit indicator.
@@ -27,8 +28,6 @@ const HDT_MIN_FIELDS: usize = 2;
 /// # Errors
 ///
 /// - [`DecodeError::NotEnoughFields`] if fewer than 2 fields.
-/// - [`DecodeError::InvalidNumber`] if the heading field is non-empty
-///   but not a valid float.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_hdt(raw: &RawSentence<'_>) -> Result<HdtData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -39,11 +38,9 @@ pub fn decode_hdt(raw: &RawSentence<'_>) -> Result<HdtData, DecodeError> {
         });
     }
 
-    let heading_true_deg = optional_f32(f[0], 0)?;
-
     Ok(HdtData {
         talker: raw.talker,
-        heading_true_deg,
+        heading_true_deg: number(f[0]),
     })
 }
 
@@ -55,6 +52,8 @@ pub fn decode_hdt(raw: &RawSentence<'_>) -> Result<HdtData, DecodeError> {
     clippy::indexing_slicing
 )]
 mod tests {
+    use marlin_field::Invalid;
+
     use super::*;
     use crate::testing::{build, parse_raw};
 
@@ -64,15 +63,37 @@ mod tests {
         let raw = parse_raw(&bytes);
         let hdt = decode_hdt(&raw).expect("parse");
         assert_eq!(hdt.talker, Some(*b"IN"));
-        assert!((hdt.heading_true_deg.unwrap() - 123.456).abs() < 0.001);
+        assert!((hdt.heading_true_deg.value().unwrap() - 123.456).abs() < 0.001);
     }
 
     #[test]
-    fn decode_hdt_empty_heading_is_none() {
+    fn decode_hdt_empty_heading_is_not_available() {
         let bytes = build(b"HEHDT,,T");
         let raw = parse_raw(&bytes);
         let hdt = decode_hdt(&raw).expect("parse");
-        assert_eq!(hdt.heading_true_deg, None);
+        assert_eq!(hdt.heading_true_deg, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_hdt_unparsable_heading_is_invalid_not_a_sentence_failure() {
+        let bytes = build(b"HEHDT,north,T");
+        let raw = parse_raw(&bytes);
+        let hdt = decode_hdt(&raw).expect("parse");
+        assert_eq!(
+            hdt.heading_true_deg,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
+    }
+
+    #[test]
+    fn decode_hdt_non_utf8_heading_is_invalid() {
+        let bytes = build(b"HEHDT,\xFF\xFE,T");
+        let raw = parse_raw(&bytes);
+        let hdt = decode_hdt(&raw).expect("parse");
+        assert_eq!(
+            hdt.heading_true_deg,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
     }
 
     #[test]

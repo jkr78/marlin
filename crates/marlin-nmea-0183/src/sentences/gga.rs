@@ -1,8 +1,9 @@
 //! GGA — Global Positioning System Fix Data.
 
+use marlin_field::{FieldState, Invalid, RawCode};
 use marlin_nmea_envelope::RawSentence;
 
-use crate::util::{optional_coordinate, optional_f32, optional_u16, optional_u8};
+use crate::util::{latitude, longitude, number};
 use crate::DecodeError;
 
 use super::UtcTime;
@@ -13,7 +14,7 @@ use super::UtcTime;
 /// decode to `GgaData` with distinct [`talker`](Self::talker) values —
 /// the talker is source metadata, not dispatch.
 ///
-/// Empty NMEA fields decode to `None`. This is semantically distinct
+/// An empty NMEA field is not available. This is semantically distinct
 /// from zero and must not be conflated — a receiver that cannot compute
 /// HDOP reports an empty field, not `0.0`.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,67 +24,74 @@ pub struct GgaData {
     /// match [`RawSentence::talker`]'s shape.
     pub talker: Option<[u8; 2]>,
     /// UTC time of the position fix.
-    pub utc: Option<UtcTime>,
-    /// Latitude in signed decimal degrees (north positive).
-    pub latitude_deg: Option<f64>,
-    /// Longitude in signed decimal degrees (east positive).
-    pub longitude_deg: Option<f64>,
-    /// Fix quality indicator.
-    pub fix_quality: GgaFixQuality,
+    pub utc: FieldState<UtcTime>,
+    /// Latitude in signed decimal degrees (north positive). A paired
+    /// field with the `N`/`S` hemisphere letter.
+    pub latitude_deg: FieldState<f64>,
+    /// Longitude in signed decimal degrees (east positive). A paired
+    /// field with the `E`/`W` hemisphere letter.
+    pub longitude_deg: FieldState<f64>,
+    /// Fix quality indicator. A digit the standard leaves undefined is
+    /// invalid with the digit as its raw code.
+    pub fix_quality: FieldState<GgaFixQuality>,
     /// Number of satellites used in the fix.
-    pub satellites_used: Option<u8>,
+    pub satellites_used: FieldState<u8>,
     /// Horizontal dilution of precision.
-    pub hdop: Option<f32>,
+    pub hdop: FieldState<f32>,
     /// Altitude above mean sea level, in metres.
-    pub altitude_m: Option<f32>,
+    pub altitude_m: FieldState<f32>,
     /// Geoidal separation (difference between WGS-84 ellipsoid and MSL),
     /// in metres.
-    pub geoid_separation_m: Option<f32>,
+    pub geoid_separation_m: FieldState<f32>,
     /// Age of differential GPS corrections, in seconds.
-    pub dgps_age_s: Option<f32>,
+    pub dgps_age_s: FieldState<f32>,
     /// Differential reference station ID.
-    pub dgps_station_id: Option<u16>,
+    pub dgps_station_id: FieldState<u16>,
 }
 
 /// GPS fix quality indicator — first field after time/lat/lon/hemi.
+///
+/// A status field: the sender's own statement of fix quality. `0` is
+/// [`Self::NoFix`], a value the sender reported, not the invalid field
+/// state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum GgaFixQuality {
-    /// No fix.
-    Invalid,
-    /// GPS fix (standalone).
+    /// `0` — no fix.
+    NoFix,
+    /// `1` — GPS fix (standalone).
     GpsFix,
-    /// Differential GPS fix.
+    /// `2` — differential GPS fix.
     DgpsFix,
-    /// Precise Positioning Service fix.
+    /// `3` — Precise Positioning Service fix.
     PpsFix,
-    /// Real-Time Kinematic, fixed ambiguities.
+    /// `4` — Real-Time Kinematic, fixed ambiguities.
     RtkFixed,
-    /// Real-Time Kinematic, float ambiguities.
+    /// `5` — Real-Time Kinematic, float ambiguities.
     RtkFloat,
-    /// Dead reckoning.
+    /// `6` — dead reckoning.
     DeadReckoning,
-    /// Manual input.
+    /// `7` — manual input.
     ManualInput,
-    /// Simulator mode.
+    /// `8` — simulator mode.
     Simulator,
-    /// Any value not covered above; the raw byte is preserved.
-    Other(u8),
 }
 
 impl GgaFixQuality {
-    fn from_byte(b: u8) -> Self {
-        match b {
-            b'0' => Self::Invalid,
-            b'1' => Self::GpsFix,
-            b'2' => Self::DgpsFix,
-            b'3' => Self::PpsFix,
-            b'4' => Self::RtkFixed,
-            b'5' => Self::RtkFloat,
-            b'6' => Self::DeadReckoning,
-            b'7' => Self::ManualInput,
-            b'8' => Self::Simulator,
-            other => Self::Other(other),
+    /// The variant for a fix-quality digit, `None` for a digit the
+    /// standard leaves undefined.
+    fn from_digit(digit: u8) -> Option<Self> {
+        match digit {
+            0 => Some(Self::NoFix),
+            1 => Some(Self::GpsFix),
+            2 => Some(Self::DgpsFix),
+            3 => Some(Self::PpsFix),
+            4 => Some(Self::RtkFixed),
+            5 => Some(Self::RtkFloat),
+            6 => Some(Self::DeadReckoning),
+            7 => Some(Self::ManualInput),
+            8 => Some(Self::Simulator),
+            _ => None,
         }
     }
 }
@@ -119,9 +127,6 @@ const GGA_MIN_FIELDS: usize = 14;
 ///
 /// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 14
 ///   fields.
-/// - [`DecodeError::InvalidNumber`], [`DecodeError::InvalidUtcTime`],
-///   [`DecodeError::InvalidHemisphere`], [`DecodeError::OutOfRange`]
-///   for per-field malformations.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_gga(raw: &RawSentence<'_>) -> Result<GgaData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -132,44 +137,39 @@ pub fn decode_gga(raw: &RawSentence<'_>) -> Result<GgaData, DecodeError> {
         });
     }
 
-    // Empty-means-None must propagate through the whole row.
-    let utc = if f[0].is_empty() {
-        None
-    } else {
-        Some(UtcTime::parse(f[0], 0)?)
-    };
-
-    let latitude_deg = optional_coordinate(f[1], f[2], 1, 2, false)?;
-    let longitude_deg = optional_coordinate(f[3], f[4], 3, 4, true)?;
-
-    let fix_quality = match f[5] {
-        b"" => GgaFixQuality::Invalid,
-        single if single.len() == 1 => GgaFixQuality::from_byte(single[0]),
-        _ => {
-            return Err(DecodeError::InvalidNumber { field_index: 5 });
-        }
-    };
-
-    let satellites_used = optional_u8(f[6], 6)?;
-    let hdop = optional_f32(f[7], 7)?;
-    let altitude_m = optional_f32(f[8], 8)?;
-    let geoid_separation_m = optional_f32(f[10], 10)?;
-    let dgps_age_s = optional_f32(f[12], 12)?;
-    let dgps_station_id = optional_u16(f[13], 13)?;
-
     Ok(GgaData {
         talker: raw.talker,
-        utc,
-        latitude_deg,
-        longitude_deg,
-        fix_quality,
-        satellites_used,
-        hdop,
-        altitude_m,
-        geoid_separation_m,
-        dgps_age_s,
-        dgps_station_id,
+        utc: number(f[0]),
+        latitude_deg: latitude(f[1], f[2]),
+        longitude_deg: longitude(f[3], f[4]),
+        fix_quality: fix_quality(f[5]),
+        satellites_used: number(f[6]),
+        hdop: number(f[7]),
+        altitude_m: number(f[8]),
+        geoid_separation_m: number(f[10]),
+        dgps_age_s: number(f[12]),
+        dgps_station_id: number(f[13]),
     })
+}
+
+/// Decode the fix-quality field: a number read as a digit code.
+///
+/// Empty → `NotAvailable`; a defined digit → `Value`; another number →
+/// `Invalid(Undefined(RawCode(n)))` with the digit, not the ASCII byte,
+/// as the raw code; non-numeric text → `Invalid(Unparsable)`.
+fn fix_quality(bytes: &[u8]) -> FieldState<GgaFixQuality> {
+    match number::<u8>(bytes) {
+        FieldState::Value(digit) => GgaFixQuality::from_digit(digit).map_or(
+            FieldState::Invalid(Invalid::Undefined(RawCode(digit.into()))),
+            FieldState::Value,
+        ),
+        FieldState::NotAvailable => FieldState::NotAvailable,
+        FieldState::Invalid(why) => FieldState::Invalid(why),
+        FieldState::AtLeast(_) | FieldState::SenderError(_) => {
+            // `number` never produces these states.
+            FieldState::Invalid(Invalid::Unparsable)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -181,7 +181,13 @@ pub fn decode_gga(raw: &RawSentence<'_>) -> Result<GgaData, DecodeError> {
 )]
 mod tests {
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
+
+    fn decode(body: &[u8]) -> GgaData {
+        let bytes = build(body);
+        let raw = parse_raw(&bytes);
+        decode_gga(&raw).expect("parse")
+    }
 
     #[test]
     fn decode_gga_classic_spec_example() {
@@ -191,65 +197,233 @@ mod tests {
         assert_eq!(gga.talker, Some(*b"GP"));
         assert_eq!(
             gga.utc,
-            Some(UtcTime {
+            FieldState::Value(UtcTime {
                 hour: 12,
                 minute: 35,
                 second: 19,
                 millisecond: 0
             })
         );
-        assert!((gga.latitude_deg.unwrap() - 48.1173).abs() < 0.0001);
-        assert!((gga.longitude_deg.unwrap() - 11.51667).abs() < 0.0001);
-        assert_eq!(gga.fix_quality, GgaFixQuality::GpsFix);
-        assert_eq!(gga.satellites_used, Some(8));
-        assert!((gga.hdop.unwrap() - 0.9).abs() < 0.001);
-        assert!((gga.altitude_m.unwrap() - 545.4).abs() < 0.01);
-        assert!((gga.geoid_separation_m.unwrap() - 46.9).abs() < 0.01);
-        assert_eq!(gga.dgps_age_s, None);
-        assert_eq!(gga.dgps_station_id, None);
+        assert!((gga.latitude_deg.value().unwrap() - 48.1173).abs() < 0.0001);
+        assert!((gga.longitude_deg.value().unwrap() - 11.51667).abs() < 0.0001);
+        assert_eq!(gga.fix_quality, FieldState::Value(GgaFixQuality::GpsFix));
+        assert_eq!(gga.satellites_used, FieldState::Value(8));
+        assert!((gga.hdop.value().unwrap() - 0.9).abs() < 0.001);
+        assert!((gga.altitude_m.value().unwrap() - 545.4).abs() < 0.01);
+        assert!((gga.geoid_separation_m.value().unwrap() - 46.9).abs() < 0.01);
+        assert_eq!(gga.dgps_age_s, FieldState::NotAvailable);
+        assert_eq!(gga.dgps_station_id, FieldState::NotAvailable);
     }
 
     #[test]
-    fn decode_gga_all_empty_fields_decode_to_none() {
-        let bytes = build(b"GPGGA,,,,,,0,,,,,,,,");
-        let raw = parse_raw(&bytes);
-        let gga = decode_gga(&raw).expect("parse");
+    fn decode_gga_all_empty_fields_are_not_available() {
+        let gga = decode(b"GPGGA,,,,,,,,,,,,,,");
 
-        assert_eq!(gga.utc, None);
-        assert_eq!(gga.latitude_deg, None);
-        assert_eq!(gga.longitude_deg, None);
-        assert_eq!(gga.fix_quality, GgaFixQuality::Invalid);
-        assert_eq!(gga.satellites_used, None);
-        assert_eq!(gga.hdop, None);
-        assert_eq!(gga.altitude_m, None);
-        assert_eq!(gga.geoid_separation_m, None);
+        assert_eq!(gga.utc, FieldState::NotAvailable);
+        assert_eq!(gga.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(gga.longitude_deg, FieldState::NotAvailable);
+        assert_eq!(gga.fix_quality, FieldState::NotAvailable);
+        assert_eq!(gga.satellites_used, FieldState::NotAvailable);
+        assert_eq!(gga.hdop, FieldState::NotAvailable);
+        assert_eq!(gga.altitude_m, FieldState::NotAvailable);
+        assert_eq!(gga.geoid_separation_m, FieldState::NotAvailable);
+        assert_eq!(gga.dgps_age_s, FieldState::NotAvailable);
+        assert_eq!(gga.dgps_station_id, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_gga_every_unreadable_field_is_invalid() {
+        let gga = decode(b"GPGGA,x,x,N,x,E,x,x,x,x,M,x,M,x,x");
+
+        assert_eq!(gga.utc, unparsable());
+        assert_eq!(gga.latitude_deg, unparsable());
+        assert_eq!(gga.longitude_deg, unparsable());
+        assert_eq!(gga.fix_quality, unparsable());
+        assert_eq!(gga.satellites_used, unparsable());
+        assert_eq!(gga.hdop, unparsable());
+        assert_eq!(gga.altitude_m, unparsable());
+        assert_eq!(gga.geoid_separation_m, unparsable());
+        assert_eq!(gga.dgps_age_s, unparsable());
+        assert_eq!(gga.dgps_station_id, unparsable());
     }
 
     #[test]
     fn decode_gga_southern_western_coordinates_are_negative() {
-        let bytes = build(b"GPGGA,123519,4807.038,S,01131.000,W,1,08,0.9,545.4,M,46.9,M,,");
-        let raw = parse_raw(&bytes);
-        let gga = decode_gga(&raw).expect("parse");
-        assert!(gga.latitude_deg.unwrap() < 0.0);
-        assert!(gga.longitude_deg.unwrap() < 0.0);
+        let gga = decode(b"GPGGA,123519,4807.038,S,01131.000,W,1,08,0.9,545.4,M,46.9,M,,");
+        assert!(gga.latitude_deg.value().unwrap() < 0.0);
+        assert!(gga.longitude_deg.value().unwrap() < 0.0);
     }
 
     #[test]
-    fn decode_gga_various_fix_qualities() {
-        for (byte, expected) in [
-            (b'0', GgaFixQuality::Invalid),
-            (b'1', GgaFixQuality::GpsFix),
-            (b'2', GgaFixQuality::DgpsFix),
-            (b'3', GgaFixQuality::PpsFix),
-            (b'4', GgaFixQuality::RtkFixed),
-            (b'5', GgaFixQuality::RtkFloat),
-            (b'6', GgaFixQuality::DeadReckoning),
-            (b'7', GgaFixQuality::ManualInput),
-            (b'8', GgaFixQuality::Simulator),
-            (b'9', GgaFixQuality::Other(b'9')),
+    fn decode_gga_lowercase_hemisphere_is_accepted() {
+        let gga = decode(b"GPGGA,123519,4807.038,s,01131.000,w,1,08,0.9,545.4,M,46.9,M,,");
+        assert!(gga.latitude_deg.value().unwrap() < 0.0);
+        assert!(gga.longitude_deg.value().unwrap() < 0.0);
+    }
+
+    // -----------------------------------------------------------------
+    // Paired fields: latitude and longitude
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn decode_gga_latitude_without_hemisphere_is_invalid() {
+        let gga = decode(b"GPGGA,123519,4807.038,,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+        assert!(gga.longitude_deg.value().is_some());
+    }
+
+    #[test]
+    fn decode_gga_hemisphere_without_latitude_is_invalid() {
+        let gga = decode(b"GPGGA,123519,,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gga_unnamed_hemisphere_is_invalid_with_the_byte() {
+        let gga = decode(b"GPGGA,123519,4807.038,X,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(
+            gga.latitude_deg,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'X'))))
+        );
+    }
+
+    #[test]
+    fn decode_gga_longitude_letter_in_latitude_pair_is_invalid_with_the_byte() {
+        let gga = decode(b"GPGGA,123519,4807.038,E,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(
+            gga.latitude_deg,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'E'))))
+        );
+    }
+
+    #[test]
+    fn decode_gga_two_byte_hemisphere_is_invalid_without_a_code() {
+        let gga = decode(b"GPGGA,123519,4807.038,NS,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gga_unparsable_latitude_magnitude_is_invalid() {
+        let gga = decode(b"GPGGA,123519,north,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gga_latitude_beyond_90_degrees_is_invalid() {
+        let gga = decode(b"GPGGA,123519,9500.000,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gga_longitude_beyond_180_degrees_is_invalid() {
+        let gga = decode(b"GPGGA,123519,4807.038,N,18100.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.longitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gga_boundary_coordinates_are_values() {
+        let gga = decode(b"GPGGA,123519,9000.000,S,18000.000,W,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Value(-90.0));
+        assert_eq!(gga.longitude_deg, FieldState::Value(-180.0));
+    }
+
+    #[test]
+    fn decode_gga_negative_magnitude_is_invalid() {
+        // The sign lives in the hemisphere letter; a signed magnitude is
+        // not a coordinate.
+        let gga = decode(b"GPGGA,123519,-4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    // -----------------------------------------------------------------
+    // Fix quality: a digit code
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn decode_gga_every_defined_fix_quality_digit() {
+        for (digit, expected) in [
+            (b"0", GgaFixQuality::NoFix),
+            (b"1", GgaFixQuality::GpsFix),
+            (b"2", GgaFixQuality::DgpsFix),
+            (b"3", GgaFixQuality::PpsFix),
+            (b"4", GgaFixQuality::RtkFixed),
+            (b"5", GgaFixQuality::RtkFloat),
+            (b"6", GgaFixQuality::DeadReckoning),
+            (b"7", GgaFixQuality::ManualInput),
+            (b"8", GgaFixQuality::Simulator),
         ] {
-            assert_eq!(GgaFixQuality::from_byte(byte), expected);
+            let mut body = b"GPGGA,123519,4807.038,N,01131.000,E,".to_vec();
+            body.extend_from_slice(digit);
+            body.extend_from_slice(b",08,0.9,545.4,M,46.9,M,,");
+            assert_eq!(decode(&body).fix_quality, FieldState::Value(expected));
         }
+    }
+
+    #[test]
+    fn decode_gga_undefined_fix_quality_digit_is_invalid_with_the_digit() {
+        let gga = decode(b"GPGGA,123519,4807.038,N,01131.000,E,9,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(
+            gga.fix_quality,
+            FieldState::Invalid(Invalid::Undefined(RawCode(9)))
+        );
+    }
+
+    #[test]
+    fn decode_gga_two_digit_fix_quality_is_invalid_with_the_number() {
+        let gga = decode(b"GPGGA,123519,4807.038,N,01131.000,E,12,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(
+            gga.fix_quality,
+            FieldState::Invalid(Invalid::Undefined(RawCode(12)))
+        );
+    }
+
+    #[test]
+    fn decode_gga_non_numeric_fix_quality_is_invalid_without_a_code() {
+        let gga = decode(b"GPGGA,123519,4807.038,N,01131.000,E,A,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.fix_quality, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    // -----------------------------------------------------------------
+    // Numbers
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn decode_gga_unparsable_utc_is_invalid_and_the_rest_decodes() {
+        let gga = decode(b"GPGGA,12351,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.utc, FieldState::Invalid(Invalid::Unparsable));
+        assert!(gga.latitude_deg.value().is_some());
+        assert_eq!(gga.satellites_used, FieldState::Value(8));
+    }
+
+    #[test]
+    fn decode_gga_utc_hour_out_of_range_is_invalid() {
+        let gga = decode(b"GPGGA,243519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,");
+        assert_eq!(gga.utc, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gga_satellites_beyond_u8_is_invalid() {
+        let gga = decode(b"GPGGA,123519,4807.038,N,01131.000,E,1,300,0.9,545.4,M,46.9,M,,");
+        assert_eq!(
+            gga.satellites_used,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
+    }
+
+    #[test]
+    fn decode_gga_unparsable_hdop_is_invalid() {
+        let gga = decode(b"GPGGA,123519,4807.038,N,01131.000,E,1,08,x,545.4,M,46.9,M,,");
+        assert_eq!(gga.hdop, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gga_unparsable_station_id_is_invalid() {
+        let gga = decode(b"GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,2.0,id");
+        assert!((gga.dgps_age_s.value().unwrap() - 2.0).abs() < 0.001);
+        assert_eq!(
+            gga.dgps_station_id,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
     }
 
     #[test]

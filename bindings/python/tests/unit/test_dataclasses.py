@@ -7,6 +7,9 @@ import json
 
 import pytest
 
+import marlin.nmea as nmea
+from marlin.dataclasses import Value
+
 from .ais_vectors import (
     AIVDM_TYPE1,
     AIVDM_TYPE1_ROT_PLUS_127,
@@ -74,10 +77,11 @@ def test_gga_round_trip() -> None:
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
 
-    assert d["latitude_deg"] is not None
-    assert d["longitude_deg"] is not None
-    assert d["satellites_used"] == 8
-    assert isinstance(d["fix_quality"], int)
+    assert d["latitude_deg"]["kind"] == "value"
+    assert d["longitude_deg"]["kind"] == "value"
+    assert d["satellites_used"] == {"kind": "value", "value": 8}
+    assert d["fix_quality"] == {"kind": "value", "value": int(nmea.GgaFixQuality.GPS_FIX)}
+    assert d["dgps_age_s"] == {"kind": "not_available"}
 
 
 def test_vtg_round_trip() -> None:
@@ -96,7 +100,8 @@ def test_vtg_round_trip() -> None:
     assert isinstance(dc, DCVtg)
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
-    assert d["speed_knots"] is not None
+    assert d["speed_knots"]["kind"] == "value"
+    assert d["mode"] == {"kind": "value", "value": int(nmea.VtgMode.AUTONOMOUS)}
 
 
 def test_hdt_round_trip() -> None:
@@ -114,7 +119,7 @@ def test_hdt_round_trip() -> None:
     dc = to_dataclass(hdt)
     assert isinstance(dc, DCHdt)
     d = dataclasses.asdict(dc)
-    assert d["heading_true_deg"] is not None
+    assert d["heading_true_deg"]["kind"] == "value"
 
 
 def _frame(body: bytes) -> bytes:
@@ -141,8 +146,8 @@ def test_hdg_round_trip() -> None:
     json.dumps(d, default=_json_default)
 
     assert dc.talker == b"HC"
-    assert d["heading_magnetic_deg"] is not None
-    assert d["variation_deg"] is not None
+    assert d["heading_magnetic_deg"]["kind"] == "value"
+    assert d["variation_deg"]["kind"] == "value"
 
 
 def test_ttm_round_trip() -> None:
@@ -162,15 +167,15 @@ def test_ttm_round_trip() -> None:
     json.dumps(d, default=_json_default)
 
     assert dc.talker == b"RA"
-    assert dc.target_number == 12
-    assert dc.name == "TGT1"
-    assert dc.reference_target is True
-    assert isinstance(d["bearing_reference"], int)
-    assert isinstance(d["course_reference"], int)
-    assert isinstance(d["units"], int)
-    assert isinstance(d["status"], int)
-    assert isinstance(d["acquisition"], int)
-    assert d["utc_time"] is not None
+    assert dc.target_number == Value(12)
+    assert dc.name == Value("TGT1")
+    assert dc.reference_target == Value(True)
+    assert d["bearing_reference"] == {"kind": "value", "value": int(nmea.AngleReference.TRUE)}
+    assert d["course_reference"] == {"kind": "value", "value": int(nmea.AngleReference.RELATIVE)}
+    assert d["units"] == {"kind": "value", "value": int(nmea.DistanceUnits.STATUTE)}
+    assert d["status"] == {"kind": "value", "value": int(nmea.TargetStatus.TRACKING)}
+    assert d["acquisition"] == {"kind": "value", "value": int(nmea.AcquisitionType.REPORTED)}
+    assert d["utc_time"]["kind"] == "value"
 
 
 def test_tll_round_trip() -> None:
@@ -189,10 +194,10 @@ def test_tll_round_trip() -> None:
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
 
-    assert dc.target_number == 7
-    assert dc.name == "TGT7"
-    assert dc.reference_target is True
-    assert isinstance(d["status"], int)
+    assert dc.target_number == Value(7)
+    assert dc.name == Value("TGT7")
+    assert dc.reference_target == Value(True)
+    assert d["status"] == {"kind": "value", "value": int(nmea.TargetStatus.TRACKING)}
 
 
 def test_unknown_round_trip() -> None:
@@ -439,7 +444,7 @@ def test_to_dataclass_type_error_on_enum() -> None:
 def test_to_dataclass_type_error_on_a_dataclass_mirror() -> None:
     from marlin.dataclasses import Hdt, to_dataclass
 
-    already_converted = Hdt(talker=b"IN", heading_true_deg=180.25)
+    already_converted = Hdt(talker=b"IN", heading_true_deg=Value(180.25))
 
     with pytest.raises(TypeError, match="unrecognised marlin message type"):
         to_dataclass(already_converted)

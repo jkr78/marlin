@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `UtcTime` and `UtcDate` implement `FromStr`, with the unit error types
+  `ParseUtcTimeError` and `ParseUtcDateError`, so a caller can parse
+  `hhmmss[.sss]` and `ddmmyy` text with the standard trait.
+- Re-exports of `marlin_field::{FieldState, Invalid, Kind, RawCode}` at
+  the crate root; the crate depends on `marlin-field` from 0.3.0.
+
+### Changed (BREAKING)
+
+- Every field the wire can leave empty, or fill with text the decoder
+  cannot read, is a `FieldState<T>` instead of `Option<T>`: an empty
+  field is `NotAvailable` and unreadable text is `Invalid`, so one bad
+  field no longer fails the sentence. `value()` is the one-line
+  migration where `Option<T>` was read before. The two status fields
+  that were bare enums, `GllData::status` and `RmcData::status`, and
+  the bare `GgaData::fix_quality` follow the same rule: an empty status
+  byte is `NotAvailable`, where it used to decode as the fabricated
+  `DataStatus::Other(0)`. Per rule:
+  - A number (`number` text, `UtcTime`, `UtcDate`): empty →
+    `NotAvailable`; non-UTF-8, a parse failure or a range failure
+    (coordinate beyond ±90°/±180°, UTC hour above 23, day 0) →
+    `Invalid(Unparsable)`. 0183 numeric text has no wire integer, so
+    no numeric invalid state carries a raw code.
+  - A one-byte letter code (`DataStatus`, `VtgMode`, `RmcNavStatus`,
+    `TargetStatus`, `AngleReference`, `DistanceUnits`,
+    `AcquisitionType`): empty, or absent from a short sentence →
+    `NotAvailable`; an unnamed byte → `Invalid(Undefined(RawCode(byte)))`;
+    two or more bytes → `Invalid(Unparsable)`. Reading only the first
+    byte of a longer field is gone. Lowercase letters stay accepted.
+  - The GGA fix quality is a digit code: an undefined number →
+    `Invalid(Undefined(RawCode(n)))` with the digit, not the ASCII
+    byte, as the raw code; a field of two or more bytes is now that
+    invalid state instead of a sentence failure.
+  - A paired field (latitude with `N`/`S`, longitude with `E`/`W`, HDG
+    deviation and variation and RMC magnetic variation with `E`/`W`):
+    both empty → `NotAvailable`; exactly one empty → `Invalid(Unparsable)`;
+    a letter outside the pair → `Invalid(Undefined(RawCode(byte)))`.
+  - TTM and TLL `name`: empty → `NotAvailable`; non-UTF-8 →
+    `Invalid(Unparsable)`.
+  - TTM and TLL `reference_target` is `FieldState<bool>`: empty or
+    absent → `Value(false)`, never `NotAvailable`; `R`/`r` →
+    `Value(true)`; another byte → `Invalid(Undefined(RawCode(byte)))`.
+  - PSXN `id`, `token` and `heave_m` take their data field's state;
+    the derived `roll_deg` and `pitch_deg` are `FieldState<f32>` too: a
+    role no data field carries, or an empty data field →
+    `NotAvailable`; an unreadable data field → `Invalid(Unparsable)`;
+    a sine-encoded value no angle can produce, or gimbal lock →
+    `Invalid(Unparsable)`; a sine-encoded roll whose pitch source is
+    not a value takes the pitch's state. The two PRDID typed dialects'
+    angles are `FieldState<f32>`.
+
+  Exceptions and renames that come with the rule:
+  - `Other(u8)` is removed from the seven letter-code enums; an
+    unnamed byte is the invalid field state with the byte as its raw
+    code. The enums stay `#[non_exhaustive]`.
+  - `GgaFixQuality::Invalid` is renamed `NoFix`: the sender's own "no
+    fix" is a value, and "invalid" now always means the decoder could
+    not give the field a meaning.
+  - `UtcTime` and `UtcDate` are parsed through their new `FromStr`
+    impls (see Added).
+- `DecodeError` keeps `NotEnoughFields` only. `InvalidNumber`,
+  `OutOfRange`, `InvalidHemisphere`, `InvalidUtf8` and `InvalidUtcTime`
+  are removed; each is now the invalid field state. `decode` on a known
+  sentence type with enough fields never returns `Err`.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added

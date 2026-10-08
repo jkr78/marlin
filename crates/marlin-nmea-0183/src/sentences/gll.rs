@@ -4,9 +4,10 @@
 //! and a single-byte validity status. NMEA 2.3+ adds a mode indicator;
 //! pre-2.3 sentences omit it.
 
+use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
-use crate::util::{non_empty, optional_coordinate};
+use crate::util::{code, latitude, longitude, number, optional};
 use crate::DecodeError;
 
 use super::{DataStatus, UtcTime, VtgMode};
@@ -16,24 +17,27 @@ use super::{DataStatus, UtcTime, VtgMode};
 /// The talker ID is preserved — `$GPGLL`, `$GNGLL`, `$INGLL` all decode
 /// to `GllData` with distinct [`talker`](Self::talker) values.
 ///
-/// Empty NMEA fields decode to `None`. Safety-critical consumers should
-/// reject [`Self::status`] of `DataStatus::Void` before using the
-/// position values in the same sentence.
+/// An empty NMEA field is not available. Safety-critical consumers
+/// should reject [`Self::status`] of `DataStatus::Void` before using the
+/// position values in the same sentence; the status does not change
+/// their field state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GllData {
     /// Two-byte talker ID (e.g. `Some(*b"GP")`).
     pub talker: Option<[u8; 2]>,
-    /// Latitude in signed decimal degrees (north positive).
-    pub latitude_deg: Option<f64>,
-    /// Longitude in signed decimal degrees (east positive).
-    pub longitude_deg: Option<f64>,
+    /// Latitude in signed decimal degrees (north positive). A paired
+    /// field with the `N`/`S` hemisphere letter.
+    pub latitude_deg: FieldState<f64>,
+    /// Longitude in signed decimal degrees (east positive). A paired
+    /// field with the `E`/`W` hemisphere letter.
+    pub longitude_deg: FieldState<f64>,
     /// UTC time-of-day of the position fix.
-    pub utc: Option<UtcTime>,
+    pub utc: FieldState<UtcTime>,
     /// Validity status — `A` (active/valid) or `V` (void/invalid).
-    pub status: DataStatus,
-    /// Mode indicator (NMEA 2.3+). `None` if the sentence predates 2.3
-    /// or the field is present but empty.
-    pub mode: Option<VtgMode>,
+    pub status: FieldState<DataStatus>,
+    /// Mode indicator (NMEA 2.3+). Not available if the sentence
+    /// predates 2.3 or the field is present but empty.
+    pub mode: FieldState<VtgMode>,
 }
 
 /// GLL has at least 6 fields in pre-NMEA-2.3 form:
@@ -58,9 +62,6 @@ const GLL_MIN_FIELDS: usize = 6;
 ///
 /// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 6
 ///   fields.
-/// - [`DecodeError::InvalidUtcTime`] for a malformed UTC time.
-/// - [`DecodeError::InvalidNumber`], [`DecodeError::InvalidHemisphere`],
-///   [`DecodeError::OutOfRange`] for per-field malformations.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_gll(raw: &RawSentence<'_>) -> Result<GllData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -71,33 +72,13 @@ pub fn decode_gll(raw: &RawSentence<'_>) -> Result<GllData, DecodeError> {
         });
     }
 
-    let latitude_deg = optional_coordinate(f[0], f[1], 0, 1, false)?;
-    let longitude_deg = optional_coordinate(f[2], f[3], 2, 3, true)?;
-
-    let utc = if f[4].is_empty() {
-        None
-    } else {
-        Some(UtcTime::parse(f[4], 4)?)
-    };
-
-    let status = match f[5].first() {
-        None => DataStatus::Other(0),
-        Some(&b) => DataStatus::from_byte(b),
-    };
-
-    let mode = f
-        .get(6)
-        .and_then(|bytes| non_empty(bytes))
-        .and_then(|bytes| bytes.first().copied())
-        .map(VtgMode::from_byte);
-
     Ok(GllData {
         talker: raw.talker,
-        latitude_deg,
-        longitude_deg,
-        utc,
-        status,
-        mode,
+        latitude_deg: latitude(f[0], f[1]),
+        longitude_deg: longitude(f[2], f[3]),
+        utc: number(f[4]),
+        status: code(f[5], DataStatus::from_byte),
+        mode: code(optional(f, 6), VtgMode::from_byte),
     })
 }
 
@@ -109,8 +90,16 @@ pub fn decode_gll(raw: &RawSentence<'_>) -> Result<GllData, DecodeError> {
     clippy::indexing_slicing
 )]
 mod tests {
+    use marlin_field::{Invalid, RawCode};
+
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
+
+    fn decode(body: &[u8]) -> GllData {
+        let bytes = build(body);
+        let raw = parse_raw(&bytes);
+        decode_gll(&raw).expect("parse")
+    }
 
     // -----------------------------------------------------------------
     // Happy path — NMEA 2.3+ full sentence
@@ -122,19 +111,39 @@ mod tests {
         let gll = decode_gll(&raw).expect("parse");
 
         assert_eq!(gll.talker, Some(*b"GP"));
-        assert!((gll.latitude_deg.unwrap() - 49.27417).abs() < 0.0001);
-        assert!((gll.longitude_deg.unwrap() - (-123.18533)).abs() < 0.0001);
+        assert!((gll.latitude_deg.value().unwrap() - 49.27417).abs() < 0.0001);
+        assert!((gll.longitude_deg.value().unwrap() - (-123.18533)).abs() < 0.0001);
         assert_eq!(
             gll.utc,
-            Some(UtcTime {
+            FieldState::Value(UtcTime {
                 hour: 22,
                 minute: 54,
                 second: 44,
                 millisecond: 0
             })
         );
-        assert_eq!(gll.status, DataStatus::Active);
-        assert_eq!(gll.mode, Some(VtgMode::Autonomous));
+        assert_eq!(gll.status, FieldState::Value(DataStatus::Active));
+        assert_eq!(gll.mode, FieldState::Value(VtgMode::Autonomous));
+    }
+
+    #[test]
+    fn decode_gll_every_empty_field_is_not_available() {
+        let gll = decode(b"GPGLL,,,,,,,");
+        assert_eq!(gll.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(gll.longitude_deg, FieldState::NotAvailable);
+        assert_eq!(gll.utc, FieldState::NotAvailable);
+        assert_eq!(gll.status, FieldState::NotAvailable);
+        assert_eq!(gll.mode, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_gll_every_unreadable_field_is_invalid() {
+        let gll = decode(b"GPGLL,x,N,x,W,x,AV,AD");
+        assert_eq!(gll.latitude_deg, unparsable());
+        assert_eq!(gll.longitude_deg, unparsable());
+        assert_eq!(gll.utc, unparsable());
+        assert_eq!(gll.status, unparsable());
+        assert_eq!(gll.mode, unparsable());
     }
 
     // -----------------------------------------------------------------
@@ -142,40 +151,63 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_gll_pre_nmea_2_3_returns_none_mode() {
+    fn decode_gll_pre_nmea_2_3_mode_is_not_available() {
         let bytes = build(b"GPGLL,4916.45,N,12311.12,W,225444,A");
         let raw = parse_raw(&bytes);
         assert_eq!(raw.fields.len(), 6);
         let gll = decode_gll(&raw).expect("parse");
-        assert_eq!(gll.mode, None);
+        assert_eq!(gll.mode, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_gll_empty_mode_field_is_not_available() {
+        let gll = decode(b"GPGLL,4916.45,N,12311.12,W,225444,A,");
+        assert_eq!(gll.mode, FieldState::NotAvailable);
     }
 
     // -----------------------------------------------------------------
-    // Empty mode field — distinct from pre-2.3
+    // Status field: void qualifies, never stamps the other fields
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_gll_empty_mode_field_is_none() {
-        let bytes = build(b"GPGLL,4916.45,N,12311.12,W,225444,A,");
-        let raw = parse_raw(&bytes);
-        let gll = decode_gll(&raw).expect("parse");
-        assert_eq!(gll.mode, None);
+    fn decode_gll_void_status_leaves_sibling_states_alone() {
+        let gll = decode(b"GPGLL,,,,,,V,N");
+        assert_eq!(gll.status, FieldState::Value(DataStatus::Void));
+        assert_eq!(gll.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(gll.longitude_deg, FieldState::NotAvailable);
+        assert_eq!(gll.utc, FieldState::NotAvailable);
+        assert_eq!(gll.mode, FieldState::Value(VtgMode::NotValid));
+
+        let gll = decode(b"GPGLL,4916.45,N,12311.12,W,225444,V,N");
+        assert_eq!(gll.status, FieldState::Value(DataStatus::Void));
+        assert!((gll.latitude_deg.value().unwrap() - 49.27417).abs() < 0.0001);
     }
 
-    // -----------------------------------------------------------------
-    // Void status — propagates regardless of other fields
-    // -----------------------------------------------------------------
+    #[test]
+    fn decode_gll_empty_status_is_not_available() {
+        let gll = decode(b"GPGLL,4916.45,N,12311.12,W,225444,,A");
+        assert_eq!(gll.status, FieldState::NotAvailable);
+    }
 
     #[test]
-    fn decode_gll_void_status_propagates() {
-        let bytes = build(b"GPGLL,,,,,,V,N");
-        let raw = parse_raw(&bytes);
-        let gll = decode_gll(&raw).expect("parse");
-        assert_eq!(gll.status, DataStatus::Void);
-        assert_eq!(gll.latitude_deg, None);
-        assert_eq!(gll.longitude_deg, None);
-        assert_eq!(gll.utc, None);
-        assert_eq!(gll.mode, Some(VtgMode::NotValid));
+    fn decode_gll_lowercase_status_is_accepted() {
+        let gll = decode(b"GPGLL,4916.45,N,12311.12,W,225444,a,A");
+        assert_eq!(gll.status, FieldState::Value(DataStatus::Active));
+    }
+
+    #[test]
+    fn decode_gll_unnamed_status_byte_is_invalid_with_the_byte() {
+        let gll = decode(b"GPGLL,4916.45,N,12311.12,W,225444,X,A");
+        assert_eq!(
+            gll.status,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'X'))))
+        );
+    }
+
+    #[test]
+    fn decode_gll_two_byte_status_is_invalid_without_a_code() {
+        let gll = decode(b"GPGLL,4916.45,N,12311.12,W,225444,AV,A");
+        assert_eq!(gll.status, FieldState::Invalid(Invalid::Unparsable));
     }
 
     // -----------------------------------------------------------------
@@ -184,11 +216,22 @@ mod tests {
 
     #[test]
     fn decode_gll_southern_western_coordinates_are_negative() {
-        let bytes = build(b"GPGLL,4807.038,S,01131.000,W,123519,A,A");
-        let raw = parse_raw(&bytes);
-        let gll = decode_gll(&raw).expect("parse");
-        assert!(gll.latitude_deg.unwrap() < 0.0);
-        assert!(gll.longitude_deg.unwrap() < 0.0);
+        let gll = decode(b"GPGLL,4807.038,S,01131.000,W,123519,A,A");
+        assert!(gll.latitude_deg.value().unwrap() < 0.0);
+        assert!(gll.longitude_deg.value().unwrap() < 0.0);
+    }
+
+    #[test]
+    fn decode_gll_half_filled_longitude_pair_is_invalid() {
+        let gll = decode(b"GPGLL,4807.038,S,,W,123519,A,A");
+        assert!(gll.latitude_deg.value().is_some());
+        assert_eq!(gll.longitude_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_gll_unparsable_utc_is_invalid() {
+        let gll = decode(b"GPGLL,4807.038,S,01131.000,W,12:35:19,A,A");
+        assert_eq!(gll.utc, FieldState::Invalid(Invalid::Unparsable));
     }
 
     // -----------------------------------------------------------------

@@ -4,7 +4,10 @@
 //! [`RawSentence`](marlin_nmea_envelope::RawSentence) and returning a
 //! typed struct or a [`DecodeError`](crate::DecodeError). The decoders
 //! **do not** check `sentence_type` themselves — the caller asserts the
-//! type and this module decodes the fields.
+//! type and this module decodes the fields. Every decoded field that the
+//! wire can leave empty or fill with text the decoder cannot read is a
+//! [`FieldState`](crate::FieldState); only a sentence below its field
+//! floor is an error.
 
 mod gga;
 mod gll;
@@ -28,9 +31,9 @@ pub use prdid::{
     PrdidDialect, PrdidPitchRollHeading, PrdidRollPitchHeading,
 };
 pub use psxn::{decode_psxn, PsxnData, PsxnLayout, PsxnLayoutParseError, PsxnSlot};
-pub use rmc::{decode_rmc, RmcData, RmcNavStatus, UtcDate};
+pub use rmc::{decode_rmc, RmcData, RmcNavStatus};
 pub use status::{DataStatus, TargetStatus};
 pub use tll::{decode_tll, TllData};
 pub use ttm::{decode_ttm, AcquisitionType, AngleReference, DistanceUnits, TtmData};
-pub use utc_time::UtcTime;
+pub use utc_time::{ParseUtcDateError, ParseUtcTimeError, UtcDate, UtcTime};
 pub use vtg::{decode_vtg, VtgData, VtgMode};

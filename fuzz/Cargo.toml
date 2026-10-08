@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 marlin-nmea-envelope = { path = "../crates/marlin-nmea-envelope" }
+marlin-nmea-0183 = { path = "../crates/marlin-nmea-0183" }
 marlin-ais = { path = "../crates/marlin-ais" }
 marlin-klv = { path = "../crates/marlin-klv" }
 
@@ -45,6 +46,13 @@ bench = false
 [[bin]]
 name = "klv_decode"
 path = "fuzz_targets/klv_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nmea_0183_decode"
+path = "fuzz_targets/nmea_0183_decode.rs"
 test = false
 doc = false
 bench = false
