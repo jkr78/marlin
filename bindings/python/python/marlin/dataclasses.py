@@ -154,15 +154,16 @@ class RawSentence:
 # ---------- NMEA dataclass mirrors ----------
 
 # Every message field but `talker` is a `FieldState` mirror. An enum payload
-# is stored as its integer value (the wire code) for JSON-friendly output,
-# so `fix_quality` is `FieldState[int]`, not `FieldState[GgaFixQuality]`.
+# is stored as the member's integer value (`int(member)`) for JSON-friendly
+# output, so `fix_quality` is `FieldState[int]`, not
+# `FieldState[GgaFixQuality]`.
 
 
 @dataclass(frozen=True)
 class Gga:
     """Dataclass mirror of marlin.nmea.Gga.
 
-    `fix_quality` carries the enum's int value (wire code) for JSON
+    `fix_quality` carries the enum member's int value for JSON
     compatibility.
     """
 
@@ -183,7 +184,7 @@ class Gga:
 class Vtg:
     """Dataclass mirror of marlin.nmea.Vtg.
 
-    `mode` carries the enum's int value (wire code) for JSON compatibility.
+    `mode` carries the enum member's int value for JSON compatibility.
     """
 
     talker: Optional[bytes]
@@ -206,8 +207,8 @@ class Hdt:
 class Rmc:
     """Dataclass mirror of marlin.nmea.Rmc.
 
-    `status`, `mode` and `nav_status` carry the enum's int value (wire
-    code) for JSON compatibility. `mode` and `nav_status` are not
+    `status`, `mode` and `nav_status` carry the enum member's int value
+    for JSON compatibility. `mode` and `nav_status` are not
     available on sentences that predate NMEA 2.3 / 4.10 respectively.
     """
 
@@ -228,7 +229,7 @@ class Rmc:
 class Gll:
     """Dataclass mirror of marlin.nmea.Gll.
 
-    `status` and `mode` carry the enum's int value (wire code) for JSON
+    `status` and `mode` carry the enum member's int value for JSON
     compatibility.
     """
 
@@ -255,7 +256,7 @@ class Ttm:
     """Dataclass mirror of marlin.nmea.Ttm.
 
     `bearing_reference`, `course_reference`, `units`, `status` and
-    `acquisition` carry the enum's int value (wire code) for JSON
+    `acquisition` carry the enum member's int value for JSON
     compatibility.
     """
 
@@ -281,7 +282,7 @@ class Ttm:
 class Tll:
     """Dataclass mirror of marlin.nmea.Tll.
 
-    `status` carries the enum's int value (wire code) for JSON compatibility.
+    `status` carries the enum member's int value for JSON compatibility.
     """
 
     talker: Optional[bytes]

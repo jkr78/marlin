@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     `FieldState[bool]`: `Value(False)` for an empty or absent field,
     never `NotAvailable()`.
   - `Psxn` and the two `Prdid` typed bodies carry `FieldState` on every
-    attribute; a PSXN angle the slot values cannot produce is
+    attribute; a PSXN angle the data fields cannot produce is
     `Invalid(None)`.
   - Message constructors accept `FieldState[T] | T | None` per
     field-state attribute, coerce a bare value to `Value` and `None` to
@@ -59,8 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - Message `__repr__`s print the variant form
     (`lat=FieldState.Value(48.5)`).
 - `GgaFixQuality.INVALID` is renamed `NO_FIX`: the sender's own "no
-  fix" is a value, and "invalid" now always means the decoder rejected
-  the field.
+  fix" is a value, and "invalid" now always means the decoder could
+  not give the field a meaning.
 - The catch-all members `TargetStatus.UNKNOWN`, `AngleReference.UNKNOWN`,
   `DistanceUnits.UNKNOWN` and `AcquisitionType.UNKNOWN` are removed, and
   an unnamed `VtgMode`, `DataStatus` or `RmcNavStatus` letter no longer

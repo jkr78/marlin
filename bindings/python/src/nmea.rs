@@ -433,7 +433,9 @@ impl From<RustUtcDate> for PyUtcDate {
 /// is `NotAvailable`, a `FieldState` passes through, a bare value is
 /// `Value`; the payload is extracted to `T` and the extraction error is
 /// raised as is.
-fn arg<'py, T: FromPyObjectOwned<'py>>(obj: Option<&Bound<'py, PyAny>>) -> PyResult<FieldState<T>> {
+fn field_arg<'py, T: FromPyObjectOwned<'py>>(
+    obj: Option<&Bound<'py, PyAny>>,
+) -> PyResult<FieldState<T>> {
     obj.map_or(Ok(FieldState::NotAvailable), from_py)
 }
 
@@ -511,16 +513,16 @@ impl PyGga {
     ) -> PyResult<Self> {
         Ok(Self {
             talker: normalize_talker(talker)?,
-            utc: arg(utc)?,
-            latitude_deg: arg(latitude_deg)?,
-            longitude_deg: arg(longitude_deg)?,
-            fix_quality: arg(fix_quality)?,
-            satellites_used: arg(satellites_used)?,
-            hdop: arg(hdop)?,
-            altitude_m: arg(altitude_m)?,
-            geoid_separation_m: arg(geoid_separation_m)?,
-            dgps_age_s: arg(dgps_age_s)?,
-            dgps_station_id: arg(dgps_station_id)?,
+            utc: field_arg(utc)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            longitude_deg: field_arg(longitude_deg)?,
+            fix_quality: field_arg(fix_quality)?,
+            satellites_used: field_arg(satellites_used)?,
+            hdop: field_arg(hdop)?,
+            altitude_m: field_arg(altitude_m)?,
+            geoid_separation_m: field_arg(geoid_separation_m)?,
+            dgps_age_s: field_arg(dgps_age_s)?,
+            dgps_station_id: field_arg(dgps_station_id)?,
         })
     }
 
@@ -639,11 +641,11 @@ impl PyVtg {
     ) -> PyResult<Self> {
         Ok(Self {
             talker: normalize_talker(talker)?,
-            course_true_deg: arg(course_true_deg)?,
-            course_magnetic_deg: arg(course_magnetic_deg)?,
-            speed_knots: arg(speed_knots)?,
-            speed_kmh: arg(speed_kmh)?,
-            mode: arg(mode)?,
+            course_true_deg: field_arg(course_true_deg)?,
+            course_magnetic_deg: field_arg(course_magnetic_deg)?,
+            speed_knots: field_arg(speed_knots)?,
+            speed_kmh: field_arg(speed_kmh)?,
+            mode: field_arg(mode)?,
         })
     }
 
@@ -718,7 +720,7 @@ impl PyHdt {
     fn new(talker: Option<&[u8]>, heading_true_deg: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         Ok(Self {
             talker: normalize_talker(talker)?,
-            heading_true_deg: arg(heading_true_deg)?,
+            heading_true_deg: field_arg(heading_true_deg)?,
         })
     }
 
@@ -777,9 +779,9 @@ impl PyHdg {
     ) -> PyResult<Self> {
         Ok(Self {
             talker: normalize_talker(talker)?,
-            heading_magnetic_deg: arg(heading_magnetic_deg)?,
-            deviation_deg: arg(deviation_deg)?,
-            variation_deg: arg(variation_deg)?,
+            heading_magnetic_deg: field_arg(heading_magnetic_deg)?,
+            deviation_deg: field_arg(deviation_deg)?,
+            variation_deg: field_arg(variation_deg)?,
         })
     }
 
@@ -1093,16 +1095,16 @@ impl PyRmc {
     ) -> PyResult<Self> {
         Ok(Self {
             talker: normalize_talker(talker)?,
-            utc: arg(utc)?,
-            status: arg(status)?,
-            latitude_deg: arg(latitude_deg)?,
-            longitude_deg: arg(longitude_deg)?,
-            speed_knots: arg(speed_knots)?,
-            course_true_deg: arg(course_true_deg)?,
-            date: arg(date)?,
-            magnetic_variation_deg: arg(magnetic_variation_deg)?,
-            mode: arg(mode)?,
-            nav_status: arg(nav_status)?,
+            utc: field_arg(utc)?,
+            status: field_arg(status)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            longitude_deg: field_arg(longitude_deg)?,
+            speed_knots: field_arg(speed_knots)?,
+            course_true_deg: field_arg(course_true_deg)?,
+            date: field_arg(date)?,
+            magnetic_variation_deg: field_arg(magnetic_variation_deg)?,
+            mode: field_arg(mode)?,
+            nav_status: field_arg(nav_status)?,
         })
     }
 
@@ -1225,11 +1227,11 @@ impl PyGll {
     ) -> PyResult<Self> {
         Ok(Self {
             talker: normalize_talker(talker)?,
-            latitude_deg: arg(latitude_deg)?,
-            longitude_deg: arg(longitude_deg)?,
-            utc: arg(utc)?,
-            status: arg(status)?,
-            mode: arg(mode)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            longitude_deg: field_arg(longitude_deg)?,
+            utc: field_arg(utc)?,
+            status: field_arg(status)?,
+            mode: field_arg(mode)?,
         })
     }
 
@@ -1520,11 +1522,11 @@ impl PyDecodeOptions {
 /// Frozen `$PSXN` payload (binding class for `PsxnData`).
 ///
 /// PSXN is proprietary — there is no talker. `PsxnLayout` describes
-/// how the six on-wire slots decode into these five motion quantities;
-/// the output shape is fixed regardless of layout. Every field is a
-/// `FieldState`: a quantity no slot carries under the layout is
-/// `FieldState.NotAvailable()`, and a derived angle the slot values
-/// cannot produce is `FieldState.Invalid(None)`.
+/// how the six on-wire data fields decode into these five motion
+/// quantities; the output shape is fixed regardless of layout. Every
+/// field is a `FieldState`: a quantity no data field carries under the
+/// layout is `FieldState.NotAvailable()`, and a derived angle the data
+/// fields cannot produce is `FieldState.Invalid(None)`.
 #[pyclass(name = "Psxn", frozen, module = "marlin.nmea")]
 #[derive(Clone, Debug)]
 pub struct PyPsxn {
@@ -1547,11 +1549,11 @@ impl PyPsxn {
         heave_m: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
-            id: arg(id)?,
-            token: arg(token)?,
-            roll_deg: arg(roll_deg)?,
-            pitch_deg: arg(pitch_deg)?,
-            heave_m: arg(heave_m)?,
+            id: field_arg(id)?,
+            token: field_arg(token)?,
+            roll_deg: field_arg(roll_deg)?,
+            pitch_deg: field_arg(pitch_deg)?,
+            heave_m: field_arg(heave_m)?,
         })
     }
 
@@ -1625,9 +1627,9 @@ impl PyPrdidPitchRollHeading {
         heading_deg: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
-            pitch_deg: arg(pitch_deg)?,
-            roll_deg: arg(roll_deg)?,
-            heading_deg: arg(heading_deg)?,
+            pitch_deg: field_arg(pitch_deg)?,
+            roll_deg: field_arg(roll_deg)?,
+            heading_deg: field_arg(heading_deg)?,
         })
     }
 
@@ -1679,9 +1681,9 @@ impl PyPrdidRollPitchHeading {
         heading_deg: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
-            roll_deg: arg(roll_deg)?,
-            pitch_deg: arg(pitch_deg)?,
-            heading_deg: arg(heading_deg)?,
+            roll_deg: field_arg(roll_deg)?,
+            pitch_deg: field_arg(pitch_deg)?,
+            heading_deg: field_arg(heading_deg)?,
         })
     }
 
