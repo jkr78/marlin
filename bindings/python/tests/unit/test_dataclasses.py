@@ -7,11 +7,13 @@ import json
 
 import pytest
 
+import marlin.dataclasses
 import marlin.nmea as nmea
-from marlin.dataclasses import Value
+from marlin.dataclasses import AtLeast, Invalid, NotAvailable, Type24BExtent, Value
 
 from .ais_vectors import (
     AIVDM_TYPE1,
+    AIVDM_TYPE1_INVALID_AND_OVER_RANGE,
     AIVDM_TYPE1_ROT_PLUS_127,
     AIVDM_TYPE5_FRAG1,
     AIVDM_TYPE5_FRAG2,
@@ -262,17 +264,20 @@ def test_ais_position_report_a_round_trip() -> None:
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
     assert d["body"]["mmsi"] > 0
-    assert isinstance(d["body"]["navigation_status"], int)
-    # Classic fixture carries ROT -128: both flattened fields are None.
-    assert d["body"]["rate_of_turn"] is None
-    assert d["body"]["turn_direction"] is None
+    # An enum payload is the member's int value inside the state mirror.
+    assert d["body"]["navigation_status"] == {"kind": "value", "value": 0}
+    # Classic fixture carries ROT -128 and heading 511: not available.
+    assert d["body"]["rate_of_turn"] == {"kind": "not_available"}
+    assert d["body"]["true_heading"] == {"kind": "not_available"}
+    assert d["body"]["timestamp"] == {"kind": "value", "value": {"second": 40}}
+    assert dc.body.timestamp == Value(marlin.dataclasses.Timestamp.Second(40))
 
 
-def test_ais_position_report_a_turn_direction_is_enum_int() -> None:
+def test_ais_position_report_a_rate_of_turn_status_is_the_variant_mirror() -> None:
     from marlin.ais import AisParser, TurnDirection
     from marlin.dataclasses import AisMessage as DCAisMessage
     from marlin.dataclasses import PositionReportA as DCPositionReportA
-    from marlin.dataclasses import to_dataclass
+    from marlin.dataclasses import RateOfTurn, to_dataclass
 
     p = AisParser.streaming()
     p.feed(AIVDM_TYPE1_ROT_PLUS_127)
@@ -282,9 +287,29 @@ def test_ais_position_report_a_turn_direction_is_enum_int() -> None:
     dc = to_dataclass(msgs[0])
     assert isinstance(dc, DCAisMessage)
     assert isinstance(dc.body, DCPositionReportA)
-    assert dc.body.rate_of_turn is None
     # The mirror stores the TurnDirection enum value, not the wire code 127.
-    assert dc.body.turn_direction == int(TurnDirection.RIGHT)
+    assert dc.body.rate_of_turn == Value(RateOfTurn.NoIndicator(int(TurnDirection.RIGHT)))
+    d = dataclasses.asdict(dc)
+    assert d["body"]["rate_of_turn"] == {"kind": "value", "value": {"direction": 0}}
+
+
+def test_ais_position_report_a_invalid_and_over_range_states_mirror() -> None:
+    from marlin.ais import AisParser
+    from marlin.dataclasses import PositionReportA as DCPositionReportA
+    from marlin.dataclasses import Timestamp, to_dataclass
+
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE1_INVALID_AND_OVER_RANGE)
+    dc = to_dataclass(list(p)[0].body)
+    assert isinstance(dc, DCPositionReportA)
+    assert dc.navigation_status == Invalid(9)
+    assert isinstance(dc.speed_over_ground, AtLeast)
+    assert dc.speed_over_ground.bound == pytest.approx(102.2)
+    assert dc.true_heading == Invalid(360)
+    assert dc.timestamp == Value(Timestamp.PositioningStatus(61))
+    d = dataclasses.asdict(dc)
+    assert d["speed_over_ground"]["kind"] == "at_least"
+    assert d["timestamp"] == {"kind": "value", "value": {"status": 61}}
 
 
 def test_ais_static_and_voyage_a_round_trip() -> None:
@@ -307,9 +332,12 @@ def test_ais_static_and_voyage_a_round_trip() -> None:
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
     assert d["body"]["mmsi"] > 0
-    # eta and dimensions are always-present nested dataclasses.
-    assert "eta" in d["body"]
-    assert "dimensions" in d["body"]
+    # eta and dimensions are always-present nested dataclasses whose
+    # members are field-state mirrors.
+    assert d["body"]["eta"]["month"]["kind"] in {"value", "not_available"}
+    assert d["body"]["dimensions"]["to_bow_m"]["kind"] in {"value", "not_available", "at_least"}
+    # The 424-bit gpsd payload carries the DTE bit, set to not ready.
+    assert d["body"]["dte"] == {"kind": "value", "value": True}
 
 
 def test_ais_sar_aircraft_position_report_round_trip() -> None:
@@ -331,8 +359,8 @@ def test_ais_sar_aircraft_position_report_round_trip() -> None:
     assert isinstance(dc.body, DCSarAircraftPositionReport)
     assert dc.type_tag == "type9"
     assert dc.body.mmsi == 111232511
-    assert dc.body.altitude_m == 303
-    assert dc.body.speed_over_ground == 42
+    assert dc.body.altitude_m == Value(303)
+    assert dc.body.speed_over_ground == Value(42)
     # The mirror stores the AltitudeSensor wire value as int.
     assert dc.body.altitude_sensor == int(AltitudeSensor.GNSS)
     assert dc.body.dte is True
@@ -363,15 +391,15 @@ def test_ais_aid_to_navigation_report_round_trip() -> None:
     assert dc.body.mmsi == 4000003
     # The mirror stores the AtonType and EpfdType wire values as int.
     assert dc.body.aton_type == int(AtonType.SPECIAL_MARK) == 30
-    assert dc.body.epfd == int(EpfdType.GPS)
+    assert dc.body.epfd == Value(int(EpfdType.GPS))
     # Trailing-trim policy: the embedded @ survives (gpsd would stop there).
-    assert dc.body.name == "IBC G BUOY@?????????"
-    assert dc.body.dimensions.to_bow_m == 2
+    assert dc.body.name == Value("IBC G BUOY@?????????")
+    assert dc.body.dimensions.to_bow_m == Value(2)
 
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
     assert d["body"]["aton_status"] == 0
-    assert d["body"]["dimensions"]["to_port_m"] == 2
+    assert d["body"]["dimensions"]["to_port_m"] == {"kind": "value", "value": 2}
 
 
 def test_ais_static_data_b24b_mothership_round_trip() -> None:
@@ -390,15 +418,32 @@ def test_ais_static_data_b24b_mothership_round_trip() -> None:
     assert isinstance(dc, DCAisMessage)
     assert isinstance(dc.body, DCStaticDataB24B)
     assert dc.type_tag == "type24b"
-    # The mirror keeps the flattened extent: no all-None Dimensions stand-in.
-    assert dc.body.dimensions is None
-    assert dc.body.mothership_mmsi == 211000123
-    assert dc.body.epfd == int(EpfdType.GPS)
+    # The extent is the variant mirror nested under the sum type's namespace.
+    assert dc.body.extent == Type24BExtent.MothershipMmsi(211000123)
+    assert dc.body.epfd == Value(int(EpfdType.GPS))
 
     d = dataclasses.asdict(dc)
     json.dumps(d, default=_json_default)
-    assert d["body"]["dimensions"] is None
-    assert d["body"]["mothership_mmsi"] == 211000123
+    assert d["body"]["extent"] == {"mmsi": 211000123}
+
+
+def test_ais_static_data_b24b_dimensions_extent_round_trip() -> None:
+    from marlin.ais import Dimensions, StaticDataB24B, Type24BExtent as RtExtent
+    from marlin.dataclasses import to_dataclass
+
+    msg = StaticDataB24B(mmsi=1, extent=RtExtent.Dimensions(Dimensions(to_bow_m=12)))
+    dc = to_dataclass(msg)
+    assert isinstance(dc, marlin.dataclasses.StaticDataB24B)
+    # `Type24BExtent.Dimensions` and `Dimensions` share a name; the converter
+    # tells them apart by qualified name.
+    assert dc.extent == Type24BExtent.Dimensions(
+        marlin.dataclasses.Dimensions(
+            to_bow_m=Value(12),
+            to_stern_m=NotAvailable(),
+            to_port_m=NotAvailable(),
+            to_starboard_m=NotAvailable(),
+        )
+    )
 
 
 def test_to_dataclass_accepts_bare_ais_body() -> None:
@@ -415,7 +460,7 @@ def test_to_dataclass_accepts_bare_ais_body() -> None:
     body = list(p)[0].body
     dc = to_dataclass(body)
     assert isinstance(dc, DCAidToNavigationReport)
-    assert dc.name == "CHINA ROSE MURPHY EXPRESS ALERT"
+    assert dc.name == Value("CHINA ROSE MURPHY EXPRESS ALERT")
 
 
 def test_to_dataclass_type_error_on_unknown() -> None:
@@ -460,11 +505,11 @@ def test_to_dataclass_converts_a_value_type_on_its_own() -> None:
     )
 
     assert to_dataclass(dimensions) == marlin.dataclasses.Dimensions(
-        to_bow_m=10, to_stern_m=20, to_port_m=3, to_starboard_m=4
+        to_bow_m=Value(10), to_stern_m=Value(20), to_port_m=Value(3), to_starboard_m=Value(4)
     )
 
 
-def test_hand_built_message_with_no_dimensions_converts_to_all_none() -> None:
+def test_hand_built_message_with_no_dimensions_converts_to_all_not_available() -> None:
     import marlin.ais
     import marlin.dataclasses
     from marlin.dataclasses import to_dataclass
@@ -473,11 +518,24 @@ def test_hand_built_message_with_no_dimensions_converts_to_all_none() -> None:
 
     assert isinstance(dc, marlin.dataclasses.StaticAndVoyageA)
     assert dc.dimensions == marlin.dataclasses.Dimensions(
-        to_bow_m=None, to_stern_m=None, to_port_m=None, to_starboard_m=None
+        to_bow_m=NotAvailable(),
+        to_stern_m=NotAvailable(),
+        to_port_m=NotAvailable(),
+        to_starboard_m=NotAvailable(),
     )
     assert dc.eta == marlin.dataclasses.Eta(
-        month=None, day=None, hour=None, minute=None
+        month=NotAvailable(), day=NotAvailable(), hour=NotAvailable(), minute=NotAvailable()
     )
+
+
+def test_to_dataclass_type_error_on_a_positioning_status_enum() -> None:
+    # The enum shares its name with the `Timestamp.PositioningStatus`
+    # variant class; keying on the qualified name keeps the enum an enum.
+    from marlin.ais import PositioningStatus
+    from marlin.dataclasses import to_dataclass
+
+    with pytest.raises(TypeError, match="unrecognised marlin message type"):
+        to_dataclass(PositioningStatus.MANUAL_INPUT)
 
 
 def test_binding_class_rejects_a_wrong_typed_nested_value() -> None:

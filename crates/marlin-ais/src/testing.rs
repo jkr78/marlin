@@ -4,9 +4,35 @@
 #![cfg(test)]
 #![allow(dead_code, clippy::expect_used)]
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
+use marlin_field::{FieldState, Invalid, RawCode};
 use marlin_nmea_envelope::RawSentence;
+
+use crate::Dimensions;
+
+/// The invalid field state for an undefined wire code, as a decoder
+/// test expects it.
+pub(crate) fn undefined(raw: i64) -> Invalid {
+    Invalid::Undefined(RawCode(raw))
+}
+
+/// A text field holding `s`, as a decoder test expects it.
+pub(crate) fn text(s: &str) -> FieldState<String> {
+    FieldState::Value(String::from(s))
+}
+
+/// Dimensions with every member not available: the virtual-AtoN and
+/// all-zero extent.
+pub(crate) fn dimensions_not_available() -> Dimensions {
+    Dimensions {
+        to_bow_m: FieldState::NotAvailable,
+        to_stern_m: FieldState::NotAvailable,
+        to_port_m: FieldState::NotAvailable,
+        to_starboard_m: FieldState::NotAvailable,
+    }
+}
 
 /// Parse a complete sentence byte slice into a [`RawSentence`]. Panics
 /// on invalid input — test callers must only pass well-formed bytes.

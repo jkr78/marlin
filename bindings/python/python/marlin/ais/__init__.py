@@ -14,11 +14,20 @@ AtonType = _core.ais.AtonType
 EpfdType = _core.ais.EpfdType
 ManeuverIndicator = _core.ais.ManeuverIndicator
 NavStatus = _core.ais.NavStatus
+PositioningStatus = _core.ais.PositioningStatus
 TurnDirection = _core.ais.TurnDirection
 
 # Value types
 Dimensions = _core.ais.Dimensions
 Eta = _core.ais.Eta
+
+# Sum types in field position (ADR-0009), one variant class per Rust
+# variant: `RateOfTurn.DegPerMin` / `RateOfTurn.NoIndicator`,
+# `Timestamp.Second` / `Timestamp.PositioningStatus`,
+# `Type24BExtent.Dimensions` / `Type24BExtent.MothershipMmsi`.
+RateOfTurn = _core.ais.RateOfTurn
+Timestamp = _core.ais.Timestamp
+Type24BExtent = _core.ais.Type24BExtent
 
 # Power-user primitive
 BitReader = _core.ais.BitReader
@@ -75,10 +84,14 @@ __all__ = [
     "Other",
     "PositionReportA",
     "PositionReportB",
+    "PositioningStatus",
+    "RateOfTurn",
     "ReassemblyError",
     "SarAircraftPositionReport",
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
+    "Timestamp",
     "TurnDirection",
+    "Type24BExtent",
 ]

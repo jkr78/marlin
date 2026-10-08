@@ -3,22 +3,49 @@
     "__class__": "AisMessage",
     "body": {
       "__class__": "SarAircraftPositionReport",
-      "altitude_m": 15,
+      "altitude_m": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 15
+      },
       "altitude_sensor": {
         "__enum__": "AltitudeSensor",
         "value": 0
       },
       "assigned_flag": false,
-      "course_over_ground": 0.0,
+      "course_over_ground": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 0.0
+      },
       "dte": false,
-      "latitude_deg": 57.778455,
-      "longitude_deg": 11.8816,
+      "latitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 57.778455
+      },
+      "longitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 11.8816
+      },
       "mmsi": 111265591,
       "position_accuracy": false,
       "radio_status": 49194,
       "raim": false,
-      "speed_over_ground": 0,
-      "timestamp": 28
+      "speed_over_ground": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 0
+      },
+      "timestamp": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__class__": "Timestamp.Second",
+          "second": 28
+        }
+      }
     },
     "is_own_ship": false,
     "type_tag": "type9"
@@ -27,22 +54,49 @@
     "__class__": "AisMessage",
     "body": {
       "__class__": "SarAircraftPositionReport",
-      "altitude_m": 303,
+      "altitude_m": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 303
+      },
       "altitude_sensor": {
         "__enum__": "AltitudeSensor",
         "value": 0
       },
       "assigned_flag": false,
-      "course_over_ground": 154.5,
+      "course_over_ground": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 154.5
+      },
       "dte": true,
-      "latitude_deg": 58.144,
-      "longitude_deg": -6.2788433333333336,
+      "latitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 58.144
+      },
+      "longitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": -6.2788433333333336
+      },
       "mmsi": 111232511,
       "position_accuracy": false,
       "radio_status": 33392,
       "raim": false,
-      "speed_over_ground": 42,
-      "timestamp": 15
+      "speed_over_ground": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 42
+      },
+      "timestamp": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__class__": "Timestamp.Second",
+          "second": 15
+        }
+      }
     },
     "is_own_ship": false,
     "type_tag": "type9"

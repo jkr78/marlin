@@ -14,75 +14,80 @@
 //! ([`AisMessageBody::Type1`](crate::AisMessageBody::Type1), `Type2` or
 //! `Type3`).
 //!
-//! # Sentinel values
+//! # Field states
 //!
-//! Per ITU-R M.1371-5 Annex 8 §3.1, Table 48, several fields carry sentinel values
-//! meaning "not available". The decoder maps sentinels to `None` on
-//! `Option<T>` fields:
+//! Per ITU-R M.1371-5 Annex 8 §3.1, Table 48, several fields carry codes
+//! that mean "not available" or lie outside the defined range. Each such
+//! field is a [`FieldState`]:
 //!
-//! | Field | Sentinel | Meaning |
-//! | --- | --- | --- |
-//! | Rate of turn | `-128` (0x80) | Not available |
-//! | Speed over ground | `1023` | Not available |
-//! | Longitude | `181°` (108 600 000 × 10⁻⁴ minutes) | Not available |
-//! | Latitude | `91°` (54 600 000 × 10⁻⁴ minutes) | Not available |
-//! | Course over ground | `3600` (× 10⁻¹ degrees) | Not available |
-//! | True heading | `511` | Not available |
+//! | Field | Not available | Over-range | Invalid (raw code kept) |
+//! | --- | --- | --- | --- |
+//! | Navigation status | `15` | | `9..=13` |
+//! | Rate of turn | `-128` | | |
+//! | Speed over ground | `1023` | `1022` → `AtLeast(102.2)` | |
+//! | Longitude | `181°` | | any other code beyond ±180° |
+//! | Latitude | `91°` | | any other code beyond ±90° |
+//! | Course over ground | `3600` | | `3601..=4095` |
+//! | True heading | `511` | | `360..=510` |
+//! | Timestamp | `60` | | |
+//! | Special manoeuvre | `0` | | `3` |
 //!
-//! Rate of turn `±127` is a sentinel that carries a status ("turning
-//! right/left at more than 5° per 30 s, no turn indicator") rather than
-//! "not available", so it decodes to [`RateOfTurn::NoIndicator`] instead
-//! of `None` or a fabricated rate.
-//!
-//! The `timestamp` field keeps its raw `u8` because the values
-//! 0..=59 are seconds, 60 means "not available", and 61..=63 carry
-//! positioning-system-status information that some callers want to
-//! inspect directly.
+//! Rate of turn `±127` and timestamp `61..=63` carry a status rather than
+//! "not available", so they decode to a value of the field's own enum
+//! ([`RateOfTurn::NoIndicator`], [`Timestamp::PositioningStatus`]) rather
+//! than to a field state or a fabricated number.
 
-use crate::shared_types::{cog_deg, heading_deg, lat_deg, lon_deg, sentinel, sog_tenths_kn};
-use crate::{AisError, BitReader};
+use marlin_field::FieldState;
+
+use crate::shared_types::{
+    coded, sentinel, timestamp, COURSE_OVER_GROUND, LATITUDE, LONGITUDE, SPEED_OVER_GROUND,
+    TRUE_HEADING,
+};
+use crate::{AisError, BitReader, Timestamp};
 
 /// Decoded Class A position report (AIS Type 1, 2, or 3).
 ///
 /// All scalar quantities are in their natural human-readable units:
 /// degrees, knots, seconds, etc. Raw AIS encoding has been normalized
-/// and sentinels mapped to `None`.
+/// and every field the wire can leave without a value is a
+/// [`FieldState`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionReportA {
     /// Maritime Mobile Service Identity of the reporting vessel.
     pub mmsi: u32,
-    /// Navigation status (one of the 15 defined values, plus
-    /// `Reserved` for 9..=13).
-    pub navigation_status: NavStatus,
+    /// Navigation status. Code 15 (not defined) is not available; the
+    /// reserved codes 9..=13 are invalid with the raw code.
+    pub navigation_status: FieldState<NavStatus>,
     /// Rate of turn: a measured rate in degrees per minute, or the
     /// "turning faster than 5° per 30 s, no turn indicator" status
-    /// for raw ±127. `None` when the sentinel `-128` is emitted.
-    pub rate_of_turn: Option<RateOfTurn>,
-    /// Speed over ground in knots. `None` when the sentinel `1023`
-    /// is emitted.
-    pub speed_over_ground: Option<f32>,
+    /// for raw ±127. Not available on the code `-128`.
+    pub rate_of_turn: FieldState<RateOfTurn>,
+    /// Speed over ground in knots. Not available on `1023`;
+    /// `AtLeast(102.2)` on the over-range code `1022`.
+    pub speed_over_ground: FieldState<f32>,
     /// Position accuracy flag: `true` for DGNSS-corrected fixes
     /// (typically ≤ 10 m), `false` for unaided GNSS (≤ 100 m).
     pub position_accuracy: bool,
-    /// Longitude in signed decimal degrees (east positive). `None`
-    /// when the sentinel `181°` is emitted.
-    pub longitude_deg: Option<f64>,
-    /// Latitude in signed decimal degrees (north positive). `None`
-    /// when the sentinel `91°` is emitted.
-    pub latitude_deg: Option<f64>,
-    /// Course over ground in degrees (0..360). `None` when the
-    /// sentinel `3600` is emitted.
-    pub course_over_ground: Option<f32>,
-    /// True heading in degrees (0..359). `None` when the sentinel
-    /// `511` is emitted.
-    pub true_heading: Option<u16>,
-    /// Raw timestamp field: seconds within the UTC minute (0..=59),
-    /// `60` means "not available", `61..=63` carry positioning-system
-    /// status flags. Kept as `u8` so callers can distinguish all
-    /// three semantic categories.
-    pub timestamp: u8,
-    /// Special maneuver indicator.
-    pub special_maneuver: ManeuverIndicator,
+    /// Longitude in signed decimal degrees (east positive). Not
+    /// available on `181°`; invalid with the raw code (in 1/10 000
+    /// minute) on any other code beyond ±180°.
+    pub longitude_deg: FieldState<f64>,
+    /// Latitude in signed decimal degrees (north positive). Not
+    /// available on `91°`; invalid with the raw code on any other code
+    /// beyond ±90°.
+    pub latitude_deg: FieldState<f64>,
+    /// Course over ground in degrees (0..360). Not available on `3600`;
+    /// invalid on `3601..=4095`.
+    pub course_over_ground: FieldState<f32>,
+    /// True heading in degrees (0..=359). Not available on `511`;
+    /// invalid on `360..=510`.
+    pub true_heading: FieldState<u16>,
+    /// Second of the UTC minute of the position fix, or a
+    /// positioning-system status (codes 61..=63). Not available on `60`.
+    pub timestamp: FieldState<Timestamp>,
+    /// Special manoeuvre indicator. Code 0 is not available; the
+    /// reserved code 3 is invalid.
+    pub special_maneuver: FieldState<ManeuverIndicator>,
     /// RAIM (Receiver Autonomous Integrity Monitoring) flag.
     pub raim: bool,
     /// Radio status field — synchronization and communication state,
@@ -93,7 +98,9 @@ pub struct PositionReportA {
 
 /// Decoded rate-of-turn field — 8 bits (ITU-R M.1371-5 Annex 8 Table 48).
 ///
-/// Exhaustive: the wire codes are fully specified and cannot grow.
+/// A status-carrying field: `±127` is a status and a value of this
+/// enum, not a field state. Exhaustive: the wire codes are fully
+/// specified and cannot grow.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RateOfTurn {
     /// Measured rate in degrees per minute, starboard positive:
@@ -117,10 +124,10 @@ pub enum TurnDirection {
 
 /// Navigation status field — 4 bits.
 ///
-/// Values 9..=13 are reserved by the spec; we surface them as
-/// [`Self::Reserved`] with the raw byte so callers can log unusual
-/// values without this crate needing to bump its enum for each spec
-/// revision.
+/// Code 15 (not defined) is the not-available field state and the
+/// reserved codes 9..=13 are the invalid field state with the raw
+/// code; neither is a variant. `#[non_exhaustive]` because a future
+/// edition may assign one of the reserved codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NavStatus {
@@ -144,28 +151,24 @@ pub enum NavStatus {
     UnderwaySailing,
     /// 14 — AIS-SART (search-and-rescue transmitter) is active.
     AisSartActive,
-    /// 15 — not defined (default).
-    NotDefined,
-    /// Reserved values (9..=13) — carried verbatim so callers can log
-    /// or route without losing information.
-    Reserved(u8),
 }
 
 impl NavStatus {
-    fn from_u4(v: u8) -> Self {
-        match v {
-            0 => Self::UnderwayUsingEngine,
-            1 => Self::AtAnchor,
-            2 => Self::NotUnderCommand,
-            3 => Self::RestrictedManeuverability,
-            4 => Self::ConstrainedByDraft,
-            5 => Self::Moored,
-            6 => Self::Aground,
-            7 => Self::EngagedInFishing,
-            8 => Self::UnderwaySailing,
-            14 => Self::AisSartActive,
-            15 => Self::NotDefined,
-            other => Self::Reserved(other),
+    /// The variant for a defined 4-bit code; `None` for the
+    /// not-available code 15 and the reserved codes 9..=13.
+    pub(crate) fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::UnderwayUsingEngine),
+            1 => Some(Self::AtAnchor),
+            2 => Some(Self::NotUnderCommand),
+            3 => Some(Self::RestrictedManeuverability),
+            4 => Some(Self::ConstrainedByDraft),
+            5 => Some(Self::Moored),
+            6 => Some(Self::Aground),
+            7 => Some(Self::EngagedInFishing),
+            8 => Some(Self::UnderwaySailing),
+            14 => Some(Self::AisSartActive),
+            _ => None,
         }
     }
 
@@ -183,33 +186,32 @@ impl NavStatus {
             Self::EngagedInFishing => 7,
             Self::UnderwaySailing => 8,
             Self::AisSartActive => 14,
-            Self::NotDefined => 15,
-            Self::Reserved(c) => c,
         }
     }
 }
 
-/// Special maneuver indicator — 2 bits.
+/// Special manoeuvre indicator — 2 bits.
+///
+/// Code 0 is the not-available field state and the reserved code 3 is
+/// the invalid field state; neither is a variant. `#[non_exhaustive]`
+/// because a future edition may assign code 3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ManeuverIndicator {
-    /// 0 — not available (default).
-    NotAvailable,
-    /// 1 — no special maneuver.
+    /// 1 — no special manoeuvre.
     NoSpecial,
-    /// 2 — special maneuver (e.g. regional passing arrangement).
+    /// 2 — special manoeuvre (e.g. regional passing arrangement).
     Special,
-    /// 3 — reserved.
-    Reserved,
 }
 
 impl ManeuverIndicator {
-    fn from_u2(v: u8) -> Self {
-        match v {
-            1 => Self::NoSpecial,
-            2 => Self::Special,
-            3 => Self::Reserved,
-            _ => Self::NotAvailable,
+    /// The variant for a defined 2-bit code; `None` for the
+    /// not-available code 0 and the reserved code 3.
+    pub(crate) fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(Self::NoSpecial),
+            2 => Some(Self::Special),
+            _ => None,
         }
     }
 
@@ -217,10 +219,8 @@ impl ManeuverIndicator {
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
-            Self::NotAvailable => 0,
             Self::NoSpecial => 1,
             Self::Special => 2,
-            Self::Reserved => 3,
         }
     }
 }
@@ -240,11 +240,8 @@ pub const POSITION_REPORT_A_BITS: usize = 168;
 ///
 /// # Errors
 ///
-/// Returns [`AisError::PayloadTooShort`] if `total_bits < 168`. Bit
-/// reads are otherwise saturating (past-end yields zero), so a
-/// partial payload produces a [`PositionReportA`] with some fields
-/// defaulted — use the bit-count check to reject short messages
-/// before calling if you want strict validation.
+/// Returns [`AisError::PayloadTooShort`] if `total_bits < 168`. Bits
+/// past 168 are ignored.
 #[allow(clippy::cast_possible_truncation)] // every narrowing is masked to its field width
 pub fn decode_position_report_a(
     bits: &[u8],
@@ -262,21 +259,24 @@ pub fn decode_position_report_a(
 
     // u(30) fits easily in u32.
     let mmsi = (r.u(30) & 0xFFFF_FFFF) as u32;
-    let nav_status = NavStatus::from_u4((r.u(4) & 0x0F) as u8);
-
-    // Rate of turn: 8-bit two's-complement "ROT_AIS" indicator.
-    let rot_raw = r.i(8);
-    let rate_of_turn = decode_rate_of_turn(rot_raw);
-
-    let speed_over_ground = sog_tenths_kn(r.u(10));
+    let navigation_status = coded(
+        r.u(4),
+        sentinel::NAV_STATUS_NOT_AVAILABLE,
+        NavStatus::from_code,
+    );
+    let rate_of_turn = decode_rate_of_turn(r.i(8));
+    let speed_over_ground = SPEED_OVER_GROUND.read(r.u(10));
     let position_accuracy = r.b();
-    let longitude_deg = lon_deg(r.i(28));
-    let latitude_deg = lat_deg(r.i(27));
-    let course_over_ground = cog_deg(r.u(12));
-    let true_heading = heading_deg(r.u(9));
-
-    let timestamp = (r.u(6) & 0x3F) as u8;
-    let special_maneuver = ManeuverIndicator::from_u2((r.u(2) & 0x03) as u8);
+    let longitude_deg = LONGITUDE.read_signed(r.i(28));
+    let latitude_deg = LATITUDE.read_signed(r.i(27));
+    let course_over_ground = COURSE_OVER_GROUND.read(r.u(12));
+    let true_heading = TRUE_HEADING.read(r.u(9));
+    let timestamp = timestamp(r.u(6));
+    let special_maneuver = coded(
+        r.u(2),
+        sentinel::MANEUVER_NOT_AVAILABLE,
+        ManeuverIndicator::from_code,
+    );
     let _ = r.u(3); // spare
     let raim = r.b();
     // radio_status: 19 bits.
@@ -284,7 +284,7 @@ pub fn decode_position_report_a(
 
     Ok(PositionReportA {
         mmsi,
-        navigation_status: nav_status,
+        navigation_status,
         rate_of_turn,
         speed_over_ground,
         position_accuracy,
@@ -303,20 +303,24 @@ pub fn decode_position_report_a(
 ///
 /// `0..=±126` is sign-preserved with a square-law expansion,
 /// `R = (X / 4.733)² × sign(X)`. `±127` is the no-turn-indicator
-/// status and carries only a direction. The sentinel `-128` maps to
-/// `None`.
+/// status and carries only a direction. The code `-128` is not
+/// available.
 #[allow(clippy::cast_possible_truncation)]
-fn decode_rate_of_turn(raw: i64) -> Option<RateOfTurn> {
+fn decode_rate_of_turn(raw: i64) -> FieldState<RateOfTurn> {
     // r.i(8) always produces a value in the i8 range; narrow it.
     let raw = raw as i8;
     match raw {
-        sentinel::ROT_NOT_AVAILABLE => None,
-        sentinel::ROT_NO_INDICATOR_RIGHT => Some(RateOfTurn::NoIndicator(TurnDirection::Right)),
-        sentinel::ROT_NO_INDICATOR_LEFT => Some(RateOfTurn::NoIndicator(TurnDirection::Left)),
+        sentinel::ROT_NOT_AVAILABLE => FieldState::NotAvailable,
+        sentinel::ROT_NO_INDICATOR_RIGHT => {
+            FieldState::Value(RateOfTurn::NoIndicator(TurnDirection::Right))
+        }
+        sentinel::ROT_NO_INDICATOR_LEFT => {
+            FieldState::Value(RateOfTurn::NoIndicator(TurnDirection::Left))
+        }
         measured => {
             let sign = if measured < 0 { -1.0_f32 } else { 1.0 };
             let magnitude = f32::from(measured).abs() / 4.733;
-            Some(RateOfTurn::DegPerMin(sign * magnitude * magnitude))
+            FieldState::Value(RateOfTurn::DegPerMin(sign * magnitude * magnitude))
         }
     }
 }
@@ -336,15 +340,13 @@ fn decode_rate_of_turn(raw: i64) -> Option<RateOfTurn> {
 mod tests {
     use super::*;
     use crate::shared_types::MINUTES_FRAC_PER_DEGREE;
-    use crate::testing::{armor_encode, BitWriter};
+    use crate::testing::{armor_encode, undefined, BitWriter};
+    use crate::PositioningStatus;
 
-    /// Build a 168-bit position-report payload with every field
-    /// caller-specified. Used across tests to verify individual
-    /// field decoding in isolation.
-    #[allow(clippy::too_many_arguments)]
-    fn build_pra(
+    /// Every Table 48 field a test may want to vary. The spare bits are
+    /// zero.
+    struct Fields {
         msg_type: u8,
-        repeat: u8,
         mmsi: u32,
         nav: u8,
         rot: i8,
@@ -358,37 +360,70 @@ mod tests {
         maneuver: u8,
         raim: bool,
         radio: u32,
-    ) -> (alloc::vec::Vec<u8>, usize) {
+    }
+
+    impl Default for Fields {
+        fn default() -> Self {
+            Self {
+                msg_type: 1,
+                mmsi: 1,
+                nav: 0,
+                rot: 0,
+                sog: 0,
+                pos_acc: false,
+                lon_raw: 0,
+                lat_raw: 0,
+                cog: 0,
+                heading: 0,
+                timestamp: 0,
+                maneuver: 0,
+                raim: false,
+                radio: 0,
+            }
+        }
+    }
+
+    /// Pack `f` into a 168-bit Type 1/2/3 payload (Table 48).
+    fn build_pra(f: &Fields) -> (alloc::vec::Vec<u8>, usize) {
         let mut w = BitWriter::new();
-        w.u(6, u64::from(msg_type));
-        w.u(2, u64::from(repeat));
-        w.u(30, u64::from(mmsi));
-        w.u(4, u64::from(nav));
-        w.i(8, i64::from(rot));
-        w.u(10, u64::from(sog));
-        w.b(pos_acc);
-        w.i(28, i64::from(lon_raw));
-        w.i(27, i64::from(lat_raw));
-        w.u(12, u64::from(cog));
-        w.u(9, u64::from(heading));
-        w.u(6, u64::from(timestamp));
-        w.u(2, u64::from(maneuver));
+        w.u(6, u64::from(f.msg_type));
+        w.u(2, 0); // repeat
+        w.u(30, u64::from(f.mmsi));
+        w.u(4, u64::from(f.nav));
+        w.i(8, i64::from(f.rot));
+        w.u(10, u64::from(f.sog));
+        w.b(f.pos_acc);
+        w.i(28, i64::from(f.lon_raw));
+        w.i(27, i64::from(f.lat_raw));
+        w.u(12, u64::from(f.cog));
+        w.u(9, u64::from(f.heading));
+        w.u(6, u64::from(f.timestamp));
+        w.u(2, u64::from(f.maneuver));
         w.u(3, 0); // spare
-        w.b(raim);
-        w.u(19, u64::from(radio));
+        w.b(f.raim);
+        w.u(19, u64::from(f.radio));
         w.finish()
+    }
+
+    fn decode(f: &Fields) -> PositionReportA {
+        let (bits, total) = build_pra(f);
+        decode_position_report_a(&bits, total).unwrap()
     }
 
     /// Type 1 payload with the given MMSI and raw rate of turn; every
     /// other field zero. The rate-of-turn tests vary only these two.
     fn build_pra_rot(mmsi: u32, rot: i8) -> (alloc::vec::Vec<u8>, usize) {
-        build_pra(1, 0, mmsi, 0, rot, 0, false, 0, 0, 0, 0, 0, 0, false, 0)
+        build_pra(&Fields {
+            mmsi,
+            rot,
+            ..Fields::default()
+        })
     }
 
-    /// Unwrap a measured rate; panics on a status or `None`.
-    fn deg_per_min(rot: Option<RateOfTurn>) -> f32 {
+    /// Unwrap a measured rate; panics on a status or a non-value state.
+    fn deg_per_min(rot: FieldState<RateOfTurn>) -> f32 {
         match rot {
-            Some(RateOfTurn::DegPerMin(v)) => v,
+            FieldState::Value(RateOfTurn::DegPerMin(v)) => v,
             other => panic!("expected DegPerMin, got {other:?}"),
         }
     }
@@ -402,97 +437,248 @@ mod tests {
         let (bits, total) = crate::armor::decode(b"13aGmP0P00PD;88MD5MTDww@2<0L", 0).unwrap();
         let pra = decode_position_report_a(&bits, total).unwrap();
         assert_eq!(pra.mmsi, 244_708_736);
-        // Further fields depend on fixture; the MMSI match is the
-        // strong signal that the bit alignment is correct.
+        assert_eq!(
+            pra.navigation_status,
+            FieldState::Value(NavStatus::UnderwayUsingEngine)
+        );
+        assert_eq!(pra.speed_over_ground, FieldState::Value(0.0));
+        assert_eq!(pra.true_heading, FieldState::NotAvailable);
+        assert_eq!(pra.timestamp, FieldState::Value(Timestamp::Second(40)));
     }
 
     // -----------------------------------------------------------------
-    // All sentinels → None
+    // Every not-available code at once
     // -----------------------------------------------------------------
 
     #[test]
-    fn all_sentinels_decode_to_none() {
-        let (bits, total) = build_pra(
-            1,
-            0,
-            123_456_789,
-            15, // NotDefined
-            sentinel::ROT_NOT_AVAILABLE,
-            sentinel::SOG_NOT_AVAILABLE,
-            false,
-            sentinel::LON_NOT_AVAILABLE as i32,
-            sentinel::LAT_NOT_AVAILABLE as i32,
-            sentinel::COG_NOT_AVAILABLE,
-            sentinel::HEADING_NOT_AVAILABLE,
-            60, // timestamp N/A
-            0,  // maneuver NotAvailable
-            false,
-            0,
-        );
-        let pra = decode_position_report_a(&bits, total).unwrap();
+    fn every_not_available_code_decodes_to_not_available() {
+        let pra = decode(&Fields {
+            mmsi: 123_456_789,
+            nav: sentinel::NAV_STATUS_NOT_AVAILABLE,
+            rot: sentinel::ROT_NOT_AVAILABLE,
+            sog: sentinel::SOG_NOT_AVAILABLE,
+            lon_raw: sentinel::LON_NOT_AVAILABLE as i32,
+            lat_raw: sentinel::LAT_NOT_AVAILABLE as i32,
+            cog: sentinel::COG_NOT_AVAILABLE,
+            heading: sentinel::HEADING_NOT_AVAILABLE,
+            timestamp: sentinel::TIMESTAMP_NOT_AVAILABLE,
+            maneuver: sentinel::MANEUVER_NOT_AVAILABLE,
+            ..Fields::default()
+        });
 
         assert_eq!(pra.mmsi, 123_456_789);
-        assert_eq!(pra.navigation_status, NavStatus::NotDefined);
-        assert_eq!(pra.rate_of_turn, None);
-        assert_eq!(pra.speed_over_ground, None);
+        assert_eq!(pra.navigation_status, FieldState::NotAvailable);
+        assert_eq!(pra.rate_of_turn, FieldState::NotAvailable);
+        assert_eq!(pra.speed_over_ground, FieldState::NotAvailable);
         assert!(!pra.position_accuracy);
-        assert_eq!(pra.longitude_deg, None);
-        assert_eq!(pra.latitude_deg, None);
-        assert_eq!(pra.course_over_ground, None);
-        assert_eq!(pra.true_heading, None);
-        assert_eq!(pra.timestamp, 60);
-        assert_eq!(pra.special_maneuver, ManeuverIndicator::NotAvailable);
+        assert_eq!(pra.longitude_deg, FieldState::NotAvailable);
+        assert_eq!(pra.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(pra.course_over_ground, FieldState::NotAvailable);
+        assert_eq!(pra.true_heading, FieldState::NotAvailable);
+        assert_eq!(pra.timestamp, FieldState::NotAvailable);
+        assert_eq!(pra.special_maneuver, FieldState::NotAvailable);
         assert!(!pra.raim);
         assert_eq!(pra.radio_status, 0);
     }
 
     // -----------------------------------------------------------------
-    // Positive (northern + eastern) and negative (southern + western)
-    // coordinates — sign handling
+    // Longitude and latitude: sign, boundaries, undefined codes
     // -----------------------------------------------------------------
 
     #[test]
     fn northern_eastern_coordinates_are_positive() {
         // 48.1173° N, 11.5167° E (classic Munich demo position).
-        let lat_raw: i32 = (48.1173_f64 * MINUTES_FRAC_PER_DEGREE) as i32;
-        let lon_raw: i32 = (11.5167_f64 * MINUTES_FRAC_PER_DEGREE) as i32;
-        let (bits, total) = build_pra(
-            1, 0, 1, 0, 0, 0, false, lon_raw, lat_raw, 0, 0, 0, 0, false, 0,
-        );
-        let pra = decode_position_report_a(&bits, total).unwrap();
-        assert!((pra.latitude_deg.unwrap() - 48.1173).abs() < 1e-4);
-        assert!((pra.longitude_deg.unwrap() - 11.5167).abs() < 1e-4);
+        let pra = decode(&Fields {
+            lat_raw: (48.1173_f64 * MINUTES_FRAC_PER_DEGREE) as i32,
+            lon_raw: (11.5167_f64 * MINUTES_FRAC_PER_DEGREE) as i32,
+            ..Fields::default()
+        });
+        assert!((pra.latitude_deg.value().unwrap() - 48.1173).abs() < 1e-4);
+        assert!((pra.longitude_deg.value().unwrap() - 11.5167).abs() < 1e-4);
     }
 
     #[test]
     fn southern_western_coordinates_are_negative() {
         // 48.1173° S, 11.5167° W.
-        let lat_raw: i32 = -(48.1173_f64 * MINUTES_FRAC_PER_DEGREE) as i32;
-        let lon_raw: i32 = -(11.5167_f64 * MINUTES_FRAC_PER_DEGREE) as i32;
-        let (bits, total) = build_pra(
-            1, 0, 1, 0, 0, 0, false, lon_raw, lat_raw, 0, 0, 0, 0, false, 0,
-        );
-        let pra = decode_position_report_a(&bits, total).unwrap();
-        assert!(pra.latitude_deg.unwrap() < 0.0);
-        assert!(pra.longitude_deg.unwrap() < 0.0);
-        assert!((pra.latitude_deg.unwrap() + 48.1173).abs() < 1e-4);
-        assert!((pra.longitude_deg.unwrap() + 11.5167).abs() < 1e-4);
+        let pra = decode(&Fields {
+            lat_raw: -(48.1173_f64 * MINUTES_FRAC_PER_DEGREE) as i32,
+            lon_raw: -(11.5167_f64 * MINUTES_FRAC_PER_DEGREE) as i32,
+            ..Fields::default()
+        });
+        assert!((pra.latitude_deg.value().unwrap() + 48.1173).abs() < 1e-4);
+        assert!((pra.longitude_deg.value().unwrap() + 11.5167).abs() < 1e-4);
     }
 
     #[test]
     fn equator_and_prime_meridian_decode_to_zero() {
-        let (bits, total) = build_pra(1, 0, 1, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, false, 0);
-        let pra = decode_position_report_a(&bits, total).unwrap();
-        assert_eq!(pra.latitude_deg, Some(0.0));
-        assert_eq!(pra.longitude_deg, Some(0.0));
+        let pra = decode(&Fields::default());
+        assert_eq!(pra.latitude_deg, FieldState::Value(0.0));
+        assert_eq!(pra.longitude_deg, FieldState::Value(0.0));
+    }
+
+    #[test]
+    fn longitude_rows() {
+        // ±180° exactly are the last defined codes; one code beyond each
+        // is invalid with the raw code; +181° alone is not available.
+        let east = 180 * 600_000;
+        for (raw, expected) in [
+            (east, FieldState::Value(180.0)),
+            (-east, FieldState::Value(-180.0)),
+            (
+                east + 1,
+                FieldState::Invalid(undefined(i64::from(east) + 1)),
+            ),
+            (
+                -east - 1,
+                FieldState::Invalid(undefined(-i64::from(east) - 1)),
+            ),
+            (sentinel::LON_NOT_AVAILABLE as i32, FieldState::NotAvailable),
+            (
+                sentinel::LON_NOT_AVAILABLE as i32 + 1,
+                FieldState::Invalid(undefined(sentinel::LON_NOT_AVAILABLE + 1)),
+            ),
+        ] {
+            let pra = decode(&Fields {
+                lon_raw: raw,
+                ..Fields::default()
+            });
+            assert_eq!(pra.longitude_deg, expected, "raw {raw}");
+        }
+    }
+
+    #[test]
+    fn latitude_rows() {
+        let north = 90 * 600_000;
+        for (raw, expected) in [
+            (north, FieldState::Value(90.0)),
+            (-north, FieldState::Value(-90.0)),
+            (
+                north + 1,
+                FieldState::Invalid(undefined(i64::from(north) + 1)),
+            ),
+            (
+                -north - 1,
+                FieldState::Invalid(undefined(-i64::from(north) - 1)),
+            ),
+            (sentinel::LAT_NOT_AVAILABLE as i32, FieldState::NotAvailable),
+            // The 27-bit field's most negative code.
+            (-(1 << 26), FieldState::Invalid(undefined(-(1 << 26)))),
+        ] {
+            let pra = decode(&Fields {
+                lat_raw: raw,
+                ..Fields::default()
+            });
+            assert_eq!(pra.latitude_deg, expected, "raw {raw}");
+        }
     }
 
     // -----------------------------------------------------------------
-    // Navigation status variants — at least one test per branch
+    // Speed, course and heading rows
     // -----------------------------------------------------------------
 
     #[test]
-    fn nav_status_maps_well_defined_codes() {
+    fn speed_over_ground_rows() {
+        for (raw, expected) in [
+            (0, FieldState::Value(0.0)),
+            (255, FieldState::Value(25.5)),
+            (1021, FieldState::Value(102.1)),
+            (sentinel::SOG_OVER_RANGE, FieldState::AtLeast(102.2)),
+            (sentinel::SOG_NOT_AVAILABLE, FieldState::NotAvailable),
+        ] {
+            let pra = decode(&Fields {
+                sog: raw,
+                ..Fields::default()
+            });
+            match (pra.speed_over_ground, expected) {
+                (FieldState::Value(got), FieldState::Value(want))
+                | (FieldState::AtLeast(got), FieldState::AtLeast(want)) => {
+                    assert!((got - want).abs() < 1e-4, "raw {raw}");
+                }
+                (got, want) => assert_eq!(got, want, "raw {raw}"),
+            }
+        }
+    }
+
+    #[test]
+    fn course_over_ground_rows() {
+        for (raw, expected) in [
+            (0, FieldState::Value(0.0)),
+            (1234, FieldState::Value(123.4)),
+            (3599, FieldState::Value(359.9)),
+            (sentinel::COG_NOT_AVAILABLE, FieldState::NotAvailable),
+            (3601, FieldState::Invalid(undefined(3601))),
+            (4095, FieldState::Invalid(undefined(4095))),
+        ] {
+            let pra = decode(&Fields {
+                cog: raw,
+                ..Fields::default()
+            });
+            match (pra.course_over_ground, expected) {
+                (FieldState::Value(got), FieldState::Value(want)) => {
+                    assert!((got - want).abs() < 1e-4, "raw {raw}");
+                }
+                (got, want) => assert_eq!(got, want, "raw {raw}"),
+            }
+        }
+    }
+
+    #[test]
+    fn true_heading_rows() {
+        for (raw, expected) in [
+            (0, FieldState::Value(0)),
+            (42, FieldState::Value(42)),
+            (359, FieldState::Value(359)),
+            (360, FieldState::Invalid(undefined(360))),
+            (510, FieldState::Invalid(undefined(510))),
+            (sentinel::HEADING_NOT_AVAILABLE, FieldState::NotAvailable),
+        ] {
+            let pra = decode(&Fields {
+                heading: raw,
+                ..Fields::default()
+            });
+            assert_eq!(pra.true_heading, expected, "raw {raw}");
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Timestamp: seconds, the not-available code and the three statuses
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn timestamp_rows() {
+        for (raw, expected) in [
+            (0, FieldState::Value(Timestamp::Second(0))),
+            (59, FieldState::Value(Timestamp::Second(59))),
+            (sentinel::TIMESTAMP_NOT_AVAILABLE, FieldState::NotAvailable),
+            (
+                sentinel::TIMESTAMP_MANUAL_INPUT,
+                FieldState::Value(Timestamp::PositioningStatus(PositioningStatus::ManualInput)),
+            ),
+            (
+                sentinel::TIMESTAMP_DEAD_RECKONING,
+                FieldState::Value(Timestamp::PositioningStatus(
+                    PositioningStatus::DeadReckoning,
+                )),
+            ),
+            (
+                sentinel::TIMESTAMP_INOPERATIVE,
+                FieldState::Value(Timestamp::PositioningStatus(PositioningStatus::Inoperative)),
+            ),
+        ] {
+            let pra = decode(&Fields {
+                timestamp: raw,
+                ..Fields::default()
+            });
+            assert_eq!(pra.timestamp, expected, "raw {raw}");
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Navigation status and manoeuvre indicator rows
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn navigation_status_defined_codes_are_values() {
         for (code, expected) in [
             (0u8, NavStatus::UnderwayUsingEngine),
             (1, NavStatus::AtAnchor),
@@ -504,46 +690,56 @@ mod tests {
             (7, NavStatus::EngagedInFishing),
             (8, NavStatus::UnderwaySailing),
             (14, NavStatus::AisSartActive),
-            (15, NavStatus::NotDefined),
         ] {
-            assert_eq!(NavStatus::from_u4(code), expected);
+            let pra = decode(&Fields {
+                nav: code,
+                ..Fields::default()
+            });
+            assert_eq!(
+                pra.navigation_status,
+                FieldState::Value(expected),
+                "code {code}"
+            );
+            assert_eq!(expected.code(), code);
         }
     }
 
     #[test]
-    fn nav_status_reserved_codes_preserve_raw_value() {
+    fn navigation_status_reserved_codes_are_invalid_with_the_raw_code() {
         for code in 9u8..=13 {
-            assert_eq!(NavStatus::from_u4(code), NavStatus::Reserved(code));
+            let pra = decode(&Fields {
+                nav: code,
+                ..Fields::default()
+            });
+            assert_eq!(
+                pra.navigation_status,
+                FieldState::Invalid(undefined(i64::from(code))),
+                "code {code}"
+            );
         }
+        let pra = decode(&Fields {
+            nav: 15,
+            ..Fields::default()
+        });
+        assert_eq!(pra.navigation_status, FieldState::NotAvailable);
     }
 
     #[test]
-    fn nav_status_code_round_trips_every_value() {
-        for code in 0u8..16 {
-            assert_eq!(NavStatus::from_u4(code).code(), code);
+    fn maneuver_indicator_rows() {
+        for (code, expected) in [
+            (0u8, FieldState::NotAvailable),
+            (1, FieldState::Value(ManeuverIndicator::NoSpecial)),
+            (2, FieldState::Value(ManeuverIndicator::Special)),
+            (3, FieldState::Invalid(undefined(3))),
+        ] {
+            let pra = decode(&Fields {
+                maneuver: code,
+                ..Fields::default()
+            });
+            assert_eq!(pra.special_maneuver, expected, "code {code}");
         }
-    }
-
-    // -----------------------------------------------------------------
-    // Maneuver indicator
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn maneuver_indicator_covers_every_value() {
-        assert_eq!(
-            ManeuverIndicator::from_u2(0),
-            ManeuverIndicator::NotAvailable
-        );
-        assert_eq!(ManeuverIndicator::from_u2(1), ManeuverIndicator::NoSpecial);
-        assert_eq!(ManeuverIndicator::from_u2(2), ManeuverIndicator::Special);
-        assert_eq!(ManeuverIndicator::from_u2(3), ManeuverIndicator::Reserved);
-    }
-
-    #[test]
-    fn maneuver_indicator_code_round_trips_every_value() {
-        for code in 0u8..4 {
-            assert_eq!(ManeuverIndicator::from_u2(code).code(), code);
-        }
+        assert_eq!(ManeuverIndicator::NoSpecial.code(), 1);
+        assert_eq!(ManeuverIndicator::Special.code(), 2);
     }
 
     // -----------------------------------------------------------------
@@ -552,17 +748,20 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
-    fn rate_of_turn_sentinel_maps_to_none() {
+    fn rate_of_turn_minus_128_is_not_available() {
         let (bits, total) = build_pra_rot(1, sentinel::ROT_NOT_AVAILABLE);
         let pra = decode_position_report_a(&bits, total).unwrap();
-        assert_eq!(pra.rate_of_turn, None);
+        assert_eq!(pra.rate_of_turn, FieldState::NotAvailable);
     }
 
     #[test]
     fn rate_of_turn_zero_means_not_turning() {
         let (bits, total) = build_pra_rot(1, 0);
         let pra = decode_position_report_a(&bits, total).unwrap();
-        assert_eq!(pra.rate_of_turn, Some(RateOfTurn::DegPerMin(0.0)));
+        assert_eq!(
+            pra.rate_of_turn,
+            FieldState::Value(RateOfTurn::DegPerMin(0.0))
+        );
     }
 
     #[test]
@@ -596,7 +795,7 @@ mod tests {
         let pra = decode_position_report_a(&bits, total).unwrap();
         assert_eq!(
             pra.rate_of_turn,
-            Some(RateOfTurn::NoIndicator(TurnDirection::Right))
+            FieldState::Value(RateOfTurn::NoIndicator(TurnDirection::Right))
         );
     }
 
@@ -606,14 +805,14 @@ mod tests {
         let pra = decode_position_report_a(&bits, total).unwrap();
         assert_eq!(
             pra.rate_of_turn,
-            Some(RateOfTurn::NoIndicator(TurnDirection::Left))
+            FieldState::Value(RateOfTurn::NoIndicator(TurnDirection::Left))
         );
     }
 
     /// Pins the armored form of the ±127 payloads so the Python unit
-    /// test `test_position_report_a_turn_direction` (bindings) can
-    /// decode the same bits without a Python-side bit packer. 168 bits
-    /// armor to exactly 28 characters with zero fill bits.
+    /// test `test_position_report_a_rate_of_turn_no_indicator` (bindings)
+    /// can decode the same bits without a Python-side bit packer. 168
+    /// bits armor to exactly 28 characters with zero fill bits.
     #[test]
     fn rate_of_turn_no_indicator_payloads_armor_to_known_strings() {
         let (bits, total) = build_pra_rot(123_456_789, sentinel::ROT_NO_INDICATOR_RIGHT);
@@ -627,18 +826,50 @@ mod tests {
         assert_eq!(crate::armor::decode(armored, 0).unwrap(), (bits, total));
     }
 
-    // -----------------------------------------------------------------
-    // Speed / course / heading sentinels
-    // -----------------------------------------------------------------
-
+    /// Pins the armored form of a payload whose every partitioned field
+    /// carries an undefined or over-range code, so the Python unit test
+    /// `test_position_report_a_invalid_and_over_range_states` (bindings)
+    /// can decode the same bits: nav 9, SOG 1022, longitude +181° + 1,
+    /// latitude +91° + 1, COG 3601, heading 360, timestamp 61, manoeuvre 3.
     #[test]
-    fn sog_and_cog_decode_with_tenth_scaling() {
-        // SOG = 255 → 25.5 knots; COG = 1234 → 123.4°.
-        let (bits, total) = build_pra(1, 0, 1, 0, 0, 255, false, 0, 0, 1234, 42, 0, 0, false, 0);
+    fn undefined_code_payload_armors_to_known_string() {
+        let (bits, total) = build_pra(&Fields {
+            mmsi: 123_456_789,
+            nav: 9,
+            sog: sentinel::SOG_OVER_RANGE,
+            lon_raw: sentinel::LON_NOT_AVAILABLE as i32 + 1,
+            lat_raw: sentinel::LAT_NOT_AVAILABLE as i32 + 1,
+            cog: 3601,
+            heading: 360,
+            timestamp: sentinel::TIMESTAMP_MANUAL_INPUT,
+            maneuver: 3,
+            ..Fields::default()
+        });
         let pra = decode_position_report_a(&bits, total).unwrap();
-        assert!((pra.speed_over_ground.unwrap() - 25.5).abs() < 1e-4);
-        assert!((pra.course_over_ground.unwrap() - 123.4).abs() < 1e-4);
-        assert_eq!(pra.true_heading, Some(42));
+        assert_eq!(pra.navigation_status, FieldState::Invalid(undefined(9)));
+        assert_eq!(pra.speed_over_ground, FieldState::AtLeast(102.2));
+        assert_eq!(
+            pra.longitude_deg,
+            FieldState::Invalid(undefined(sentinel::LON_NOT_AVAILABLE + 1))
+        );
+        assert_eq!(
+            pra.latitude_deg,
+            FieldState::Invalid(undefined(sentinel::LAT_NOT_AVAILABLE + 1))
+        );
+        assert_eq!(pra.course_over_ground, FieldState::Invalid(undefined(3601)));
+        assert_eq!(pra.true_heading, FieldState::Invalid(undefined(360)));
+        assert_eq!(
+            pra.timestamp,
+            FieldState::Value(Timestamp::PositioningStatus(PositioningStatus::ManualInput))
+        );
+        assert_eq!(pra.special_maneuver, FieldState::Invalid(undefined(3)));
+        let (armored, fill) = armor_encode(&bits, total);
+        assert_eq!(fill, 0);
+        assert_eq!(crate::armor::decode(&armored, 0).unwrap(), (bits, total));
+        assert_eq!(
+            core::str::from_utf8(&armored).unwrap(),
+            "11mg=5I0?v<tSF2l4Q@N4KAsP000"
+        );
     }
 
     // -----------------------------------------------------------------
@@ -661,27 +892,18 @@ mod tests {
     #[test]
     fn decoder_accepts_type_2_and_type_3_headers() {
         for msg_type in [1u8, 2, 3] {
-            let (bits, total) = build_pra(
+            let pra = decode(&Fields {
                 msg_type,
-                0,
-                987_654_321,
-                1,
-                0,
-                100,
-                true,
-                0,
-                0,
-                0,
-                180,
-                0,
-                0,
-                false,
-                0,
-            );
-            let pra = decode_position_report_a(&bits, total).unwrap();
+                mmsi: 987_654_321,
+                nav: 1,
+                sog: 100,
+                pos_acc: true,
+                heading: 180,
+                ..Fields::default()
+            });
             assert_eq!(pra.mmsi, 987_654_321);
-            assert_eq!(pra.speed_over_ground, Some(10.0));
-            assert_eq!(pra.true_heading, Some(180));
+            assert_eq!(pra.speed_over_ground, FieldState::Value(10.0));
+            assert_eq!(pra.true_heading, FieldState::Value(180));
         }
     }
 
@@ -691,10 +913,12 @@ mod tests {
 
     #[test]
     fn raim_flag_round_trips() {
-        for raim_in in [false, true] {
-            let (bits, total) = build_pra(1, 0, 1, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, raim_in, 0);
-            let pra = decode_position_report_a(&bits, total).unwrap();
-            assert_eq!(pra.raim, raim_in);
+        for raim in [false, true] {
+            let pra = decode(&Fields {
+                raim,
+                ..Fields::default()
+            });
+            assert_eq!(pra.raim, raim);
         }
     }
 }

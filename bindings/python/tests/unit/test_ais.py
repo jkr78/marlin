@@ -1,4 +1,4 @@
-"""Unit tests for AIS data enums and value types."""
+"""Unit tests for AIS data enums, value types, sum types and messages."""
 
 from __future__ import annotations
 
@@ -21,20 +21,28 @@ from marlin.ais import (
     ManeuverIndicator,
     NavStatus,
     Other,
+    PositioningStatus,
     PositionReportA,
     PositionReportB,
+    RateOfTurn,
     ReassemblyError,
     SarAircraftPositionReport,
     StaticAndVoyageA,
     StaticDataB24A,
     StaticDataB24B,
+    Timestamp,
     TurnDirection,
+    Type24BExtent,
 )
+from marlin.field import FieldState
 
 from .ais_vectors import (
     AIVDM_TYPE1,
+    AIVDM_TYPE1_INVALID_AND_OVER_RANGE,
     AIVDM_TYPE1_ROT_MINUS_127,
     AIVDM_TYPE1_ROT_PLUS_127,
+    AIVDM_TYPE5_FRAG1,
+    AIVDM_TYPE5_FRAG2,
     AIVDM_TYPE9_GPSD_T9_2,
     AIVDM_TYPE21_GPSD_T21_1_FRAG1,
     AIVDM_TYPE21_GPSD_T21_1_FRAG2,
@@ -42,13 +50,13 @@ from .ais_vectors import (
     aivdm,
 )
 
+# ---------- int-backed enums ----------
+
 
 def test_nav_status_values() -> None:
-    # Every variant is pinned to its wire value. The sparse jump from 8 to
-    # 14 (and then 15) is the whole point — ITU-R M.1371 reserves 9..=13 as
-    # payload bytes that upstream carries via NavStatus::Reserved(u8) and
-    # that the Python enum can't represent (collapses to NOT_DEFINED at
-    # the From<Rust> boundary).
+    # Every member is pinned to its wire code. Code 15 (not defined) is the
+    # not-available field state and 9..=13 are the invalid field state on
+    # the message, so the members jump from 8 to 14.
     assert int(NavStatus.UNDERWAY_USING_ENGINE) == 0
     assert int(NavStatus.AT_ANCHOR) == 1
     assert int(NavStatus.NOT_UNDER_COMMAND) == 2
@@ -59,14 +67,15 @@ def test_nav_status_values() -> None:
     assert int(NavStatus.ENGAGED_IN_FISHING) == 7
     assert int(NavStatus.UNDERWAY_SAILING) == 8
     assert int(NavStatus.AIS_SART_ACTIVE) == 14
-    assert int(NavStatus.NOT_DEFINED) == 15
+    assert not hasattr(NavStatus, "NOT_DEFINED")
 
 
 def test_maneuver_indicator_values() -> None:
-    assert int(ManeuverIndicator.NOT_AVAILABLE) == 0
+    # Code 0 is not available and code 3 is invalid on the message.
     assert int(ManeuverIndicator.NO_SPECIAL) == 1
     assert int(ManeuverIndicator.SPECIAL) == 2
-    assert int(ManeuverIndicator.RESERVED) == 3
+    assert not hasattr(ManeuverIndicator, "NOT_AVAILABLE")
+    assert not hasattr(ManeuverIndicator, "RESERVED")
 
 
 def test_turn_direction_values() -> None:
@@ -74,6 +83,12 @@ def test_turn_direction_values() -> None:
     assert int(TurnDirection.RIGHT) == 0
     assert int(TurnDirection.LEFT) == 1
     assert TurnDirection.RIGHT != TurnDirection.LEFT
+
+
+def test_positioning_status_values_are_the_timestamp_wire_codes() -> None:
+    assert int(PositioningStatus.MANUAL_INPUT) == 61
+    assert int(PositioningStatus.DEAD_RECKONING) == 62
+    assert int(PositioningStatus.INOPERATIVE) == 63
 
 
 def test_altitude_sensor_values() -> None:
@@ -103,20 +118,20 @@ def test_ais_enums_are_hashable() -> None:
         NavStatus.MOORED,
         ManeuverIndicator.SPECIAL,
         TurnDirection.LEFT,
+        PositioningStatus.DEAD_RECKONING,
         AltitudeSensor.BAROMETRIC,
         AtonType.LIGHT_VESSEL,
         EpfdType.GALILEO,
         AisVersion.ITU1371V5,
     }
-    assert len(members) == 7
+    assert len(members) == 8
     assert NavStatus.MOORED in members
     assert hash(NavStatus.MOORED) == hash(NavStatus.MOORED)
 
 
 def test_epfd_type_values() -> None:
-    # Same sparse-discriminant rationale as NavStatus: upstream reserves
-    # 9..=14 as EpfdType::Reserved(u8) payload, so InternalGnss jumps to 15.
-    assert int(EpfdType.UNDEFINED) == 0
+    # Code 0 (undefined) is not available and 9..=14 are invalid on the
+    # message, so the members jump from 8 to 15.
     assert int(EpfdType.GPS) == 1
     assert int(EpfdType.GLONASS) == 2
     assert int(EpfdType.COMBINED_GPS_GLONASS) == 3
@@ -126,6 +141,7 @@ def test_epfd_type_values() -> None:
     assert int(EpfdType.SURVEYED) == 7
     assert int(EpfdType.GALILEO) == 8
     assert int(EpfdType.INTERNAL_GNSS) == 15
+    assert not hasattr(EpfdType, "UNDEFINED")
 
 
 def test_ais_version_values() -> None:
@@ -135,26 +151,40 @@ def test_ais_version_values() -> None:
     assert int(AisVersion.FUTURE) == 3
 
 
-def test_dimensions_fields() -> None:
+# ---------- Dimensions and Eta ----------
+
+
+def test_dimensions_fields_are_field_states() -> None:
     d = Dimensions(to_bow_m=10, to_stern_m=20, to_port_m=3, to_starboard_m=4)
-    assert d.to_bow_m == 10
-    assert d.to_stern_m == 20
-    assert d.to_port_m == 3
-    assert d.to_starboard_m == 4
+    assert d.to_bow_m == FieldState.Value(10)
+    assert d.to_stern_m == FieldState.Value(20)
+    assert d.to_port_m == FieldState.Value(3)
+    assert d.to_starboard_m == FieldState.Value(4)
 
 
-def test_dimensions_all_none() -> None:
-    d = Dimensions()  # all sentinels -> all None
-    assert d.to_bow_m is None
-    assert d.to_stern_m is None
-    assert d.to_port_m is None
-    assert d.to_starboard_m is None
+def test_dimensions_default_to_not_available() -> None:
+    d = Dimensions()
+    assert d.to_bow_m == FieldState.NotAvailable()
+    assert d.to_stern_m == FieldState.NotAvailable()
+    assert d.to_port_m == FieldState.NotAvailable()
+    assert d.to_starboard_m == FieldState.NotAvailable()
+
+
+def test_dimensions_accept_a_field_state_and_none() -> None:
+    d = Dimensions(to_bow_m=FieldState.AtLeast(511), to_stern_m=None)
+    assert d.to_bow_m == FieldState.AtLeast(511)
+    assert d.to_stern_m == FieldState.NotAvailable()
+    assert repr(d) == (
+        "Dimensions(to_bow_m=FieldState.AtLeast(511), "
+        "to_stern_m=FieldState.NotAvailable(), to_port_m=FieldState.NotAvailable(), "
+        "to_starboard_m=FieldState.NotAvailable())"
+    )
 
 
 def test_dimensions_frozen() -> None:
     d = Dimensions(to_bow_m=10)
     with pytest.raises((AttributeError, TypeError)):
-        d.to_bow_m = 20  # type: ignore[misc]
+        d.to_bow_m = 20  # type: ignore[misc, assignment]
 
 
 def test_dimensions_eq_hash() -> None:
@@ -162,22 +192,23 @@ def test_dimensions_eq_hash() -> None:
     b = Dimensions(to_bow_m=10, to_stern_m=20, to_port_m=3, to_starboard_m=4)
     assert a == b
     assert hash(a) == hash(b)
+    assert a != Dimensions(to_bow_m=FieldState.AtLeast(10), to_stern_m=20, to_port_m=3, to_starboard_m=4)
 
 
-def test_eta_fields() -> None:
+def test_eta_fields_are_field_states() -> None:
     e = Eta(month=3, day=15, hour=12, minute=30)
-    assert e.month == 3
-    assert e.day == 15
-    assert e.hour == 12
-    assert e.minute == 30
+    assert e.month == FieldState.Value(3)
+    assert e.day == FieldState.Value(15)
+    assert e.hour == FieldState.Value(12)
+    assert e.minute == FieldState.Value(30)
 
 
-def test_eta_all_none() -> None:
+def test_eta_default_to_not_available() -> None:
     e = Eta()
-    assert e.month is None
-    assert e.day is None
-    assert e.hour is None
-    assert e.minute is None
+    assert e.month == FieldState.NotAvailable()
+    assert e.day == FieldState.NotAvailable()
+    assert e.hour == FieldState.NotAvailable()
+    assert e.minute == FieldState.NotAvailable()
 
 
 def test_eta_eq_hash() -> None:
@@ -185,6 +216,114 @@ def test_eta_eq_hash() -> None:
     b = Eta(month=3, day=15, hour=12, minute=30)
     assert a == b
     assert hash(a) == hash(b)
+    assert Eta(month=FieldState.Invalid(13)) != Eta()
+
+
+# ---------- the three sum types ----------
+
+
+def test_rate_of_turn_variant_classes() -> None:
+    measured = RateOfTurn.DegPerMin(19.7)
+    status = RateOfTurn.NoIndicator(TurnDirection.RIGHT)
+    assert isinstance(measured, RateOfTurn)
+    assert isinstance(measured, RateOfTurn.DegPerMin)
+    assert not isinstance(measured, RateOfTurn.NoIndicator)
+    assert isinstance(status, RateOfTurn.NoIndicator)
+    assert measured.deg_per_min == pytest.approx(19.7)
+    assert status.direction == TurnDirection.RIGHT
+    assert RateOfTurn.DegPerMin.__match_args__ == ("deg_per_min",)
+    assert RateOfTurn.NoIndicator.__match_args__ == ("direction",)
+    assert type(measured).__name__ == "DegPerMin"
+    assert type(measured).__qualname__ == "RateOfTurn.DegPerMin"
+    assert RateOfTurn.DegPerMin.__module__ == "marlin.ais"
+
+
+def test_rate_of_turn_eq_hash_repr() -> None:
+    assert RateOfTurn.DegPerMin(1.5) == RateOfTurn.DegPerMin(1.5)
+    assert RateOfTurn.DegPerMin(1.5) != RateOfTurn.DegPerMin(1.25)
+    assert RateOfTurn.NoIndicator(TurnDirection.LEFT) == RateOfTurn.NoIndicator(TurnDirection.LEFT)
+    assert RateOfTurn.NoIndicator(TurnDirection.LEFT) != RateOfTurn.NoIndicator(TurnDirection.RIGHT)
+    assert RateOfTurn.DegPerMin(0.0) != RateOfTurn.NoIndicator(TurnDirection.LEFT)
+    assert hash(RateOfTurn.DegPerMin(1.5)) == hash(RateOfTurn.DegPerMin(1.5))
+    assert len({RateOfTurn.DegPerMin(1.5), RateOfTurn.DegPerMin(1.5), RateOfTurn.NoIndicator(TurnDirection.LEFT)}) == 2
+    assert repr(RateOfTurn.DegPerMin(1.5)) == "RateOfTurn.DegPerMin(1.5)"
+    assert repr(RateOfTurn.NoIndicator(TurnDirection.LEFT)) == "RateOfTurn.NoIndicator(TurnDirection.LEFT)"
+
+
+def test_rate_of_turn_base_is_not_instantiable() -> None:
+    with pytest.raises(TypeError, match="cannot create 'marlin.ais.RateOfTurn' instances"):
+        RateOfTurn()
+
+
+def test_timestamp_variant_classes() -> None:
+    second = Timestamp.Second(42)
+    status = Timestamp.PositioningStatus(PositioningStatus.DEAD_RECKONING)
+    assert isinstance(second, Timestamp)
+    assert isinstance(second, Timestamp.Second)
+    assert isinstance(status, Timestamp.PositioningStatus)
+    assert second.second == 42
+    assert status.status == PositioningStatus.DEAD_RECKONING
+    assert Timestamp.Second.__match_args__ == ("second",)
+    assert Timestamp.PositioningStatus.__match_args__ == ("status",)
+    # The variant class and the enum share a name but not a qualified name.
+    assert type(status).__name__ == "PositioningStatus"
+    assert type(status).__qualname__ == "Timestamp.PositioningStatus"
+    assert type(status) is not PositioningStatus  # type: ignore[comparison-overlap]
+
+
+def test_timestamp_eq_hash_repr() -> None:
+    assert Timestamp.Second(42) == Timestamp.Second(42)
+    assert Timestamp.Second(42) != Timestamp.Second(41)
+    assert Timestamp.PositioningStatus(PositioningStatus.INOPERATIVE) == Timestamp.PositioningStatus(PositioningStatus.INOPERATIVE)
+    assert Timestamp.Second(61) != Timestamp.PositioningStatus(PositioningStatus.MANUAL_INPUT)
+    assert hash(Timestamp.Second(42)) == hash(Timestamp.Second(42))
+    assert repr(Timestamp.Second(42)) == "Timestamp.Second(42)"
+    assert repr(Timestamp.PositioningStatus(PositioningStatus.MANUAL_INPUT)) == "Timestamp.PositioningStatus(PositioningStatus.MANUAL_INPUT)"
+
+
+def test_timestamp_base_is_not_instantiable() -> None:
+    with pytest.raises(TypeError, match="cannot create 'marlin.ais.Timestamp' instances"):
+        Timestamp()
+
+
+def test_type24b_extent_variant_classes() -> None:
+    dims = Dimensions(to_bow_m=30, to_stern_m=10, to_port_m=5, to_starboard_m=3)
+    extent = Type24BExtent.Dimensions(dims)
+    mother = Type24BExtent.MothershipMmsi(211000123)
+    assert isinstance(extent, Type24BExtent)
+    assert isinstance(extent, Type24BExtent.Dimensions)
+    assert isinstance(mother, Type24BExtent.MothershipMmsi)
+    assert extent.dimensions == dims
+    assert mother.mmsi == 211000123
+    assert Type24BExtent.Dimensions.__match_args__ == ("dimensions",)
+    assert Type24BExtent.MothershipMmsi.__match_args__ == ("mmsi",)
+    # The variant class and the value type share a name but not a qualified name.
+    assert type(extent).__name__ == "Dimensions"
+    assert type(extent).__qualname__ == "Type24BExtent.Dimensions"
+    assert type(extent) is not Dimensions  # type: ignore[comparison-overlap]
+
+
+def test_type24b_extent_eq_hash_repr() -> None:
+    assert Type24BExtent.Dimensions(Dimensions(to_bow_m=1)) == Type24BExtent.Dimensions(Dimensions(to_bow_m=1))
+    assert Type24BExtent.Dimensions(Dimensions(to_bow_m=1)) != Type24BExtent.Dimensions(Dimensions(to_bow_m=2))
+    assert Type24BExtent.MothershipMmsi(1) == Type24BExtent.MothershipMmsi(1)
+    assert Type24BExtent.MothershipMmsi(1) != Type24BExtent.Dimensions(Dimensions())
+    assert hash(Type24BExtent.MothershipMmsi(1)) == hash(Type24BExtent.MothershipMmsi(1))
+    assert hash(Type24BExtent.Dimensions(Dimensions(to_bow_m=1))) == hash(Type24BExtent.Dimensions(Dimensions(to_bow_m=1)))
+    assert repr(Type24BExtent.MothershipMmsi(211000123)) == "Type24BExtent.MothershipMmsi(211000123)"
+    assert repr(Type24BExtent.Dimensions(Dimensions())) == (
+        "Type24BExtent.Dimensions(Dimensions(to_bow_m=FieldState.NotAvailable(), "
+        "to_stern_m=FieldState.NotAvailable(), to_port_m=FieldState.NotAvailable(), "
+        "to_starboard_m=FieldState.NotAvailable()))"
+    )
+
+
+def test_type24b_extent_base_is_not_instantiable() -> None:
+    with pytest.raises(TypeError, match="cannot create 'marlin.ais.Type24BExtent' instances"):
+        Type24BExtent()
+
+
+# ---------- message constructors ----------
 
 
 def test_position_report_a_shape() -> None:
@@ -195,21 +334,62 @@ def test_position_report_a_shape() -> None:
         longitude_deg=11.5,
         speed_over_ground=12.4,
         true_heading=90,
+        timestamp=Timestamp.Second(7),
     )
     assert p.mmsi == 123456789
-    assert p.navigation_status == NavStatus.UNDERWAY_USING_ENGINE
-    assert p.latitude_deg == pytest.approx(48.5)
-    assert p.longitude_deg == pytest.approx(11.5)
-    assert p.speed_over_ground == pytest.approx(12.4)
-    assert p.true_heading == 90
-    # Defaults fire for unset fields:
-    assert p.rate_of_turn is None
-    assert p.turn_direction is None
+    assert p.navigation_status == FieldState.Value(NavStatus.UNDERWAY_USING_ENGINE)
+    assert p.latitude_deg.value == pytest.approx(48.5)
+    assert p.longitude_deg.value == pytest.approx(11.5)
+    assert p.speed_over_ground.value == pytest.approx(12.4)
+    assert p.true_heading == FieldState.Value(90)
+    assert p.timestamp == FieldState.Value(Timestamp.Second(7))
+    # Field-state keywords default to NotAvailable(), plain ones to false / 0:
+    assert p.rate_of_turn == FieldState.NotAvailable()
+    assert p.course_over_ground == FieldState.NotAvailable()
+    assert p.special_maneuver == FieldState.NotAvailable()
     assert p.position_accuracy is False
-    assert p.special_maneuver == ManeuverIndicator.NOT_AVAILABLE
-    assert p.timestamp == 60
     assert p.raim is False
     assert p.radio_status == 0
+    assert not hasattr(p, "turn_direction")
+
+
+def test_position_report_a_all_defaults() -> None:
+    p = PositionReportA()
+    assert p.mmsi == 0
+    assert p.navigation_status == FieldState.NotAvailable()
+    assert p.rate_of_turn == FieldState.NotAvailable()
+    assert p.timestamp == FieldState.NotAvailable()
+    assert p.special_maneuver == FieldState.NotAvailable()
+
+
+def test_position_report_a_field_state_coercion() -> None:
+    # A FieldState passes through, a bare value is Value, None is NotAvailable().
+    # 102.5 is exact in the f32 the field is stored as; 102.2 is not.
+    p = PositionReportA(
+        speed_over_ground=FieldState.AtLeast(102.5),
+        rate_of_turn=RateOfTurn.NoIndicator(TurnDirection.LEFT),
+        navigation_status=FieldState.Invalid(9),
+        latitude_deg=None,
+    )
+    assert p.speed_over_ground == FieldState.AtLeast(102.5)
+    assert p.rate_of_turn == FieldState.Value(RateOfTurn.NoIndicator(TurnDirection.LEFT))
+    assert p.navigation_status == FieldState.Invalid(9)
+    assert p.latitude_deg == FieldState.NotAvailable()
+
+
+def test_position_report_a_rejects_a_wrong_typed_payload() -> None:
+    with pytest.raises(TypeError, match="'str' object cannot be cast as 'NavStatus'"):
+        PositionReportA(navigation_status="moored")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="'int' object cannot be cast as 'Timestamp'"):
+        PositionReportA(timestamp=40)  # type: ignore[arg-type]
+
+
+def test_position_report_a_repr_prints_the_variant_form() -> None:
+    p = PositionReportA(mmsi=1, latitude_deg=48.5, speed_over_ground=FieldState.AtLeast(102.5))
+    assert repr(p) == (
+        "PositionReportA(mmsi=1, lat=FieldState.Value(48.5), "
+        "lon=FieldState.NotAvailable(), sog=FieldState.AtLeast(102.5))"
+    )
 
 
 def test_static_and_voyage_a_shape() -> None:
@@ -223,28 +403,40 @@ def test_static_and_voyage_a_shape() -> None:
         dimensions=Dimensions(to_bow_m=100, to_stern_m=20, to_port_m=10, to_starboard_m=10),
         epfd=EpfdType.GPS,
         eta=Eta(month=6, day=15, hour=14, minute=30),
-        draught_m=8.5,
+        draught_m=FieldState.AtLeast(25.5),
         destination="HAMBURG",
         dte=False,
     )
     assert s.mmsi == 123456789
     assert s.ais_version == AisVersion.ITU1371V5
-    assert s.imo_number == 9074729
-    assert s.call_sign == "ABCD"
-    assert s.vessel_name == "MY VESSEL"
-    assert s.ship_type == 70
-    assert s.dimensions.to_bow_m == 100
-    assert s.epfd == EpfdType.GPS
-    assert s.eta.month == 6
-    assert s.draught_m == pytest.approx(8.5)
-    assert s.destination == "HAMBURG"
-    assert s.dte is False
+    assert s.imo_number == FieldState.Value(9074729)
+    assert s.call_sign == FieldState.Value("ABCD")
+    assert s.vessel_name == FieldState.Value("MY VESSEL")
+    assert s.ship_type == FieldState.Value(70)
+    assert s.dimensions.to_bow_m == FieldState.Value(100)
+    assert s.epfd == FieldState.Value(EpfdType.GPS)
+    assert s.eta.month == FieldState.Value(6)
+    assert s.draught_m == FieldState.AtLeast(25.5)
+    assert s.destination == FieldState.Value("HAMBURG")
+    assert s.dte == FieldState.Value(False)
+
+
+def test_static_and_voyage_a_all_defaults() -> None:
+    s = StaticAndVoyageA()
+    assert s.ais_version == AisVersion.FUTURE
+    assert s.imo_number == FieldState.NotAvailable()
+    assert s.vessel_name == FieldState.NotAvailable()
+    assert s.ship_type == FieldState.NotAvailable()
+    assert s.dimensions == Dimensions()
+    assert s.epfd == FieldState.NotAvailable()
+    assert s.eta == Eta()
+    assert s.dte == FieldState.NotAvailable()
 
 
 def test_sar_aircraft_position_report_shape() -> None:
     p = SarAircraftPositionReport(
         mmsi=111222333,
-        altitude_m=1500,
+        altitude_m=FieldState.AtLeast(4094),
         speed_over_ground=120,
         latitude_deg=58.1,
         longitude_deg=-6.2,
@@ -252,16 +444,16 @@ def test_sar_aircraft_position_report_shape() -> None:
         dte=True,
     )
     assert p.mmsi == 111222333
-    assert p.altitude_m == 1500
-    assert p.speed_over_ground == 120
-    assert p.latitude_deg == pytest.approx(58.1)
-    assert p.longitude_deg == pytest.approx(-6.2)
+    assert p.altitude_m == FieldState.AtLeast(4094)
+    assert p.speed_over_ground == FieldState.Value(120)
+    assert p.latitude_deg.value == pytest.approx(58.1)
+    assert p.longitude_deg.value == pytest.approx(-6.2)
     assert p.altitude_sensor == AltitudeSensor.BAROMETRIC
     assert p.dte is True
     # Defaults fire for unset fields:
     assert p.position_accuracy is False
-    assert p.course_over_ground is None
-    assert p.timestamp == 60
+    assert p.course_over_ground == FieldState.NotAvailable()
+    assert p.timestamp == FieldState.NotAvailable()
     assert p.assigned_flag is False
     assert p.raim is False
     assert p.radio_status == 0
@@ -269,15 +461,6 @@ def test_sar_aircraft_position_report_shape() -> None:
     assert not hasattr(p, "true_heading")
     assert not hasattr(p, "rate_of_turn")
     assert not hasattr(p, "navigation_status")
-
-
-def test_sar_aircraft_position_report_all_defaults() -> None:
-    p = SarAircraftPositionReport()
-    assert p.mmsi == 0
-    assert p.altitude_m is None
-    assert p.speed_over_ground is None
-    assert p.altitude_sensor == AltitudeSensor.GNSS
-    assert p.timestamp == 60
 
 
 def test_position_report_b_shape() -> None:
@@ -289,11 +472,12 @@ def test_position_report_b_shape() -> None:
         class_b_message22_flag=True,
     )
     assert p.mmsi == 222333444
-    assert p.latitude_deg == pytest.approx(48.5)
-    assert p.speed_over_ground == pytest.approx(5.0)
+    assert p.latitude_deg.value == pytest.approx(48.5)
+    assert p.speed_over_ground.value == pytest.approx(5.0)
     assert p.class_b_cs_flag is True
     assert p.class_b_message22_flag is True
     # Defaults:
+    assert p.timestamp == FieldState.NotAvailable()
     assert p.class_b_display_flag is False
     assert p.class_b_dsc_flag is False
     assert p.class_b_band_flag is False
@@ -309,11 +493,12 @@ def test_extended_position_report_b_shape() -> None:
         epfd=EpfdType.GLONASS,
     )
     assert p.mmsi == 222333444
-    assert p.vessel_name == "CLASS B"
-    assert p.ship_type == 37
-    assert p.dimensions.to_bow_m == 15
-    assert p.epfd == EpfdType.GLONASS
-    assert p.timestamp == 60
+    assert p.vessel_name == FieldState.Value("CLASS B")
+    assert p.ship_type == FieldState.Value(37)
+    assert p.dimensions.to_bow_m == FieldState.Value(15)
+    assert p.epfd == FieldState.Value(EpfdType.GLONASS)
+    assert p.timestamp == FieldState.NotAvailable()
+    assert p.dte is False
     assert p.assigned_flag is False
 
 
@@ -326,20 +511,20 @@ def test_aid_to_navigation_report_shape() -> None:
         longitude_deg=11.0,
         dimensions=Dimensions(to_bow_m=3, to_stern_m=4, to_port_m=1, to_starboard_m=2),
         epfd=EpfdType.GPS,
-        timestamp=42,
+        timestamp=Timestamp.Second(42),
         off_position=True,
         aton_status=0xA5,
         virtual_aton=True,
     )
     assert p.mmsi == 992471234
     assert p.aton_type == AtonType.PORT_HAND_MARK
-    assert p.name == "RED BUOY 7"
-    assert p.latitude_deg == pytest.approx(-4.8)
-    assert p.longitude_deg == pytest.approx(11.0)
-    assert p.dimensions.to_bow_m == 3
-    assert p.dimensions.to_starboard_m == 2
-    assert p.epfd == EpfdType.GPS
-    assert p.timestamp == 42
+    assert p.name == FieldState.Value("RED BUOY 7")
+    assert p.latitude_deg.value == pytest.approx(-4.8)
+    assert p.longitude_deg.value == pytest.approx(11.0)
+    assert p.dimensions.to_bow_m == FieldState.Value(3)
+    assert p.dimensions.to_starboard_m == FieldState.Value(2)
+    assert p.epfd == FieldState.Value(EpfdType.GPS)
+    assert p.timestamp == FieldState.Value(Timestamp.Second(42))
     assert p.off_position is True
     assert p.aton_status == 0xA5
     assert p.virtual_aton is True
@@ -357,17 +542,18 @@ def test_aid_to_navigation_report_all_defaults() -> None:
     p = AidToNavigationReport()
     assert p.mmsi == 0
     assert p.aton_type == AtonType.NOT_SPECIFIED
-    assert p.name is None
+    assert p.name == FieldState.NotAvailable()
     assert p.dimensions == Dimensions()
-    assert p.epfd == EpfdType.UNDEFINED
-    assert p.timestamp == 60
+    assert p.epfd == FieldState.NotAvailable()
+    assert p.timestamp == FieldState.NotAvailable()
     assert p.aton_status == 0
 
 
 def test_static_data_b24a_shape() -> None:
     s = StaticDataB24A(mmsi=222333444, vessel_name="NAMED")
     assert s.mmsi == 222333444
-    assert s.vessel_name == "NAMED"
+    assert s.vessel_name == FieldState.Value("NAMED")
+    assert StaticDataB24A().vessel_name == FieldState.NotAvailable()
 
 
 def test_static_data_b24b_shape() -> None:
@@ -376,26 +562,27 @@ def test_static_data_b24b_shape() -> None:
         ship_type=37,
         vendor_id="VND1",
         call_sign="CS1",
-        dimensions=Dimensions(to_bow_m=12),
+        extent=Type24BExtent.Dimensions(Dimensions(to_bow_m=12)),
         epfd=EpfdType.GALILEO,
     )
     assert s.mmsi == 222333444
-    assert s.ship_type == 37
-    assert s.vendor_id == "VND1"
-    assert s.call_sign == "CS1"
-    assert s.dimensions is not None
-    assert s.dimensions.to_bow_m == 12
-    assert s.mothership_mmsi is None
-    assert s.epfd == EpfdType.GALILEO
+    assert s.ship_type == FieldState.Value(37)
+    assert s.vendor_id == FieldState.Value("VND1")
+    assert s.call_sign == FieldState.Value("CS1")
+    assert isinstance(s.extent, Type24BExtent.Dimensions)
+    assert s.extent.dimensions.to_bow_m == FieldState.Value(12)
+    assert s.epfd == FieldState.Value(EpfdType.GALILEO)
+    assert not hasattr(s, "dimensions")
+    assert not hasattr(s, "mothership_mmsi")
 
 
 def test_static_data_b24b_defaults() -> None:
-    # Both flattened extent attributes default to None (ADR-0003); the
-    # constructor does not validate that exactly one is set.
+    # The extent defaults to dimensions with every member not available,
+    # as a Rust message always carries one of the two variants.
     s = StaticDataB24B()
-    assert s.dimensions is None
-    assert s.mothership_mmsi is None
-    assert s.epfd == EpfdType.UNDEFINED
+    assert s.extent == Type24BExtent.Dimensions(Dimensions())
+    assert s.ship_type == FieldState.NotAvailable()
+    assert s.epfd == FieldState.NotAvailable()
 
 
 def test_other_shape() -> None:
@@ -406,17 +593,7 @@ def test_other_shape() -> None:
     assert o.total_bits == 24
 
 
-def test_position_report_a_all_defaults() -> None:
-    # Constructor works with no args — every field has a default.
-    p = PositionReportA()
-    assert p.mmsi == 0
-    assert p.navigation_status == NavStatus.NOT_DEFINED
-    assert p.special_maneuver == ManeuverIndicator.NOT_AVAILABLE
-    assert p.timestamp == 60
-
-
 def test_ais_message_class_exists() -> None:
-    # Plan's minimal sanity check.
     assert AisMessage.__name__ == "AisMessage"
 
 
@@ -436,7 +613,7 @@ def test_ais_message_construct_own_ship() -> None:
     assert msg.is_own_ship is True
     assert msg.type_tag == "type24a"
     assert isinstance(msg.body, StaticDataB24A)
-    assert msg.body.vessel_name == "OWN"
+    assert msg.body.vessel_name == FieldState.Value("OWN")
 
 
 def test_ais_message_body_with_other_variant() -> None:
@@ -457,6 +634,9 @@ def test_ais_message_repr() -> None:
     # lowercase `true`/`false`. A substring check would silently accept a
     # regression that drops either the label or the quotes.
     assert repr(msg) == 'AisMessage(type_tag="type1", is_own_ship=true)'
+
+
+# ---------- BitReader ----------
 
 
 def test_bit_reader_basic() -> None:
@@ -516,6 +696,9 @@ def test_bit_reader_read_across_byte_boundary() -> None:
     assert reader.remaining() == 0
 
 
+# ---------- decoding through the parser ----------
+
+
 def test_ais_streaming_single_fragment() -> None:
     p = AisParser.streaming()
     p.feed(AIVDM_TYPE1)
@@ -526,15 +709,21 @@ def test_ais_streaming_single_fragment() -> None:
     assert messages[0].type_tag == "type1"
 
 
-def test_ais_classic_type1_rate_of_turn_is_not_available() -> None:
-    # The classic Annex 5 fixture carries raw ROT -128 (not available):
-    # both flattened attributes are None (ADR-0003).
+def test_ais_classic_type1_decodes_field_states() -> None:
+    # The classic Annex 5 fixture: ROT -128 and heading 511 are not
+    # available, the timestamp is second 40, the manoeuvre code 0 is not
+    # available, navigation status 0 is a value.
     p = AisParser.streaming()
     p.feed(AIVDM_TYPE1)
     body = list(p)[0].body
     assert isinstance(body, PositionReportA)
-    assert body.rate_of_turn is None
-    assert body.turn_direction is None
+    assert body.rate_of_turn == FieldState.NotAvailable()
+    assert body.true_heading == FieldState.NotAvailable()
+    assert body.timestamp == FieldState.Value(Timestamp.Second(40))
+    assert body.special_maneuver == FieldState.NotAvailable()
+    assert body.navigation_status == FieldState.Value(NavStatus.UNDERWAY_USING_ENGINE)
+    assert body.speed_over_ground == FieldState.Value(0.0)
+    assert body.latitude_deg.value == pytest.approx(51.229637, abs=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -545,12 +734,12 @@ def test_ais_classic_type1_rate_of_turn_is_not_available() -> None:
     ],
     ids=["plus_127_right", "minus_127_left"],
 )
-def test_position_report_a_turn_direction(
+def test_position_report_a_rate_of_turn_no_indicator(
     sentence: bytes, expected: TurnDirection
 ) -> None:
     # Raw ROT ±127 is the "turning faster than 5°/30 s, no turn indicator"
-    # status: it surfaces as turn_direction and rate_of_turn stays None
-    # rather than becoming a fabricated ±720 °/min.
+    # status: a value of the field's own sum type, not a field state and
+    # not a fabricated ±720 °/min.
     p = AisParser.streaming()
     p.feed(sentence)
     msgs = list(p)
@@ -558,14 +747,58 @@ def test_position_report_a_turn_direction(
     body = msgs[0].body
     assert isinstance(body, PositionReportA)
     assert body.mmsi == 123456789
-    assert body.rate_of_turn is None
-    assert body.turn_direction == expected
+    assert body.rate_of_turn == FieldState.Value(RateOfTurn.NoIndicator(expected))
+    match body.rate_of_turn:
+        case FieldState.Value(RateOfTurn.NoIndicator(direction)):
+            assert direction == expected
+        case other:
+            pytest.fail(f"unexpected rate of turn {other!r}")
+
+
+def test_position_report_a_invalid_and_over_range_states() -> None:
+    # Navigation status 9 and manoeuvre 3 are reserved, longitude +181°
+    # + 1 and latitude +91° + 1 lie beyond the defined range by a code
+    # other than not available, COG 3601 and heading 360 are undefined:
+    # each is FieldState.Invalid with the wire integer. SOG 1022 is the
+    # over-range bound and timestamp 61 the manual-input status.
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE1_INVALID_AND_OVER_RANGE)
+    body = list(p)[0].body
+    assert isinstance(body, PositionReportA)
+    assert body.navigation_status == FieldState.Invalid(9)
+    assert isinstance(body.speed_over_ground, FieldState.AtLeast)
+    assert body.speed_over_ground.bound == pytest.approx(102.2)
+    assert body.longitude_deg == FieldState.Invalid(181 * 600_000 + 1)
+    assert body.latitude_deg == FieldState.Invalid(91 * 600_000 + 1)
+    assert body.course_over_ground == FieldState.Invalid(3601)
+    assert body.true_heading == FieldState.Invalid(360)
+    assert body.timestamp == FieldState.Value(
+        Timestamp.PositioningStatus(PositioningStatus.MANUAL_INPUT)
+    )
+    assert body.special_maneuver == FieldState.Invalid(3)
+    assert body.speed_over_ground.value is None
+    assert body.speed_over_ground.value_or_bound == pytest.approx(102.2)
+
+
+def test_static_and_voyage_a_gpsd_vector() -> None:
+    p = AisParser.streaming()
+    p.feed(AIVDM_TYPE5_FRAG1 + AIVDM_TYPE5_FRAG2)
+    msgs = list(p)
+    assert len(msgs) == 1
+    body = msgs[0].body
+    assert isinstance(body, StaticAndVoyageA)
+    assert body.mmsi == 369190000
+    assert body.vessel_name == FieldState.Value("MT.MITCHELL")
+    assert body.destination == FieldState.Value("SEATTLENF]ISA")
+    assert isinstance(body.ship_type, FieldState.Value)
+    # The 424-bit payload carries the DTE bit.
+    assert body.dte == FieldState.Value(True)
 
 
 def test_static_data_b24b_mothership_mmsi() -> None:
     # An auxiliary-craft MMSI (98MIDxxxx) carries the mother ship's MMSI
-    # in the 30 bits that otherwise hold dimensions (ADR-0002); the sum
-    # type flattens to `dimensions` / `mothership_mmsi` (ADR-0003).
+    # in the 30 bits that otherwise hold dimensions (ADR-0002); the extent
+    # is the MothershipMmsi variant class (ADR-0009).
     p = AisParser.streaming()
     p.feed(AIVDM_TYPE24B_AUXILIARY_CRAFT)
     msgs = list(p)
@@ -573,12 +806,11 @@ def test_static_data_b24b_mothership_mmsi() -> None:
     body = msgs[0].body
     assert isinstance(body, StaticDataB24B)
     assert body.mmsi == 987654321
-    assert body.ship_type == 37
-    assert body.vendor_id == "VND1234"
-    assert body.call_sign == "CS001"
-    assert body.dimensions is None
-    assert body.mothership_mmsi == 211000123
-    assert body.epfd == EpfdType.GPS
+    assert body.ship_type == FieldState.Value(37)
+    assert body.vendor_id == FieldState.Value("VND1234")
+    assert body.call_sign == FieldState.Value("CS001")
+    assert body.extent == Type24BExtent.MothershipMmsi(211000123)
+    assert body.epfd == FieldState.Value(EpfdType.GPS)
 
 
 def test_sar_aircraft_position_report_gpsd_t9_2() -> None:
@@ -593,13 +825,13 @@ def test_sar_aircraft_position_report_gpsd_t9_2() -> None:
     body = msgs[0].body
     assert isinstance(body, SarAircraftPositionReport)
     assert body.mmsi == 111232511
-    assert body.altitude_m == 303
-    assert body.speed_over_ground == 42
+    assert body.altitude_m == FieldState.Value(303)
+    assert body.speed_over_ground == FieldState.Value(42)
     assert body.position_accuracy is False
-    assert body.longitude_deg == pytest.approx(-6.278843, abs=1e-6)
-    assert body.latitude_deg == pytest.approx(58.144, abs=1e-6)
-    assert body.course_over_ground == pytest.approx(154.5, abs=1e-4)
-    assert body.timestamp == 15
+    assert body.longitude_deg.value == pytest.approx(-6.278843, abs=1e-6)
+    assert body.latitude_deg.value == pytest.approx(58.144, abs=1e-6)
+    assert body.course_over_ground.value == pytest.approx(154.5, abs=1e-4)
+    assert body.timestamp == FieldState.Value(Timestamp.Second(15))
     assert body.altitude_sensor == AltitudeSensor.GNSS
     assert body.dte is True
     assert body.assigned_flag is False
@@ -621,20 +853,23 @@ def test_aid_to_navigation_report_gpsd_t21_1() -> None:
     assert isinstance(body, AidToNavigationReport)
     assert body.mmsi == 123456789
     assert body.aton_type == AtonType.CARDINAL_MARK_NORTH
-    assert body.name == "CHINA ROSE MURPHY EXPRESS ALERT"
+    assert body.name == FieldState.Value("CHINA ROSE MURPHY EXPRESS ALERT")
     assert body.position_accuracy is False
-    assert body.longitude_deg == pytest.approx(-122.698592, abs=1e-6)
-    assert body.latitude_deg == pytest.approx(47.920618, abs=1e-6)
+    assert body.longitude_deg.value == pytest.approx(-122.698592, abs=1e-6)
+    assert body.latitude_deg.value == pytest.approx(47.920618, abs=1e-6)
     assert body.dimensions == Dimensions(
         to_bow_m=5, to_stern_m=5, to_port_m=5, to_starboard_m=5
     )
-    assert body.epfd == EpfdType.GPS
-    assert body.timestamp == 50
+    assert body.epfd == FieldState.Value(EpfdType.GPS)
+    assert body.timestamp == FieldState.Value(Timestamp.Second(50))
     assert body.off_position is False
     assert body.aton_status == 165
     assert body.raim is False
     assert body.virtual_aton is False
     assert body.assigned_flag is False
+
+
+# ---------- reassembly clock ----------
 
 
 def test_ais_auto_clock_reads_time() -> None:

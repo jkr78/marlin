@@ -29,8 +29,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   converts a field state, and `asdict` yields
   `{"kind": "value", "value": 10.2}`.
 
+- `marlin.ais.RateOfTurn`, `marlin.ais.Timestamp` and
+  `marlin.ais.Type24BExtent`: frozen sum types with one variant class
+  each per Rust variant (ADR-0009), matched by `isinstance` or `match`
+  and compared and hashed by payload: `RateOfTurn.DegPerMin(deg_per_min)`
+  / `RateOfTurn.NoIndicator(direction)`, `Timestamp.Second(second)` /
+  `Timestamp.PositioningStatus(status)`, `Type24BExtent.Dimensions(dimensions)`
+  / `Type24BExtent.MothershipMmsi(mmsi)`. `marlin.ais.PositioningStatus`
+  is the new int-backed enum of the timestamp statuses (`MANUAL_INPUT = 61`,
+  `DEAD_RECKONING = 62`, `INOPERATIVE = 63`, the wire codes).
+  `marlin.dataclasses` mirrors the variant classes as dataclasses nested
+  under a namespace class of the sum type's name
+  (`marlin.dataclasses.Timestamp.Second`), with an enum payload as its
+  integer value.
+- Type 5 payloads of 420 and 422 bits decode to `StaticAndVoyageA`
+  instead of raising `AisError`: the destination holds the whole
+  characters transmitted and `dte` is `FieldState.NotAvailable()`.
+
 ### Changed (BREAKING)
 
+- Every `marlin.ais` message attribute the wire can leave without a value
+  is a `marlin.field.FieldState` instead of an `Optional` value, a bare
+  `int` or a bare enum: a not-available code is `FieldState.NotAvailable()`,
+  an over-range code is `FieldState.AtLeast(bound)` with the bound in
+  engineering units (speed 102.2 kn, altitude 4094 m, draught 25.5 m,
+  dimensions 511 m / 63 m, where the bound used to pass through as a
+  value), and a code ITU-R M.1371-5 leaves undefined is
+  `FieldState.Invalid(code)` with the wire integer (a reserved navigation
+  status, EPFD or manoeuvre code, a latitude beyond ±90° by a code other
+  than not available, COG 3601..=4095, heading 360..=510, ETA month
+  13..=15, hour 25..=31, minute 61..=63). Read a field with `.value`
+  (`None` unless the state is `Value`), `isinstance` or `match`. Trap:
+  `if body.vessel_name:` is always true, `NotAvailable()` included;
+  port `if body.field is not None:` to `if body.field.value is not None:`
+  or to a state check. The one-bit flags, `mmsi`, `radio_status`,
+  `aton_status`, `AisVersion`, `AtonType` and `AltitudeSensor` stay plain.
+  Per shape:
+  - `timestamp` on Types 1/2/3, 9, 18, 19 and 21 is
+    `FieldState[Timestamp]` instead of a raw `int`: `Timestamp.Second(s)`
+    for 0..=59, `Timestamp.PositioningStatus(status)` for 61..=63,
+    `NotAvailable()` for 60.
+  - `PositionReportA.rate_of_turn` is `FieldState[RateOfTurn]`; the
+    `turn_direction` sibling attribute is removed (it lived one release,
+    0.2.0). Raw ±127 is `Value(RateOfTurn.NoIndicator(direction))`, -128
+    is `NotAvailable()`.
+  - `StaticDataB24B.extent: Type24BExtent` replaces the `dimensions` and
+    `mothership_mmsi` sibling attributes. The constructor's `extent`
+    defaults to `Type24BExtent.Dimensions(Dimensions())`.
+  - `Dimensions` and `Eta` carry a `FieldState[int]` per member; their
+    constructors accept `FieldState[int] | int | None` and default every
+    member to `NotAvailable()`.
+  - `ship_type` on Types 5, 19 and 24 Part B is `FieldState[int]`:
+    `NotAvailable()` for 0, every other code a value.
+  - `StaticAndVoyageA.dte` is `FieldState[bool]`: `NotAvailable()` on a
+    420- or 422-bit payload (see Added), `Value(...)` from 423 bits.
+    Types 9 and 19 keep `dte: bool`.
+  - Message constructors accept `FieldState[T] | T | None` per
+    field-state attribute, coerce a bare value to `Value` and `None` to
+    `NotAvailable()`, default every such keyword to `NotAvailable()`,
+    and raise the payload extraction error as is: `TypeError` for a
+    payload of the wrong type, `OverflowError` for an integer outside
+    the field's width. `Dimensions`, `Eta` and the extent default to
+    every member not available.
+  - Message `__repr__`s print the variant form
+    (`sog=FieldState.AtLeast(102.2)`).
+- `NavStatus.NOT_DEFINED`, `ManeuverIndicator.NOT_AVAILABLE`,
+  `ManeuverIndicator.RESERVED` and `EpfdType.UNDEFINED` are removed: the
+  not-available code is `FieldState.NotAvailable()` and a reserved code
+  is `FieldState.Invalid(code)` on the message. A reserved code used to
+  collapse onto `NOT_DEFINED` / `UNDEFINED`.
+- `marlin.dataclasses` AIS mirrors carry the `FieldState` mirrors on the
+  same attributes, with an enum payload stored as its integer value and
+  the sum types as their nested variant mirrors; `asdict` yields
+  `{"rate_of_turn": {"kind": "value", "value": {"deg_per_min": 19.7}}}`.
+  `to_dataclass` finds a mirror by the binding class's qualified name, so
+  `Type24BExtent.Dimensions` and `Dimensions` are told apart.
 - Every `marlin.nmea` message attribute but `talker` is a
   `marlin.field.FieldState` instead of an `Optional` value or a bare
   enum: an empty field is `FieldState.NotAvailable()`, text the decoder

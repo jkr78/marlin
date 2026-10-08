@@ -25,11 +25,13 @@ def describe(msg: AisMessage) -> str:
         return f"type={msg.type_tag} msg_type={body.msg_type}"
     mmsi = body.mmsi
     if isinstance(body, PositionReportA):
-        lat = body.latitude_deg
-        lon = body.longitude_deg
+        # `.value` is None unless the field holds a value: not available,
+        # over-range and invalid states print as None here.
+        lat = body.latitude_deg.value
+        lon = body.longitude_deg.value
         return f"mmsi={mmsi} type={msg.type_tag} lat={lat} lon={lon}"
     if isinstance(body, StaticAndVoyageA):
-        name = body.vessel_name
+        name = body.vessel_name.value
         return f"mmsi={mmsi} type={msg.type_tag} name={name!r}"
     return f"mmsi={mmsi} type={msg.type_tag}"
 

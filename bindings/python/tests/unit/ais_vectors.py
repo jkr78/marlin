@@ -46,6 +46,14 @@ AIVDM_TYPE1 = b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*23\r\n"
 AIVDM_TYPE1_ROT_PLUS_127 = b"!AIVDM,1,1,,A,11mg=5@Oh0000000000000000000,0*73\r\n"
 AIVDM_TYPE1_ROT_MINUS_127 = b"!AIVDM,1,1,,A,11mg=5@P@0000000000000000000,0*44\r\n"
 
+# Synthetic Type 1 payload (MMSI 123456789) whose every partitioned field
+# carries an undefined or over-range code: navigation status 9, SOG 1022,
+# longitude +181° + 1, latitude +91° + 1, COG 3601, heading 360, timestamp
+# 61, manoeuvre 3. Pinned by the Rust BitWriter test
+# `undefined_code_payload_armors_to_known_string` in
+# crates/marlin-ais/src/position_report_a.rs.
+AIVDM_TYPE1_INVALID_AND_OVER_RANGE = aivdm(1, 1, None, "A", b"11mg=5I0?v<tSF2l4Q@N4KAsP000", 0)
+
 # Type 5 (StaticAndVoyageA) two-fragment message from the gpsd AIS corpus,
 # same as the Rust crate's parser tests (crates/marlin-ais/src/parser.rs).
 AIVDM_TYPE5_FRAG1 = (

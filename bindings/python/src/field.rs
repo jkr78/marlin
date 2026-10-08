@@ -10,7 +10,7 @@
 //! [`to_py`] on the way out and [`from_py`] on the way in.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyModule, PyTuple};
+use pyo3::types::{PyModule, PyTuple, PyType};
 use pyo3::IntoPyObjectExt;
 
 use marlin_field::{FieldState, Invalid, Kind, RawCode};
@@ -214,6 +214,57 @@ pub(crate) fn repr_state<'py, T: IntoPyObject<'py>>(
     to_py(py, state)?.__repr__(py)
 }
 
+/// A constructor argument for a field-state attribute: absent or `None`
+/// is `NotAvailable`, a `FieldState` passes through, a bare value is
+/// `Value`; the payload is extracted to `T` and the extraction error is
+/// raised as is.
+pub(crate) fn field_arg<'py, T: FromPyObjectOwned<'py>>(
+    obj: Option<&Bound<'py, PyAny>>,
+) -> PyResult<FieldState<T>> {
+    obj.map_or(Ok(FieldState::NotAvailable), from_py)
+}
+
+/// A decoded state whose payload is a Rust enum, converted to the
+/// binding enum. The Rust enums are `#[non_exhaustive]`, so a variant
+/// these bindings do not know is an error, never a fabricated member.
+pub(crate) fn enum_state<R, P: TryFrom<R, Error = PyErr>>(
+    state: FieldState<R>,
+) -> PyResult<FieldState<P>> {
+    Ok(match state {
+        FieldState::Value(v) => FieldState::Value(P::try_from(v)?),
+        FieldState::AtLeast(v) => FieldState::AtLeast(P::try_from(v)?),
+        FieldState::NotAvailable => FieldState::NotAvailable,
+        FieldState::SenderError(code) => FieldState::SenderError(code),
+        FieldState::Invalid(why) => FieldState::Invalid(why),
+    })
+}
+
+/// The error for a Rust enum variant these bindings have no member for.
+pub(crate) fn unsupported_variant(enum_name: &str, variant: &dyn core::fmt::Debug) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(format!(
+        "marlin Python bindings encountered an unsupported {enum_name} variant {variant:?} — bindings need updating"
+    ))
+}
+
+/// Name the variant classes of a sum-type binding class after their
+/// variants.
+///
+/// The `pyo3` 0.27 macros name each variant class after the Rust enum
+/// and variant (`PyFieldState_Value`) and ignore the variant's
+/// `#[pyo3(name)]` for that purpose, so the classes are renamed here:
+/// `type(x).__name__` is the bare variant name (`Value`), which the
+/// dataclass converter keys on, and `__qualname__` is dotted
+/// (`FieldState.Value`).
+pub(crate) fn name_variants(base: &Bound<'_, PyType>, variants: &[&str]) -> PyResult<()> {
+    let base_name = base.name()?;
+    for name in variants {
+        let cls = base.getattr(name)?;
+        cls.setattr("__name__", name)?;
+        cls.setattr("__qualname__", format!("{base_name}.{name}"))?;
+    }
+    Ok(())
+}
+
 /// Extracts a payload to the field's Rust type. The extraction error type
 /// is only `Into<PyErr>`, not `From`, so `?` needs this adapter.
 fn extract_payload<'py, T: FromPyObjectOwned<'py>>(obj: &Bound<'py, PyAny>) -> PyResult<T> {
@@ -221,16 +272,9 @@ fn extract_payload<'py, T: FromPyObjectOwned<'py>>(obj: &Bound<'py, PyAny>) -> P
 }
 
 /// Register the `field` submodule on the given parent. Called from `lib.rs`.
-///
-/// The `pyo3` 0.27 macros name each variant class after the Rust enum and
-/// variant (`PyFieldState_Value`) and ignore the variant's `#[pyo3(name)]`
-/// for that purpose, so the five classes are renamed here:
-/// `type(x).__name__` is `Value`, which the dataclass converter keys on,
-/// and `__qualname__` is `FieldState.Value`.
 pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     let m = PyModule::new(py, "field")?;
     m.add_class::<PyFieldState>()?;
-    let base = py.get_type::<PyFieldState>();
     let one_of_each = [
         PyFieldState::Value { value: py.None() },
         PyFieldState::AtLeast { bound: py.None() },
@@ -238,11 +282,8 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
         PyFieldState::SenderError { code: 0 },
         PyFieldState::Invalid { code: None },
     ];
-    for name in one_of_each.iter().map(PyFieldState::variant_name) {
-        let cls = base.getattr(name)?;
-        cls.setattr("__name__", name)?;
-        cls.setattr("__qualname__", format!("FieldState.{name}"))?;
-    }
+    let names = one_of_each.each_ref().map(PyFieldState::variant_name);
+    name_variants(&py.get_type::<PyFieldState>(), &names)?;
     parent.add_submodule(&m)?;
     Ok(())
 }

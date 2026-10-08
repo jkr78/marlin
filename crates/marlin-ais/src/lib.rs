@@ -21,7 +21,12 @@
 //!   ([`PositionReportB`]), 19 ([`ExtendedPositionReportB`]), 21
 //!   ([`AidToNavigationReport`]), and 24 Parts A and B
 //!   ([`StaticDataB24A`], [`StaticDataB24B`]). Every other type
-//!   surfaces as [`AisMessageBody::Other`] with the raw bits.
+//!   surfaces as [`AisMessageBody::Other`] with the raw bits. Every
+//!   field the wire can put in a non-value state is a [`FieldState`]:
+//!   a value, an over-range bound (`AtLeast`), not available, or
+//!   invalid with the raw code. A field's value never fails the
+//!   message; a decode fails only for framing or a payload below the
+//!   type's floor.
 //! - **Multi-sentence reassembly** — [`AisReassembler`] joins
 //!   fragments keyed on `(channel, sequential_id)`;
 //!   [`AisFragmentParser`] runs the whole pipeline from bytes to
@@ -88,7 +93,9 @@ pub use sar_aircraft_position_report::{
     decode_sar_aircraft_position_report, AltitudeSensor, SarAircraftPositionReport,
     SAR_AIRCRAFT_POSITION_REPORT_BITS,
 };
-pub use shared_types::{is_auxiliary_craft_mmsi, sentinel, Dimensions, EpfdType};
+pub use shared_types::{
+    is_auxiliary_craft_mmsi, Dimensions, EpfdType, PositioningStatus, Timestamp,
+};
 pub use static_data_b::{
     decode_static_data_b, decode_static_data_b_24a, decode_static_data_b_24b, StaticDataB,
     StaticDataB24A, StaticDataB24B, Type24BExtent, STATIC_DATA_B_24A_BITS, STATIC_DATA_B_24B_BITS,
@@ -96,6 +103,10 @@ pub use static_data_b::{
 pub use static_voyage_a::{
     decode_static_and_voyage_a, AisVersion, Eta, StaticAndVoyageA, STATIC_VOYAGE_A_BITS,
 };
+
+// Re-export the field-state type every decoded field is read through, so
+// a caller needs no direct dependency on marlin-field.
+pub use marlin_field::{FieldState, Invalid, Kind, RawCode};
 
 // Re-export the envelope types a caller needs alongside this crate:
 // the sentence sources `AisFragmentParser` wraps (`Parser` for a source

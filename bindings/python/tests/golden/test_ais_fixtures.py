@@ -8,7 +8,8 @@ from typing import Any
 
 import pytest
 
-from marlin.ais import AisParser
+from marlin.ais import AisParser, RateOfTurn, Timestamp, Type24BExtent
+from marlin.field import FieldState
 
 # Two fixture directories: the envelope streams shared with the other
 # golden tests, and AIS-only vectors (gpsd-sourced; see fixtures/README.md).
@@ -26,9 +27,9 @@ def _is_getter(attr: Any) -> bool:
 
 
 def _to_json_safe(obj: Any) -> Any:
-    # Same implementation as in test_nmea_fixtures.py. If you prefer
-    # de-duplication, lift to a shared module under tests/golden/_util.py;
-    # two copies at ~25 lines each is acceptable for v0.1.
+    # Same shape as in test_nmea_fixtures.py, plus the three AIS sum types.
+    # If you prefer de-duplication, lift to a shared module under
+    # tests/golden/_util.py; two copies at ~30 lines each is acceptable.
     if obj is None:
         return None
     if isinstance(obj, (bool, int, float, str)):
@@ -39,6 +40,20 @@ def _to_json_safe(obj: Any) -> Any:
         return [_to_json_safe(x) for x in obj]
     if isinstance(obj, dict):
         return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, FieldState):
+        # A field state: the variant class, its tag and its own payload
+        # fields (`value`, `bound`, `code`), not the computed accessors.
+        state: dict[str, Any] = {"__class__": type(obj).__name__, "kind": obj.kind}
+        for name in getattr(type(obj), "__match_args__", ()):
+            state[name] = _to_json_safe(getattr(obj, name))
+        return state
+    if isinstance(obj, (RateOfTurn, Timestamp, Type24BExtent)):
+        # A sum type in field position: the variant's qualified name and
+        # its own payload fields.
+        variant: dict[str, Any] = {"__class__": type(obj).__qualname__}
+        for name in getattr(type(obj), "__match_args__", ()):
+            variant[name] = _to_json_safe(getattr(obj, name))
+        return variant
     try:
         return {"__enum__": type(obj).__name__, "value": int(obj)}
     except (TypeError, ValueError):
