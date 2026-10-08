@@ -8,6 +8,22 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Align unit suffixes on numeric field names across the three crates
+  AIS mixes `latitude_deg` with `speed_over_ground` and `true_heading`;
+  KLV spells the unit out (`_degrees`, `_meters`, `_mps`); 0183 has its
+  own mix. One convention, applied everywhere, is a public rename of
+  most numeric fields, so it only makes sense inside a breaking release.
+  0.3.0 already changes every field's type for the field-state work and
+  is the natural moment; the migration ticket of that effort should
+  decide whether this rides along. [workspace][0.3.0][draft]
+- [ ] Decide what a duplicated tag in one ST 0601 local set decodes to
+  `marlin_klv::decode` lets a later occurrence of a typed tag silently
+  overwrite an earlier one, so a set with two Tag 13 items yields the
+  second with no trace of the first. May not need fixing: ST 0601 gives
+  no rule to cite, no captured stream has shown a duplicate, and the
+  decode loop is rewritten for 0.3.0 anyway. Re-check the standard
+  before choosing between last-wins, first-wins and the invalid field
+  state. [marlin-klv][draft]
 - [ ] Expose the nmea-0183 field helpers for downstream proprietary decoders
   The crate docs promise an extension story: a downstream crate builds
   its own enum and delegates to the public per-sentence decoders. A
