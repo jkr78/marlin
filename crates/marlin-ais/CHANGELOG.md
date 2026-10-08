@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `Timestamp` and `PositioningStatus` (re-exported from the crate root):
+  the decoded timestamp field of Types 1/2/3, 9, 18, 19 and 21, a
+  second or one of the three positioning-system statuses (manual input,
+  dead reckoning, inoperative), where the field used to be a raw `u8`.
+  `PositioningStatus::code()` returns the 6-bit wire code.
+- Re-exports of `marlin_field::{FieldState, Invalid, Kind, RawCode}` at
+  the crate root; the crate depends on `marlin-field` from 0.3.0.
+- Type 5 payloads of 420 and 422 bits decode. Transmitters in the wild
+  ship them, and they used to fail with `PayloadTooShort`; the floor
+  `STATIC_VOYAGE_A_BITS` is 420. On such a payload the destination holds
+  the whole characters transmitted (the partial character is dropped)
+  and `dte` is not available because bit 422 lies past the payload.
+
+### Fixed
+
+- The `imo_number` doc comment claimed the range `1..=999_999_999`; ITU
+  defines the whole 30-bit range, flag-state numbers included, and the
+  decoder always passed every non-zero code through.
+
+### Changed (BREAKING)
+
+- Every field the wire can put in a non-value state is a `FieldState<T>`
+  instead of an `Option<T>`, a bare `u8` or a bare enum: a not-available
+  code is `NotAvailable`, an over-range code is `AtLeast(bound)` with
+  the bound in engineering units, and a code inside the field's width
+  that ITU-R M.1371-5 leaves undefined is `Invalid(Undefined(RawCode))`
+  with the wire integer as the raw code. `value()` is the one-line
+  migration where `Option<T>` was read before. One-bit flags, the MMSI,
+  the radio status, the AtoN status, `AisVersion`, `AtonType`,
+  `AltitudeSensor` and `Type24BExtent::MothershipMmsi` are plain fields
+  and keep their bare types. Per rule:
+  - Longitude and latitude: `+181°` / `+91°` → `NotAvailable`; any
+    other code beyond ±180° / ±90° → invalid with the raw code in
+    1/10 000 minute.
+  - Course over ground: `3600` → `NotAvailable`; `3601..=4095` →
+    invalid. True heading: `511` → `NotAvailable`; `360..=510` →
+    invalid.
+  - Vessel speed over ground (Types 1/2/3, 18, 19): `1023` →
+    `NotAvailable`; `1022` → `AtLeast(102.2)`, where it used to decode
+    as the plain value 102.2. Type 9 speed over ground and altitude:
+    `1023` / `4095` → `NotAvailable`; `1022` / `4094` → `AtLeast(1022)`
+    / `AtLeast(4094)`, where they used to pass through as values.
+  - Draught: `0` → `NotAvailable`; `255` → `AtLeast(25.5)`, where it
+    used to decode as the plain value 25.5.
+  - `Dimensions` members: `0` → `NotAvailable`; `511` / `63` →
+    `AtLeast(511)` / `AtLeast(63)`, where they used to pass through as
+    values. `Eta` members: month `0`, day `0`, hour `24`, minute `60`
+    → `NotAvailable`; month `13..=15`, hour `25..=31`, minute `61..=63`
+    → invalid. Both structs lose `Default`.
+  - IMO number: `0` → `NotAvailable`; every other 30-bit code is a
+    value.
+  - `ship_type` (Types 5, 19, 24 Part B) is `FieldState<u8>`: `0` →
+    `NotAvailable`; every other code, Table 53's regional and reserved
+    ranges included, is a value.
+  - `navigation_status`, `special_maneuver` and `epfd` are
+    `FieldState<E>`: `15` / `0` / `0` → `NotAvailable`; the reserved
+    codes `9..=13` / `3` / `9..=14` → invalid with the raw code.
+  - `rate_of_turn` is `FieldState<RateOfTurn>`: `-128` →
+    `NotAvailable`; `±127` stays `RateOfTurn::NoIndicator`, a value.
+  - `timestamp` is `FieldState<Timestamp>`: `60` → `NotAvailable`;
+    `61..=63` → `Timestamp::PositioningStatus`, a value; `0..=59` →
+    `Timestamp::Second`.
+  - `vessel_name`, `call_sign`, `destination`, `vendor_id` and the Type
+    21 `name` are `FieldState<String>`: all padding → `NotAvailable`.
+
+  Exceptions and removals that come with the rule:
+  - `NavStatus::NotDefined` and `NavStatus::Reserved(u8)`,
+    `ManeuverIndicator::NotAvailable` and `ManeuverIndicator::Reserved`,
+    `EpfdType::Undefined` and `EpfdType::Reserved(u8)` are removed: the
+    not-available code is the field state and a reserved code is the
+    invalid field state with the raw code. `code()` loses those arms.
+    The three enums stay `#[non_exhaustive]`.
+  - `marlin_ais::sentinel` leaves the public API: the state a field is
+    in is on the field, so there is no code to compare against. The
+    0.2.0 constant `SOG_OVER_RANGE_KN` is gone with it; the bound is
+    inside `AtLeast`.
+  - Type 5 `dte` is `FieldState<bool>`: `NotAvailable` on a 420- or
+    422-bit payload (see Added), `Value` from 423 bits. Types 9 and 19
+    keep `dte: bool`: their floors cover the bit.
+  - `AisError`'s docs state the failure rule: a decode fails only for
+    framing, the wrapper, the armor, a payload below the floor or
+    reassembly; a field's value never fails the message.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added

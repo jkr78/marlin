@@ -3,26 +3,58 @@
     "__class__": "AisMessage",
     "body": {
       "__class__": "PositionReportA",
-      "course_over_ground": 110.69999694824219,
-      "latitude_deg": 51.229636666666664,
-      "longitude_deg": 4.407046666666667,
+      "course_over_ground": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 110.69999694824219
+      },
+      "latitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 51.229636666666664
+      },
+      "longitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 4.407046666666667
+      },
       "mmsi": 244708736,
       "navigation_status": {
-        "__enum__": "NavStatus",
-        "value": 0
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__enum__": "NavStatus",
+          "value": 0
+        }
       },
       "position_accuracy": true,
       "radio_status": 49180,
       "raim": true,
-      "rate_of_turn": null,
-      "special_maneuver": {
-        "__enum__": "ManeuverIndicator",
-        "value": 0
+      "rate_of_turn": {
+        "__class__": "NotAvailable",
+        "kind": "not_available"
       },
-      "speed_over_ground": 0.0,
-      "timestamp": 40,
-      "true_heading": null,
-      "turn_direction": null
+      "special_maneuver": {
+        "__class__": "NotAvailable",
+        "kind": "not_available"
+      },
+      "speed_over_ground": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 0.0
+      },
+      "timestamp": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__class__": "Timestamp.Second",
+          "second": 40
+        }
+      },
+      "true_heading": {
+        "__class__": "NotAvailable",
+        "kind": "not_available"
+      }
     },
     "is_own_ship": false,
     "type_tag": "type1"

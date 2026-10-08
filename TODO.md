@@ -186,12 +186,12 @@ track deliverables (not conversational state).
   5, 18, 24) with inline `w.u(64, 0)` padding (Types 19 and 9).
   `build_min_payload(msg_type, mmsi, total_bits)` landed with the Type 9/21 feature and the
   Type 21 routing tests use it; the other eight builders still need converting
-  to it. The decoder modules mix positional builders under `too_many_arguments`
-  (`build_prb`, `build_pra`, `build_part_b`) with the `Fields` struct + `Default`
-  + struct-update form that `sar_aircraft_position_report.rs` (Type 9) and
-  `aid_to_navigation_report.rs` (Type 21) use. Keep the `Fields` form (each
-  test names only what it varies, no allow needed) and convert the siblings
-  when their tests are next touched. Raised by a Standards review.
+  to it. The decoder modules are done: the field-state migration (2026-10-08)
+  moved `build_pra`, `build_prb`, `build_t19`, `build_type5` and `build_part_b`
+  to the `Fields` struct + `Default` + struct-update form that
+  `sar_aircraft_position_report.rs` (Type 9) and `aid_to_navigation_report.rs`
+  (Type 21) use (each test names only what it varies, no allow needed). What
+  remains is the `message.rs` routing builders. Raised by a Standards review.
   [ais][ready]
 - [x] Make `just py-ci` self-sufficient **DONE 2026-10-04**
   `just py-ci` failed on a fresh checkout: `maturin` and `pyright` came from
@@ -211,7 +211,13 @@ track deliverables (not conversational state).
   `position`-plus-`remove` reshaping. Judgement call: the current form is clippy
   clean and the fallbacks are unreachable, so re-check whether the ceremony
   still bothers anyone before doing the work.
-- [ ] Add a three-way sentinel reading across all AIS types
+- [x] Add a three-way sentinel reading across all AIS types **DONE 2026-10-08**
+  Landed as the field state (ADR-0008): every AIS field the wire can put in a
+  non-value state is a `FieldState<T>` with the raw code inside the invalid
+  state, the timestamp is `FieldState<Timestamp>` with codes 61–63 as
+  `PositioningStatus`, and the two 0183 status-field smells closed with the
+  0183 migration (an empty status byte is not available; GGA quality of two or
+  more bytes is invalid, never a sentence failure).
   value / not available / invalid on every numeric field, with a typed timestamp
   (codes 60–63) folded in. Requested by nexus; deferred from the Type 9/21 feature
   because it changes every field type (breaking) and revises the sentinel policy,

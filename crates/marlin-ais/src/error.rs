@@ -2,6 +2,15 @@
 
 /// Errors that can occur while decoding AIS sentences.
 ///
+/// Every variant is a message failure for a structural reason: the
+/// envelope, the AIVDM wrapper, the armor, a payload below the message
+/// type's floor, or multi-sentence reassembly. A field's value never
+/// fails the message: a sentinel, reserved or out-of-range code decodes
+/// to the field's [`FieldState`](crate::FieldState), and a field whose
+/// bits lie past the payload end is not available. Trailing bits past
+/// the type's length are ignored, and an unknown message type is a raw
+/// payload, not an error.
+///
 /// `#[non_exhaustive]` so new variants can be added in minor versions
 /// without a breaking change. Consumers must include a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -34,8 +43,8 @@ pub enum AisError {
     /// The payload has fewer bits than the operation needs. Surfaces
     /// from `armor::decode` when the declared fill-bits count exceeds
     /// the payload's gross bit count, and from per-type decoders when
-    /// `total_bits` is below the minimum the chosen message layout
-    /// requires (e.g. 160 bits for Type 24 Part A, 168 for Part B).
+    /// `total_bits` is below the chosen message type's floor (e.g. 160
+    /// bits for Type 24 Part A, 168 for Part B, 420 for Type 5).
     #[error("payload too short for the chosen decoder")]
     PayloadTooShort,
 

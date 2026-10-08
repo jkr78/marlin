@@ -11,8 +11,12 @@
 
 use alloc::string::String;
 
-use crate::shared_types::{lat_deg, lon_deg, read_dimensions, trim_ais_string};
-use crate::{AisError, BitReader, Dimensions, EpfdType};
+use marlin_field::FieldState;
+
+use crate::shared_types::{
+    read_dimensions, read_epfd, timestamp, trim_ais_string, LATITUDE, LONGITUDE,
+};
+use crate::{AisError, BitReader, Dimensions, EpfdType, Timestamp};
 
 /// Minimum valid payload size for Type 21: the fixed part without a
 /// name extension (ITU-R M.1371-5 Annex 8 §3.19, Table 73).
@@ -195,9 +199,11 @@ impl AtonType {
 
 /// Decoded aid-to-navigation report.
 ///
-/// Not-available codes decode to `None`, over-range codes pass through
-/// as the value they name (ADR-0001; codes in [`crate::sentinel`]). The
-/// flags and the 8-bit status are exposed as the wire carries them.
+/// Every field the wire can leave without a value is a [`FieldState`]:
+/// a not-available code is `NotAvailable`, an over-range dimension is
+/// `AtLeast(bound)`, and a code the specification leaves undefined is
+/// invalid with the raw code. The flags and the 8-bit status are plain
+/// fields, exposed as the wire carries them.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::struct_excessive_bools)] // flags are the wire-format reality
 pub struct AidToNavigationReport {
@@ -207,28 +213,30 @@ pub struct AidToNavigationReport {
     pub aton_type: AtonType,
     /// The 20-character name joined with the optional extension (up to
     /// 14 more characters), then trimmed of trailing `@` and spaces.
-    /// `None` when the result is all padding. An `@` inside the name is
-    /// kept: only the tail is trimmed.
-    pub name: Option<String>,
+    /// Not available when the result is all padding. An `@` inside the
+    /// name is kept: only the tail is trimmed.
+    pub name: FieldState<String>,
     /// Position accuracy flag: `true` for DGNSS-corrected fixes.
     pub position_accuracy: bool,
-    /// Longitude in signed decimal degrees. `None` on sentinel `181°`.
-    pub longitude_deg: Option<f64>,
-    /// Latitude in signed decimal degrees. `None` on sentinel `91°`.
-    pub latitude_deg: Option<f64>,
-    /// Extent from the reported position. All `None` for virtual AtoN
-    /// and reference points (ITU: A = B = C = D = 0). 511 m / 63 m mean
-    /// "or greater" and are kept.
+    /// Longitude in signed decimal degrees. Not available on `181°`;
+    /// invalid with the raw code on any other code beyond ±180°.
+    pub longitude_deg: FieldState<f64>,
+    /// Latitude in signed decimal degrees. Not available on `91°`;
+    /// invalid with the raw code on any other code beyond ±90°.
+    pub latitude_deg: FieldState<f64>,
+    /// Extent from the reported position, one field state per member.
+    /// All not available for virtual AtoN and reference points (ITU:
+    /// A = B = C = D = 0); 511 m / 63 m are the over-range bounds.
     pub dimensions: Dimensions,
-    /// Electronic position-fixing device type.
-    pub epfd: EpfdType,
-    /// UTC second within the minute (0..=59); `60` = not available;
-    /// `61..=63` carry positioning-system status (codes in
-    /// [`crate::sentinel`]). Kept as `u8` for full fidelity.
-    pub timestamp: u8,
+    /// Electronic position-fixing device type. Not available on `0`;
+    /// invalid with the raw code on the reserved codes `9..=14`.
+    pub epfd: FieldState<EpfdType>,
+    /// Second of the UTC minute of the position fix, or a
+    /// positioning-system status (codes 61..=63). Not available on `60`.
+    pub timestamp: FieldState<Timestamp>,
     /// Off-position indicator. Floating AtoN only
-    /// ([`AtonType::is_floating`]); ITU: valid only when
-    /// `timestamp <= 59`.
+    /// ([`AtonType::is_floating`]); ITU: meaningful only when
+    /// `timestamp` is a second.
     pub off_position: bool,
     /// Raw 8-bit AtoN status. ITU: "reserved for the indication of the
     /// AtoN status"; the layout is IEC 62288 Annex L, not ITU text.
@@ -266,11 +274,11 @@ pub fn decode_aid_to_navigation_report(
     let aton_type = AtonType::from_u5((r.u(5) & 0x1F) as u8);
     let mut name = r.string(NAME_CHARS);
     let position_accuracy = r.b();
-    let longitude_deg = lon_deg(r.i(28));
-    let latitude_deg = lat_deg(r.i(27));
+    let longitude_deg = LONGITUDE.read_signed(r.i(28));
+    let latitude_deg = LATITUDE.read_signed(r.i(27));
     let dimensions = read_dimensions(&mut r);
-    let epfd = EpfdType::from_u4((r.u(4) & 0x0F) as u8);
-    let timestamp = (r.u(6) & 0x3F) as u8;
+    let epfd = read_epfd(&mut r);
+    let timestamp = timestamp(r.u(6));
     let off_position = r.b();
     let aton_status = (r.u(8) & 0xFF) as u8;
     let raim = r.b();
@@ -319,8 +327,10 @@ mod tests {
 
     use super::*;
     use crate::shared_types::sentinel;
-    use crate::testing::{build_aivdm, write_ais_str, BitWriter};
-    use crate::{AisFragmentParser, AisMessageBody, Streaming};
+    use crate::testing::{
+        build_aivdm, dimensions_not_available, text, undefined, write_ais_str, BitWriter,
+    };
+    use crate::{AisFragmentParser, AisMessageBody, PositioningStatus, Streaming};
 
     /// Every Table 73 field a test may want to vary. The spare bit is
     /// zero. `name` is the 20-character fixed field (`@`-padded when
@@ -436,21 +446,21 @@ mod tests {
         let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
         assert_eq!(msg.mmsi, 992_471_234);
         assert_eq!(msg.aton_type, AtonType::PortHandMark);
-        assert_eq!(msg.name.as_deref(), Some("RED BUOY 7"));
+        assert_eq!(msg.name, text("RED BUOY 7"));
         assert!(msg.position_accuracy);
-        assert!((msg.longitude_deg.unwrap() - 11.0).abs() < 1e-4);
-        assert!((msg.latitude_deg.unwrap() + 4.8).abs() < 1e-4);
+        assert!((msg.longitude_deg.value().unwrap() - 11.0).abs() < 1e-4);
+        assert!((msg.latitude_deg.value().unwrap() + 4.8).abs() < 1e-4);
         assert_eq!(
             msg.dimensions,
             Dimensions {
-                to_bow_m: Some(3),
-                to_stern_m: Some(4),
-                to_port_m: Some(1),
-                to_starboard_m: Some(2),
+                to_bow_m: FieldState::Value(3),
+                to_stern_m: FieldState::Value(4),
+                to_port_m: FieldState::Value(1),
+                to_starboard_m: FieldState::Value(2),
             }
         );
-        assert_eq!(msg.epfd, EpfdType::Gps);
-        assert_eq!(msg.timestamp, 42);
+        assert_eq!(msg.epfd, FieldState::Value(EpfdType::Gps));
+        assert_eq!(msg.timestamp, FieldState::Value(Timestamp::Second(42)));
         assert!(msg.off_position);
         assert_eq!(msg.aton_status, 0xA5);
         assert!(msg.raim);
@@ -474,7 +484,7 @@ mod tests {
             let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
             let mut expected = String::from("TWENTY CHARACTER NAM");
             expected.push_str(core::str::from_utf8(extension).unwrap());
-            assert_eq!(msg.name.as_deref(), Some(expected.as_str()));
+            assert_eq!(msg.name, FieldState::Value(expected));
         }
     }
 
@@ -499,7 +509,7 @@ mod tests {
         assert_eq!(total_4, 296);
         let msg_3 = decode_aid_to_navigation_report(&bits_3, total_3).unwrap();
         let msg_4 = decode_aid_to_navigation_report(&bits_4, total_4).unwrap();
-        assert_eq!(msg_3.name.as_deref(), Some("TWENTY CHARACTER NAMXYZ"));
+        assert_eq!(msg_3.name, text("TWENTY CHARACTER NAMXYZ"));
         assert_eq!(msg_3.name, msg_4.name);
     }
 
@@ -515,14 +525,11 @@ mod tests {
         });
         assert_eq!(total, 368);
         let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
-        assert_eq!(
-            msg.name.as_deref(),
-            Some("TWENTY CHARACTER NAMABCDEFGHIJKLMN")
-        );
+        assert_eq!(msg.name, text("TWENTY CHARACTER NAMABCDEFGHIJKLMN"));
     }
 
     #[test]
-    fn name_all_padding_is_none() {
+    fn name_all_padding_is_not_available() {
         let (bits, total) = build_type21(&Fields {
             name: b"",
             extension: b"@@",
@@ -530,11 +537,11 @@ mod tests {
             ..Fields::default()
         });
         let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
-        assert_eq!(msg.name, None);
+        assert_eq!(msg.name, FieldState::NotAvailable);
     }
 
     #[test]
-    fn virtual_aton_zero_dimensions_read_none() {
+    fn virtual_aton_zero_dimensions_read_not_available() {
         let (bits, total) = build_type21(&Fields {
             aton_type: 30, // special mark
             virtual_aton: true,
@@ -546,40 +553,120 @@ mod tests {
         });
         let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
         assert!(msg.virtual_aton);
-        assert_eq!(msg.dimensions, Dimensions::default());
+        assert_eq!(msg.dimensions, dimensions_not_available());
     }
 
     #[test]
-    fn over_range_dimensions_are_kept() {
+    fn over_range_dimensions_are_bounds_and_neighbours_values() {
         let (bits, total) = build_type21(&Fields {
             to_bow: sentinel::DIMENSION_LONG_OVER_RANGE,
-            to_stern: sentinel::DIMENSION_LONG_OVER_RANGE,
+            to_stern: 510,
             to_port: sentinel::DIMENSION_SHORT_OVER_RANGE,
-            to_starboard: sentinel::DIMENSION_SHORT_OVER_RANGE,
+            to_starboard: 62,
             ..Fields::default()
         });
         let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
         assert_eq!(
             msg.dimensions,
             Dimensions {
-                to_bow_m: Some(511),
-                to_stern_m: Some(511),
-                to_port_m: Some(63),
-                to_starboard_m: Some(63),
+                to_bow_m: FieldState::AtLeast(511),
+                to_stern_m: FieldState::Value(510),
+                to_port_m: FieldState::AtLeast(63),
+                to_starboard_m: FieldState::Value(62),
             }
         );
     }
 
     #[test]
-    fn not_available_position_decodes_to_none() {
+    fn every_not_available_code_decodes_to_not_available() {
         let (bits, total) = build_type21(&Fields {
             lon_raw: sentinel::LON_NOT_AVAILABLE,
             lat_raw: sentinel::LAT_NOT_AVAILABLE,
+            epfd: 0,
+            timestamp: sentinel::TIMESTAMP_NOT_AVAILABLE,
             ..Fields::default()
         });
         let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
-        assert_eq!(msg.longitude_deg, None);
-        assert_eq!(msg.latitude_deg, None);
+        assert_eq!(msg.name, FieldState::NotAvailable);
+        assert_eq!(msg.longitude_deg, FieldState::NotAvailable);
+        assert_eq!(msg.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(msg.dimensions, dimensions_not_available());
+        assert_eq!(msg.epfd, FieldState::NotAvailable);
+        assert_eq!(msg.timestamp, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn longitude_and_latitude_rows() {
+        let east = 180 * 600_000;
+        for (raw, expected) in [
+            (east, FieldState::Value(180.0)),
+            (-east, FieldState::Value(-180.0)),
+            (east + 1, FieldState::Invalid(undefined(east + 1))),
+            (sentinel::LON_NOT_AVAILABLE, FieldState::NotAvailable),
+        ] {
+            let (bits, total) = build_type21(&Fields {
+                lon_raw: raw,
+                ..Fields::default()
+            });
+            let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
+            assert_eq!(msg.longitude_deg, expected, "lon raw {raw}");
+        }
+        let north = 90 * 600_000;
+        for (raw, expected) in [
+            (north, FieldState::Value(90.0)),
+            (-north, FieldState::Value(-90.0)),
+            (-north - 1, FieldState::Invalid(undefined(-north - 1))),
+            (sentinel::LAT_NOT_AVAILABLE, FieldState::NotAvailable),
+        ] {
+            let (bits, total) = build_type21(&Fields {
+                lat_raw: raw,
+                ..Fields::default()
+            });
+            let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
+            assert_eq!(msg.latitude_deg, expected, "lat raw {raw}");
+        }
+    }
+
+    #[test]
+    fn epfd_rows() {
+        for (raw, expected) in [
+            (0, FieldState::NotAvailable),
+            (1, FieldState::Value(EpfdType::Gps)),
+            (9, FieldState::Invalid(undefined(9))),
+            (14, FieldState::Invalid(undefined(14))),
+            (15, FieldState::Value(EpfdType::InternalGnss)),
+        ] {
+            let (bits, total) = build_type21(&Fields {
+                epfd: raw,
+                ..Fields::default()
+            });
+            let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
+            assert_eq!(msg.epfd, expected, "raw {raw}");
+        }
+    }
+
+    #[test]
+    fn timestamp_rows() {
+        for (raw, expected) in [
+            (0, FieldState::Value(Timestamp::Second(0))),
+            (59, FieldState::Value(Timestamp::Second(59))),
+            (sentinel::TIMESTAMP_NOT_AVAILABLE, FieldState::NotAvailable),
+            (
+                sentinel::TIMESTAMP_MANUAL_INPUT,
+                FieldState::Value(Timestamp::PositioningStatus(PositioningStatus::ManualInput)),
+            ),
+            (
+                sentinel::TIMESTAMP_INOPERATIVE,
+                FieldState::Value(Timestamp::PositioningStatus(PositioningStatus::Inoperative)),
+            ),
+        ] {
+            let (bits, total) = build_type21(&Fields {
+                timestamp: raw,
+                ..Fields::default()
+            });
+            let msg = decode_aid_to_navigation_report(&bits, total).unwrap();
+            assert_eq!(msg.timestamp, expected, "raw {raw}");
+        }
     }
 
     #[test]
@@ -648,24 +735,21 @@ mod tests {
         assert_eq!(aton.mmsi, 123_456_789);
         assert_eq!(aton.aton_type, AtonType::CardinalMarkNorth);
         assert!(aton.aton_type.is_floating());
-        assert_eq!(
-            aton.name.as_deref(),
-            Some("CHINA ROSE MURPHY EXPRESS ALERT")
-        );
+        assert_eq!(aton.name, text("CHINA ROSE MURPHY EXPRESS ALERT"));
         assert!(!aton.position_accuracy);
-        assert!((aton.longitude_deg.unwrap() + 122.698_592).abs() < 1e-6);
-        assert!((aton.latitude_deg.unwrap() - 47.920_618).abs() < 1e-6);
+        assert!((aton.longitude_deg.value().unwrap() + 122.698_592).abs() < 1e-6);
+        assert!((aton.latitude_deg.value().unwrap() - 47.920_618).abs() < 1e-6);
         assert_eq!(
             aton.dimensions,
             Dimensions {
-                to_bow_m: Some(5),
-                to_stern_m: Some(5),
-                to_port_m: Some(5),
-                to_starboard_m: Some(5),
+                to_bow_m: FieldState::Value(5),
+                to_stern_m: FieldState::Value(5),
+                to_port_m: FieldState::Value(5),
+                to_starboard_m: FieldState::Value(5),
             }
         );
-        assert_eq!(aton.epfd, EpfdType::Gps);
-        assert_eq!(aton.timestamp, 50);
+        assert_eq!(aton.epfd, FieldState::Value(EpfdType::Gps));
+        assert_eq!(aton.timestamp, FieldState::Value(Timestamp::Second(50)));
         assert!(!aton.off_position);
         assert_eq!(aton.aton_status, 165);
         assert!(!aton.raim);
@@ -705,21 +789,21 @@ mod tests {
         };
         assert_eq!(aton.mmsi, 4_000_003);
         assert_eq!(aton.aton_type, AtonType::SpecialMark);
-        assert_eq!(aton.name.as_deref(), Some("IBC G BUOY@?????????"));
+        assert_eq!(aton.name, text("IBC G BUOY@?????????"));
         assert!(aton.position_accuracy);
-        assert!((aton.longitude_deg.unwrap() - 126.572_226_7).abs() < 1e-6);
-        assert!((aton.latitude_deg.unwrap() - 37.414_466_7).abs() < 1e-6);
+        assert!((aton.longitude_deg.value().unwrap() - 126.572_226_7).abs() < 1e-6);
+        assert!((aton.latitude_deg.value().unwrap() - 37.414_466_7).abs() < 1e-6);
         assert_eq!(
             aton.dimensions,
             Dimensions {
-                to_bow_m: Some(2),
-                to_stern_m: Some(2),
-                to_port_m: Some(2),
-                to_starboard_m: Some(2),
+                to_bow_m: FieldState::Value(2),
+                to_stern_m: FieldState::Value(2),
+                to_port_m: FieldState::Value(2),
+                to_starboard_m: FieldState::Value(2),
             }
         );
-        assert_eq!(aton.epfd, EpfdType::Gps);
-        assert_eq!(aton.timestamp, 31);
+        assert_eq!(aton.epfd, FieldState::Value(EpfdType::Gps));
+        assert_eq!(aton.timestamp, FieldState::Value(Timestamp::Second(31)));
         assert_eq!(aton.aton_status, 0);
     }
 }

@@ -12,13 +12,6 @@ import marlin.dataclasses
 # The converter's own list: a module missing from it is not converted at all.
 BINDING_MODULES = marlin.dataclasses._BINDING_MODULES
 
-DATACLASS_MIRRORS = sorted(
-    name
-    for name, obj in vars(marlin.dataclasses).items()
-    if isinstance(obj, type) and dataclasses.is_dataclass(obj)
-)
-
-
 def binding_classes() -> list[type]:
     """Every public class of the binding modules, exceptions left out.
 
@@ -53,16 +46,19 @@ def is_variant_class(binding_class: type) -> bool:
 def binding_fields(binding_class: type) -> set[str]:
     """The read-only data attributes PyO3 exposes, methods left out.
 
-    For a variant class, the data is the variant's own fields plus the
-    `kind` tag; the base class's other getters (`value`, `value_or_bound`)
-    are accessors computed across states, not data a mirror carries.
+    For a variant class, the data is the variant's own fields plus the sum
+    type's `kind` tag where it has one (`FieldState`); the base class's
+    other getters (`value`, `value_or_bound`) are accessors computed across
+    states, not data a mirror carries.
     """
     if is_variant_class(binding_class):
-        return {
+        own = {
             name
             for name, obj in vars(binding_class).items()
             if not name.startswith("_") and isinstance(obj, types.GetSetDescriptorType)
-        } | {"kind"}
+        }
+        tag = {"kind"} if hasattr(binding_class, "kind") else set()
+        return own | tag
     return {
         name
         for name in dir(binding_class)
@@ -73,17 +69,46 @@ def binding_fields(binding_class: type) -> set[str]:
     }
 
 
-def test_no_binding_class_name_repeats_across_modules() -> None:
-    names = [cls.__name__ for cls in binding_classes()]
+def mirror_classes() -> list[type]:
+    """Every dataclass mirror: the module-level ones and those nested under
+    a namespace class named after a sum type (`Type24BExtent.Dimensions`)."""
+    mirrors = []
+    for obj in vars(marlin.dataclasses).values():
+        if not isinstance(obj, type):
+            continue
+        if dataclasses.is_dataclass(obj):
+            mirrors.append(obj)
+        else:
+            mirrors.extend(
+                nested
+                for nested in vars(obj).values()
+                if isinstance(nested, type) and dataclasses.is_dataclass(nested)
+            )
+    return mirrors
+
+
+MIRROR_QUALNAMES = sorted(cls.__qualname__ for cls in mirror_classes())
+
+
+def test_no_binding_class_qualified_name_repeats_across_modules() -> None:
+    # The converter keys on the qualified name: `Type24BExtent.Dimensions`
+    # and `Dimensions` may coexist, two classes called `Dimensions` may not.
+    names = [cls.__qualname__ for cls in binding_classes()]
 
     assert sorted(names) == sorted(set(names))
 
 
-@pytest.mark.parametrize("mirror_name", DATACLASS_MIRRORS)
-def test_dataclass_mirror_has_the_binding_class_fields(mirror_name: str) -> None:
-    by_name = {cls.__name__: cls for cls in binding_classes()}
-    mirror = getattr(marlin.dataclasses, mirror_name)
+@pytest.mark.parametrize("mirror_qualname", MIRROR_QUALNAMES)
+def test_dataclass_mirror_has_the_binding_class_fields(mirror_qualname: str) -> None:
+    by_qualname = {cls.__qualname__: cls for cls in binding_classes()}
+    # The FieldState mirrors are flat (`Value`), their binding classes nested.
+    binding_qualname = (
+        f"FieldState.{mirror_qualname}"
+        if mirror_qualname in {"Value", "AtLeast", "NotAvailable", "SenderError", "Invalid"}
+        else mirror_qualname
+    )
+    mirror = {cls.__qualname__: cls for cls in mirror_classes()}[mirror_qualname]
 
-    assert mirror_name in by_name, "dataclass mirror without a binding class"
+    assert binding_qualname in by_qualname, "dataclass mirror without a binding class"
     mirror_fields = {f.name for f in dataclasses.fields(mirror)}
-    assert mirror_fields == binding_fields(by_name[mirror_name])
+    assert mirror_fields == binding_fields(by_qualname[binding_qualname])

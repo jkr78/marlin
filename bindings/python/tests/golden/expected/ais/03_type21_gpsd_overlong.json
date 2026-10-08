@@ -11,23 +11,62 @@
       },
       "dimensions": {
         "__class__": "Dimensions",
-        "to_bow_m": 2,
-        "to_port_m": 2,
-        "to_starboard_m": 2,
-        "to_stern_m": 2
+        "to_bow_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 2
+        },
+        "to_port_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 2
+        },
+        "to_starboard_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 2
+        },
+        "to_stern_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 2
+        }
       },
       "epfd": {
-        "__enum__": "EpfdType",
-        "value": 1
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__enum__": "EpfdType",
+          "value": 1
+        }
       },
-      "latitude_deg": 37.41446666666667,
-      "longitude_deg": 126.57222666666667,
+      "latitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 37.41446666666667
+      },
+      "longitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 126.57222666666667
+      },
       "mmsi": 4000003,
-      "name": "IBC G BUOY@?????????",
+      "name": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": "IBC G BUOY@?????????"
+      },
       "off_position": false,
       "position_accuracy": true,
       "raim": false,
-      "timestamp": 31,
+      "timestamp": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__class__": "Timestamp.Second",
+          "second": 31
+        }
+      },
       "virtual_aton": false
     },
     "is_own_ship": false,

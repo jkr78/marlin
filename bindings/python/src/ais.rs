@@ -1,37 +1,48 @@
-//! Python wrappers for `marlin-ais` shared types.
+//! Python wrappers for `marlin-ais`.
 //!
-//! Task 10 covers the data primitives (enums + Dimensions/Eta value types)
-//! that Task 11's typed message variants depend on. Same patterns as the
-//! NMEA layer (`SCREAMING_SNAKE_CASE` enum variants via
-//! `#[pyo3(name = "...")]`, `Reserved`/`Other` payload variants collapse to
-//! the fieldless default via a `_ => ...` wildcard arm in the `From<RustX>`
-//! impl).
+//! The data primitives (int-backed enums, the `Dimensions` / `Eta` value
+//! types and the three sum types `RateOfTurn`, `Timestamp` and
+//! `Type24BExtent`) come first, then the typed message classes, the
+//! `AisMessage` wrapper, the `BitReader` primitive and the parser. Every
+//! field the Rust decoder carries as a `FieldState<T>` is a
+//! `marlin.field.FieldState` attribute here, converted through
+//! `crate::field::{to_py, field_arg}`; a sum type in field position is a
+//! frozen class with one variant class per Rust variant (ADR-0009).
 
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyModule};
+use pyo3::types::{PyBytes, PyModule, PyTuple};
+use pyo3::IntoPyObjectExt;
 
 use marlin_ais::{
     AidToNavigationReport as RustAidToNavigationReport, AisFragmentParser, AisMessageBody,
     AisReassembler, AisVersion as RustAisVersion, AltitudeSensor as RustAltitudeSensor,
     AtonType as RustAtonType, BitReader as RustBitReader, Dimensions as RustDimensions,
     EpfdType as RustEpfdType, Eta as RustEta,
-    ExtendedPositionReportB as RustExtendedPositionReportB,
+    ExtendedPositionReportB as RustExtendedPositionReportB, FieldState,
     ManeuverIndicator as RustManeuverIndicator, NavStatus as RustNavStatus,
     PositionReportA as RustPositionReportA, PositionReportB as RustPositionReportB,
-    RateOfTurn as RustRateOfTurn, SarAircraftPositionReport as RustSarAircraftPositionReport,
+    PositioningStatus as RustPositioningStatus, RateOfTurn as RustRateOfTurn,
+    SarAircraftPositionReport as RustSarAircraftPositionReport,
     StaticAndVoyageA as RustStaticAndVoyageA, StaticDataB24A as RustStaticDataB24A,
-    StaticDataB24B as RustStaticDataB24B, TurnDirection as RustTurnDirection,
-    Type24BExtent as RustType24BExtent, DEFAULT_MAX_PARTIALS,
+    StaticDataB24B as RustStaticDataB24B, Timestamp as RustTimestamp,
+    TurnDirection as RustTurnDirection, Type24BExtent as RustType24BExtent, DEFAULT_MAX_PARTIALS,
 };
 use marlin_nmea_envelope::Parser;
 
 use crate::envelope::DEFAULT_MAX_SIZE;
 use crate::errors::ais_err;
+use crate::field::{
+    enum_state, field_arg, name_variants, repr_state, to_py, unsupported_variant, PyFieldState,
+};
 
 // ---------- NavStatus ----------
 
-/// Navigation status (binding class for `NavStatus`). Wire values 0..8, 14, 15;
-/// `Reserved(u8)` for 9..=13 collapses to `NOT_DEFINED`.
+/// Navigation status of a Class A position report (binding class for
+/// `NavStatus`). The int values are the 4-bit wire codes 0..=8 and 14.
+///
+/// Code 15 (not defined) decodes to `FieldState.NotAvailable()` and the
+/// reserved codes 9..=13 to `FieldState.Invalid(code)` on the message,
+/// so neither is a member here.
 #[pyclass(name = "NavStatus", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyNavStatus {
@@ -55,17 +66,13 @@ pub enum PyNavStatus {
     UnderwaySailing = 8,
     #[pyo3(name = "AIS_SART_ACTIVE")]
     AisSartActive = 14,
-    #[pyo3(name = "NOT_DEFINED")]
-    NotDefined = 15,
 }
 
-impl From<RustNavStatus> for PyNavStatus {
-    // `Reserved(u8)` carries a raw byte this fieldless enum cannot represent;
-    // collapse to NotDefined via the wildcard. `match_same_arms` fires on the
-    // NotDefined => NotDefined + _ => NotDefined pair — intentional.
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustNavStatus) -> Self {
-        match v {
+impl TryFrom<RustNavStatus> for PyNavStatus {
+    type Error = PyErr;
+
+    fn try_from(v: RustNavStatus) -> PyResult<Self> {
+        Ok(match v {
             RustNavStatus::UnderwayUsingEngine => Self::UnderwayUsingEngine,
             RustNavStatus::AtAnchor => Self::AtAnchor,
             RustNavStatus::NotUnderCommand => Self::NotUnderCommand,
@@ -76,24 +83,20 @@ impl From<RustNavStatus> for PyNavStatus {
             RustNavStatus::EngagedInFishing => Self::EngagedInFishing,
             RustNavStatus::UnderwaySailing => Self::UnderwaySailing,
             RustNavStatus::AisSartActive => Self::AisSartActive,
-            RustNavStatus::NotDefined => Self::NotDefined,
-            _ => Self::NotDefined,
-        }
+            other => return Err(unsupported_variant("NavStatus", &other)),
+        })
     }
 }
 
 // ---------- ManeuverIndicator ----------
 
-/// Special maneuver indicator (binding class for `ManeuverIndicator`).
+/// Special manoeuvre indicator of a Class A position report (binding
+/// class for `ManeuverIndicator`). The int values are the 2-bit wire
+/// codes 1 and 2.
 ///
-/// All four upstream variants are fieldless and map 1:1. The Rust
-/// source is `#[non_exhaustive]` across crate boundaries, which forces
-/// the `From` impl to carry a wildcard arm — that arm collapses any
-/// future upstream variant to `NotAvailable` (same "unknown → safe
-/// default" convention as `NavStatus::NotDefined`, `EpfdType::Undefined`,
-/// `AisVersion::Future`). The compile-failure-as-audit-signal strategy
-/// used elsewhere in the repo doesn't apply here because the wildcard
-/// is mandatory, not optional.
+/// Code 0 decodes to `FieldState.NotAvailable()` and the reserved code 3
+/// to `FieldState.Invalid(3)` on the message, so neither is a member
+/// here.
 #[pyclass(
     name = "ManeuverIndicator",
     frozen,
@@ -104,30 +107,21 @@ impl From<RustNavStatus> for PyNavStatus {
 )]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyManeuverIndicator {
-    #[pyo3(name = "NOT_AVAILABLE")]
-    NotAvailable = 0,
     #[pyo3(name = "NO_SPECIAL")]
     NoSpecial = 1,
     #[pyo3(name = "SPECIAL")]
     Special = 2,
-    #[pyo3(name = "RESERVED")]
-    Reserved = 3,
 }
 
-impl From<RustManeuverIndicator> for PyManeuverIndicator {
-    // `#[non_exhaustive]` forces the wildcard; defensive collapse onto
-    // NotAvailable keeps the binding compiling if upstream grows a new
-    // variant. Silences `match_same_arms` on the
-    // `NotAvailable => NotAvailable` + `_ => NotAvailable` pair.
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustManeuverIndicator) -> Self {
-        match v {
-            RustManeuverIndicator::NotAvailable => Self::NotAvailable,
+impl TryFrom<RustManeuverIndicator> for PyManeuverIndicator {
+    type Error = PyErr;
+
+    fn try_from(v: RustManeuverIndicator) -> PyResult<Self> {
+        Ok(match v {
             RustManeuverIndicator::NoSpecial => Self::NoSpecial,
             RustManeuverIndicator::Special => Self::Special,
-            RustManeuverIndicator::Reserved => Self::Reserved,
-            _ => Self::NotAvailable,
-        }
+            other => return Err(unsupported_variant("ManeuverIndicator", &other)),
+        })
     }
 }
 
@@ -135,14 +129,12 @@ impl From<RustManeuverIndicator> for PyManeuverIndicator {
 
 /// Direction of turn when a Type 1/2/3 report carries the "turning
 /// right/left at more than 5° per 30 s, no turn indicator" status
-/// (binding class for `TurnDirection`). Exposed on
-/// `PositionReportA.turn_direction` per ADR-0003; `rate_of_turn` is `None`
-/// whenever this is set.
+/// (binding class for `TurnDirection`). Carried by
+/// `RateOfTurn.NoIndicator(direction)`.
 ///
 /// The int values (`RIGHT = 0`, `LEFT = 1`) are enum discriminants, not
-/// wire codes: on the wire the statuses are the raw ROT bytes `+127` and
-/// `−127`. The Rust enum is exhaustive, so the `From` impl needs no
-/// wildcard.
+/// wire codes: on the wire the statuses are the raw rate-of-turn bytes
+/// `+127` and `−127`.
 #[pyclass(
     name = "TurnDirection",
     frozen,
@@ -168,12 +160,45 @@ impl From<RustTurnDirection> for PyTurnDirection {
     }
 }
 
+// ---------- PositioningStatus ----------
+
+/// Status of the positioning system when a report's timestamp field
+/// carries a status instead of a second (binding class for
+/// `PositioningStatus`). Carried by `Timestamp.PositioningStatus(status)`.
+/// The int values are the 6-bit timestamp wire codes 61, 62 and 63.
+#[pyclass(
+    name = "PositioningStatus",
+    frozen,
+    eq,
+    eq_int,
+    hash,
+    module = "marlin.ais"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyPositioningStatus {
+    #[pyo3(name = "MANUAL_INPUT")]
+    ManualInput = 61,
+    #[pyo3(name = "DEAD_RECKONING")]
+    DeadReckoning = 62,
+    #[pyo3(name = "INOPERATIVE")]
+    Inoperative = 63,
+}
+
+impl From<RustPositioningStatus> for PyPositioningStatus {
+    fn from(v: RustPositioningStatus) -> Self {
+        match v {
+            RustPositioningStatus::ManualInput => Self::ManualInput,
+            RustPositioningStatus::DeadReckoning => Self::DeadReckoning,
+            RustPositioningStatus::Inoperative => Self::Inoperative,
+        }
+    }
+}
+
 // ---------- AltitudeSensor ----------
 
 /// Source of a SAR aircraft's reported altitude (binding class for
 /// `AltitudeSensor`, ITU-R M.1371-5 Table 59 bit 134). The int values
-/// are the wire codes: `GNSS = 0`, `BAROMETRIC = 1`. The Rust enum is
-/// exhaustive (a one-bit field), so the `From` impl needs no wildcard.
+/// are the wire codes: `GNSS = 0`, `BAROMETRIC = 1`.
 #[pyclass(
     name = "AltitudeSensor",
     frozen,
@@ -202,9 +227,8 @@ impl From<RustAltitudeSensor> for PyAltitudeSensor {
 // ---------- AtonType ----------
 
 /// Type of aid to navigation (binding class for `AtonType`, ITU-R
-/// M.1371-5 Table 74). The int values are the 5-bit wire codes 0..=31. The
-/// Rust enum names all 32 codes, so the `From` impl is exhaustive with no
-/// wildcard.
+/// M.1371-5 Table 74). The int values are the 5-bit wire codes 0..=31;
+/// codes 5–19 are fixed AtoN, 20–31 floating AtoN, 0–4 neither.
 #[pyclass(name = "AtonType", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyAtonType {
@@ -318,13 +342,14 @@ impl From<RustAtonType> for PyAtonType {
 // ---------- EpfdType ----------
 
 /// Electronic Position-Fixing Device type (binding class for `EpfdType`).
-/// Wire values 0..8 and 15; `Reserved(u8)` for 9..=14 collapses to
-/// `UNDEFINED`.
+/// The int values are the 4-bit wire codes 1..=8 and 15.
+///
+/// Code 0 (undefined) decodes to `FieldState.NotAvailable()` and the
+/// reserved codes 9..=14 to `FieldState.Invalid(code)` on the message,
+/// so neither is a member here.
 #[pyclass(name = "EpfdType", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyEpfdType {
-    #[pyo3(name = "UNDEFINED")]
-    Undefined = 0,
     #[pyo3(name = "GPS")]
     Gps = 1,
     #[pyo3(name = "GLONASS")]
@@ -345,14 +370,11 @@ pub enum PyEpfdType {
     InternalGnss = 15,
 }
 
-impl From<RustEpfdType> for PyEpfdType {
-    // `Reserved(u8)` collapses to `Undefined` via the wildcard; silence
-    // `match_same_arms` for the `Undefined => Undefined` + `_ => Undefined`
-    // pair — same rationale as PyNavStatus.
-    #[allow(clippy::match_same_arms)]
-    fn from(v: RustEpfdType) -> Self {
-        match v {
-            RustEpfdType::Undefined => Self::Undefined,
+impl TryFrom<RustEpfdType> for PyEpfdType {
+    type Error = PyErr;
+
+    fn try_from(v: RustEpfdType) -> PyResult<Self> {
+        Ok(match v {
             RustEpfdType::Gps => Self::Gps,
             RustEpfdType::Glonass => Self::Glonass,
             RustEpfdType::CombinedGpsGlonass => Self::CombinedGpsGlonass,
@@ -362,16 +384,16 @@ impl From<RustEpfdType> for PyEpfdType {
             RustEpfdType::Surveyed => Self::Surveyed,
             RustEpfdType::Galileo => Self::Galileo,
             RustEpfdType::InternalGnss => Self::InternalGnss,
-            _ => Self::Undefined,
-        }
+            other => return Err(unsupported_variant("EpfdType", &other)),
+        })
     }
 }
 
 // ---------- AisVersion ----------
 
-/// AIS protocol version indicator (binding class for `AisVersion`). Rust
-/// type is `#[non_exhaustive]`; defensive wildcard collapses future variants
-/// onto `FUTURE`.
+/// AIS protocol version indicator (binding class for `AisVersion`). The
+/// int values are the 2-bit wire codes. A plain field: every code is
+/// defined.
 #[pyclass(name = "AisVersion", frozen, eq, eq_int, hash, module = "marlin.ais")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyAisVersion {
@@ -386,9 +408,9 @@ pub enum PyAisVersion {
 }
 
 impl From<RustAisVersion> for PyAisVersion {
-    // Defensive wildcard — upstream is `#[non_exhaustive]`; any future
-    // variant collapses to Future. Silences `match_same_arms` for the
-    // `Future => Future` + `_ => Future` pair.
+    // The Rust enum is `#[non_exhaustive]`, so the wildcard is required;
+    // a future edition code is what `Future` means. Silences
+    // `match_same_arms` for the `Future => Future` + `_ => Future` pair.
     #[allow(clippy::match_same_arms)]
     fn from(v: RustAisVersion) -> Self {
         match v {
@@ -403,10 +425,17 @@ impl From<RustAisVersion> for PyAisVersion {
 
 // ---------- Dimensions ----------
 
-/// Frozen vessel dimensions value type (binding class for `Dimensions`). All
-/// four fields are `Option<u{8,16}>` with `None` signalling "not available"
-/// (the wire sentinel `0`). `_m` suffix preserves the unit, matching
-/// the Rust struct.
+/// Extent of a station from its position-reference point, in metres
+/// (binding class for `Dimensions`). Each of the four attributes is a
+/// `marlin.field.FieldState[int]`: the wire code `0` is
+/// `FieldState.NotAvailable()` and the field maximum (511 m to bow or
+/// stern, 63 m to port or starboard) is the over-range bound
+/// `FieldState.AtLeast(511)` / `FieldState.AtLeast(63)`.
+///
+/// The constructor accepts `FieldState[int] | int | None` per attribute,
+/// coerces a bare value to `FieldState.Value` and `None` to
+/// `FieldState.NotAvailable()`, and defaults every attribute to
+/// `FieldState.NotAvailable()`.
 // All four fields are `to_*` distances — the shared prefix is the wire
 // shape (distance from reference point to bow/stern/port/starboard) and
 // must not be stripped.
@@ -414,14 +443,10 @@ impl From<RustAisVersion> for PyAisVersion {
 #[pyclass(name = "Dimensions", frozen, eq, hash, module = "marlin.ais")]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PyDimensions {
-    #[pyo3(get)]
-    to_bow_m: Option<u16>,
-    #[pyo3(get)]
-    to_stern_m: Option<u16>,
-    #[pyo3(get)]
-    to_port_m: Option<u8>,
-    #[pyo3(get)]
-    to_starboard_m: Option<u8>,
+    to_bow_m: FieldState<u16>,
+    to_stern_m: FieldState<u16>,
+    to_port_m: FieldState<u8>,
+    to_starboard_m: FieldState<u8>,
 }
 
 #[pymethods]
@@ -429,24 +454,57 @@ impl PyDimensions {
     #[new]
     #[pyo3(signature = (to_bow_m = None, to_stern_m = None, to_port_m = None, to_starboard_m = None))]
     fn new(
-        to_bow_m: Option<u16>,
-        to_stern_m: Option<u16>,
-        to_port_m: Option<u8>,
-        to_starboard_m: Option<u8>,
-    ) -> Self {
-        Self {
-            to_bow_m,
-            to_stern_m,
-            to_port_m,
-            to_starboard_m,
-        }
+        to_bow_m: Option<&Bound<'_, PyAny>>,
+        to_stern_m: Option<&Bound<'_, PyAny>>,
+        to_port_m: Option<&Bound<'_, PyAny>>,
+        to_starboard_m: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            to_bow_m: field_arg(to_bow_m)?,
+            to_stern_m: field_arg(to_stern_m)?,
+            to_port_m: field_arg(to_port_m)?,
+            to_starboard_m: field_arg(to_starboard_m)?,
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Dimensions(to_bow_m={:?}, to_stern_m={:?}, to_port_m={:?}, to_starboard_m={:?})",
-            self.to_bow_m, self.to_stern_m, self.to_port_m, self.to_starboard_m,
-        )
+    #[getter]
+    fn to_bow_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.to_bow_m)
+    }
+    #[getter]
+    fn to_stern_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.to_stern_m)
+    }
+    #[getter]
+    fn to_port_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.to_port_m)
+    }
+    #[getter]
+    fn to_starboard_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.to_starboard_m)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Dimensions(to_bow_m={}, to_stern_m={}, to_port_m={}, to_starboard_m={})",
+            repr_state(py, self.to_bow_m)?,
+            repr_state(py, self.to_stern_m)?,
+            repr_state(py, self.to_port_m)?,
+            repr_state(py, self.to_starboard_m)?,
+        ))
+    }
+}
+
+impl PyDimensions {
+    /// Every member not available: the Python default for a message built
+    /// without dimensions.
+    fn all_not_available() -> Self {
+        Self {
+            to_bow_m: FieldState::NotAvailable,
+            to_stern_m: FieldState::NotAvailable,
+            to_port_m: FieldState::NotAvailable,
+            to_starboard_m: FieldState::NotAvailable,
+        }
     }
 }
 
@@ -463,39 +521,81 @@ impl From<RustDimensions> for PyDimensions {
 
 // ---------- Eta ----------
 
-/// Frozen ETA value type (binding class for `Eta`). All four fields are
-/// `Option<u8>` with `None` on the per-sub-field sentinel.
+/// Estimated time of arrival of a Type 5 report (binding class for
+/// `Eta`). Each of the four attributes is a `marlin.field.FieldState[int]`
+/// with its own not-available code (month `0`, day `0`, hour `24`,
+/// minute `60`); a code the standard leaves undefined (month `13..=15`,
+/// hour `25..=31`, minute `61..=63`) is `FieldState.Invalid(code)`.
+///
+/// The constructor accepts `FieldState[int] | int | None` per attribute,
+/// coerces a bare value to `FieldState.Value` and `None` to
+/// `FieldState.NotAvailable()`, and defaults every attribute to
+/// `FieldState.NotAvailable()`.
 #[pyclass(name = "Eta", frozen, eq, hash, module = "marlin.ais")]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PyEta {
-    #[pyo3(get)]
-    month: Option<u8>,
-    #[pyo3(get)]
-    day: Option<u8>,
-    #[pyo3(get)]
-    hour: Option<u8>,
-    #[pyo3(get)]
-    minute: Option<u8>,
+    month: FieldState<u8>,
+    day: FieldState<u8>,
+    hour: FieldState<u8>,
+    minute: FieldState<u8>,
 }
 
 #[pymethods]
 impl PyEta {
     #[new]
     #[pyo3(signature = (month = None, day = None, hour = None, minute = None))]
-    fn new(month: Option<u8>, day: Option<u8>, hour: Option<u8>, minute: Option<u8>) -> Self {
-        Self {
-            month,
-            day,
-            hour,
-            minute,
-        }
+    fn new(
+        month: Option<&Bound<'_, PyAny>>,
+        day: Option<&Bound<'_, PyAny>>,
+        hour: Option<&Bound<'_, PyAny>>,
+        minute: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            month: field_arg(month)?,
+            day: field_arg(day)?,
+            hour: field_arg(hour)?,
+            minute: field_arg(minute)?,
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "Eta(month={:?}, day={:?}, hour={:?}, minute={:?})",
-            self.month, self.day, self.hour, self.minute,
-        )
+    #[getter]
+    fn month(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.month)
+    }
+    #[getter]
+    fn day(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.day)
+    }
+    #[getter]
+    fn hour(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.hour)
+    }
+    #[getter]
+    fn minute(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.minute)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "Eta(month={}, day={}, hour={}, minute={})",
+            repr_state(py, self.month)?,
+            repr_state(py, self.day)?,
+            repr_state(py, self.hour)?,
+            repr_state(py, self.minute)?,
+        ))
+    }
+}
+
+impl PyEta {
+    /// Every member not available: the Python default for a message built
+    /// without an ETA.
+    fn all_not_available() -> Self {
+        Self {
+            month: FieldState::NotAvailable,
+            day: FieldState::NotAvailable,
+            hour: FieldState::NotAvailable,
+            minute: FieldState::NotAvailable,
+        }
     }
 }
 
@@ -510,44 +610,275 @@ impl From<RustEta> for PyEta {
     }
 }
 
+// ---------- RateOfTurn ----------
+
+/// Rate of turn of a Class A position report (binding class for
+/// `RateOfTurn`), carried as `PositionReportA.rate_of_turn:
+/// FieldState[RateOfTurn]`.
+///
+/// One of two variant classes: `RateOfTurn.DegPerMin(deg_per_min)`, a
+/// measured rate in degrees per minute, starboard positive; or
+/// `RateOfTurn.NoIndicator(direction)`, the raw ±127 status "turning
+/// right/left at more than 5° per 30 s, no turn indicator", a value of
+/// this field and not a field state. Read one with `isinstance` or
+/// `match` on the variant class.
+#[pyclass(name = "RateOfTurn", frozen, module = "marlin.ais")]
+#[derive(Clone, Debug)]
+pub enum PyRateOfTurn {
+    /// A measured rate in degrees per minute.
+    #[pyo3(name = "DegPerMin")]
+    DegPerMin {
+        /// The rate, starboard positive.
+        deg_per_min: f32,
+    },
+    /// Turning at more than 5° per 30 s with no turn indicator; only
+    /// the direction is known.
+    #[pyo3(name = "NoIndicator")]
+    NoIndicator {
+        /// Which way the vessel is turning.
+        direction: PyTurnDirection,
+    },
+}
+
+#[pymethods]
+impl PyRateOfTurn {
+    // Python `==` on the payload is exact float equality; this mirrors it.
+    #[allow(clippy::float_cmp)]
+    fn __eq__(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::DegPerMin { deg_per_min: a }, Self::DegPerMin { deg_per_min: b }) => a == b,
+            (Self::NoIndicator { direction: a }, Self::NoIndicator { direction: b }) => a == b,
+            _ => false,
+        }
+    }
+
+    fn __hash__(&self, py: Python<'_>) -> PyResult<isize> {
+        let payload = match self {
+            Self::DegPerMin { deg_per_min } => deg_per_min.into_py_any(py)?,
+            Self::NoIndicator { direction } => direction.into_py_any(py)?,
+        };
+        PyTuple::new(py, [self.variant_name().into_py_any(py)?, payload])?.hash()
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let payload = match self {
+            Self::DegPerMin { deg_per_min } => {
+                deg_per_min.into_bound_py_any(py)?.repr()?.to_string()
+            }
+            Self::NoIndicator { direction } => direction.into_bound_py_any(py)?.repr()?.to_string(),
+        };
+        Ok(format!("RateOfTurn.{}({payload})", self.variant_name()))
+    }
+}
+
+impl PyRateOfTurn {
+    const VARIANTS: [&'static str; 2] = ["DegPerMin", "NoIndicator"];
+
+    fn variant_name(&self) -> &'static str {
+        match self {
+            Self::DegPerMin { .. } => "DegPerMin",
+            Self::NoIndicator { .. } => "NoIndicator",
+        }
+    }
+}
+
+impl From<RustRateOfTurn> for PyRateOfTurn {
+    fn from(v: RustRateOfTurn) -> Self {
+        match v {
+            RustRateOfTurn::DegPerMin(deg_per_min) => Self::DegPerMin { deg_per_min },
+            RustRateOfTurn::NoIndicator(direction) => Self::NoIndicator {
+                direction: direction.into(),
+            },
+        }
+    }
+}
+
+// ---------- Timestamp ----------
+
+/// The timestamp field of a position report (binding class for
+/// `Timestamp`), carried as `timestamp: FieldState[Timestamp]` on Types
+/// 1/2/3, 9, 18, 19 and 21.
+///
+/// One of two variant classes: `Timestamp.Second(second)`, the UTC
+/// second of the position fix (0..=59); or
+/// `Timestamp.PositioningStatus(status)`, the wire codes 61..=63 that
+/// report the positioning system's status instead of a second, a value
+/// of this field and not a field state. The code 60 is
+/// `FieldState.NotAvailable()` on the message. Read one with
+/// `isinstance` or `match` on the variant class.
+#[pyclass(name = "Timestamp", frozen, module = "marlin.ais")]
+#[derive(Clone, Debug)]
+pub enum PyTimestamp {
+    /// The UTC second within the minute of the position fix.
+    #[pyo3(name = "Second")]
+    Second {
+        /// The second, 0..=59.
+        second: u8,
+    },
+    /// The positioning system reports a status instead of a second.
+    #[pyo3(name = "PositioningStatus")]
+    PositioningStatus {
+        /// The status.
+        status: PyPositioningStatus,
+    },
+}
+
+#[pymethods]
+impl PyTimestamp {
+    fn __eq__(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Second { second: a }, Self::Second { second: b }) => a == b,
+            (Self::PositioningStatus { status: a }, Self::PositioningStatus { status: b }) => {
+                a == b
+            }
+            _ => false,
+        }
+    }
+
+    fn __hash__(&self, py: Python<'_>) -> PyResult<isize> {
+        let payload = match self {
+            Self::Second { second } => second.into_py_any(py)?,
+            Self::PositioningStatus { status } => status.into_py_any(py)?,
+        };
+        PyTuple::new(py, [self.variant_name().into_py_any(py)?, payload])?.hash()
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let payload = match self {
+            Self::Second { second } => second.to_string(),
+            Self::PositioningStatus { status } => status.into_bound_py_any(py)?.repr()?.to_string(),
+        };
+        Ok(format!("Timestamp.{}({payload})", self.variant_name()))
+    }
+}
+
+impl PyTimestamp {
+    const VARIANTS: [&'static str; 2] = ["Second", "PositioningStatus"];
+
+    fn variant_name(&self) -> &'static str {
+        match self {
+            Self::Second { .. } => "Second",
+            Self::PositioningStatus { .. } => "PositioningStatus",
+        }
+    }
+}
+
+impl From<RustTimestamp> for PyTimestamp {
+    fn from(v: RustTimestamp) -> Self {
+        match v {
+            RustTimestamp::Second(second) => Self::Second { second },
+            RustTimestamp::PositioningStatus(status) => Self::PositioningStatus {
+                status: status.into(),
+            },
+        }
+    }
+}
+
+// ---------- Type24BExtent ----------
+
+/// What the 30-bit extent field of a Type 24 Part B holds (binding class
+/// for `Type24BExtent`), carried as `StaticDataB24B.extent`.
+///
+/// One of two variant classes, decided by the MMSI prefix (ADR-0002):
+/// `Type24BExtent.Dimensions(dimensions)` for every ordinary MMSI, or
+/// `Type24BExtent.MothershipMmsi(mmsi)` for an auxiliary craft
+/// (`98MIDxxxx`), whose 30 bits hold the mother ship's MMSI instead. A
+/// plain field: the wire cannot leave it without a value. Read one with
+/// `isinstance` or `match` on the variant class.
+#[pyclass(name = "Type24BExtent", frozen, module = "marlin.ais")]
+#[derive(Clone, Debug)]
+pub enum PyType24BExtent {
+    /// Dimensions A/B/C/D, for every MMSI that is not an auxiliary craft.
+    #[pyo3(name = "Dimensions")]
+    Dimensions {
+        /// The extent.
+        dimensions: PyDimensions,
+    },
+    /// MMSI of the mother ship, for an auxiliary-craft MMSI.
+    #[pyo3(name = "MothershipMmsi")]
+    MothershipMmsi {
+        /// The mother ship's MMSI.
+        mmsi: u32,
+    },
+}
+
+#[pymethods]
+impl PyType24BExtent {
+    fn __eq__(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Dimensions { dimensions: a }, Self::Dimensions { dimensions: b }) => a == b,
+            (Self::MothershipMmsi { mmsi: a }, Self::MothershipMmsi { mmsi: b }) => a == b,
+            _ => false,
+        }
+    }
+
+    fn __hash__(&self, py: Python<'_>) -> PyResult<isize> {
+        let payload = match self {
+            Self::Dimensions { dimensions } => dimensions.clone().into_py_any(py)?,
+            Self::MothershipMmsi { mmsi } => mmsi.into_py_any(py)?,
+        };
+        PyTuple::new(py, [self.variant_name().into_py_any(py)?, payload])?.hash()
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let payload = match self {
+            Self::Dimensions { dimensions } => dimensions.__repr__(py)?,
+            Self::MothershipMmsi { mmsi } => mmsi.to_string(),
+        };
+        Ok(format!("Type24BExtent.{}({payload})", self.variant_name()))
+    }
+}
+
+impl PyType24BExtent {
+    const VARIANTS: [&'static str; 2] = ["Dimensions", "MothershipMmsi"];
+
+    fn variant_name(&self) -> &'static str {
+        match self {
+            Self::Dimensions { .. } => "Dimensions",
+            Self::MothershipMmsi { .. } => "MothershipMmsi",
+        }
+    }
+}
+
+impl From<RustType24BExtent> for PyType24BExtent {
+    fn from(v: RustType24BExtent) -> Self {
+        match v {
+            RustType24BExtent::Dimensions(dimensions) => Self::Dimensions {
+                dimensions: dimensions.into(),
+            },
+            RustType24BExtent::MothershipMmsi(mmsi) => Self::MothershipMmsi { mmsi },
+        }
+    }
+}
+
 // ---------- PositionReportA (Types 1/2/3) ----------
 
-/// Class A position report payload. Used by Types 1, 2, and 3; the
-/// AIS message-type distinction (1 vs 2 vs 3) is preserved at the
-/// `AisMessage` wrapper level, not here.
+/// Class A position report payload (Types 1, 2 and 3). The message-type
+/// distinction is preserved as `AisMessage.type_tag`, not here.
 ///
-/// The Rust `rate_of_turn: Option<RateOfTurn>` sum type is flattened
-/// into two sibling optionals (ADR-0003): `rate_of_turn` holds a
-/// measured rate in °/min, `turn_direction` holds the ±127
-/// no-turn-indicator status. Parser output sets at most one; both are
-/// `None` for the −128 not-available sentinel.
+/// Every attribute the wire can leave without a value is a
+/// `marlin.field.FieldState`; the one-bit flags, `mmsi` and
+/// `radio_status` are plain. `rate_of_turn` and `timestamp` carry the
+/// sum types `RateOfTurn` and `Timestamp`. The constructor accepts
+/// `FieldState[T] | T | None` per field-state attribute, coerces a bare
+/// value to `FieldState.Value` and `None` to `FieldState.NotAvailable()`,
+/// and defaults every such keyword to `FieldState.NotAvailable()`.
 #[pyclass(name = "PositionReportA", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyPositionReportA {
     #[pyo3(get)]
     mmsi: u32,
-    #[pyo3(get)]
-    navigation_status: PyNavStatus,
-    #[pyo3(get)]
-    rate_of_turn: Option<f32>,
-    #[pyo3(get)]
-    turn_direction: Option<PyTurnDirection>,
-    #[pyo3(get)]
-    speed_over_ground: Option<f32>,
+    navigation_status: FieldState<PyNavStatus>,
+    rate_of_turn: FieldState<PyRateOfTurn>,
+    speed_over_ground: FieldState<f32>,
     #[pyo3(get)]
     position_accuracy: bool,
-    #[pyo3(get)]
-    longitude_deg: Option<f64>,
-    #[pyo3(get)]
-    latitude_deg: Option<f64>,
-    #[pyo3(get)]
-    course_over_ground: Option<f32>,
-    #[pyo3(get)]
-    true_heading: Option<u16>,
-    #[pyo3(get)]
-    timestamp: u8,
-    #[pyo3(get)]
-    special_maneuver: PyManeuverIndicator,
+    longitude_deg: FieldState<f64>,
+    latitude_deg: FieldState<f64>,
+    course_over_ground: FieldState<f32>,
+    true_heading: FieldState<u16>,
+    timestamp: FieldState<PyTimestamp>,
+    special_maneuver: FieldState<PyManeuverIndicator>,
     #[pyo3(get)]
     raim: bool,
     #[pyo3(get)]
@@ -560,91 +891,133 @@ impl PyPositionReportA {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         mmsi = 0,
-        navigation_status = PyNavStatus::NotDefined,
+        navigation_status = None,
         rate_of_turn = None,
-        turn_direction = None,
         speed_over_ground = None,
         position_accuracy = false,
         longitude_deg = None,
         latitude_deg = None,
         course_over_ground = None,
         true_heading = None,
-        timestamp = 60,
-        special_maneuver = PyManeuverIndicator::NotAvailable,
+        timestamp = None,
+        special_maneuver = None,
         raim = false,
         radio_status = 0,
     ))]
     fn new(
         mmsi: u32,
-        navigation_status: PyNavStatus,
-        rate_of_turn: Option<f32>,
-        turn_direction: Option<PyTurnDirection>,
-        speed_over_ground: Option<f32>,
+        navigation_status: Option<&Bound<'_, PyAny>>,
+        rate_of_turn: Option<&Bound<'_, PyAny>>,
+        speed_over_ground: Option<&Bound<'_, PyAny>>,
         position_accuracy: bool,
-        longitude_deg: Option<f64>,
-        latitude_deg: Option<f64>,
-        course_over_ground: Option<f32>,
-        true_heading: Option<u16>,
-        timestamp: u8,
-        special_maneuver: PyManeuverIndicator,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
+        course_over_ground: Option<&Bound<'_, PyAny>>,
+        true_heading: Option<&Bound<'_, PyAny>>,
+        timestamp: Option<&Bound<'_, PyAny>>,
+        special_maneuver: Option<&Bound<'_, PyAny>>,
         raim: bool,
         radio_status: u32,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             mmsi,
-            navigation_status,
-            rate_of_turn,
-            turn_direction,
-            speed_over_ground,
+            navigation_status: field_arg(navigation_status)?,
+            rate_of_turn: field_arg(rate_of_turn)?,
+            speed_over_ground: field_arg(speed_over_ground)?,
             position_accuracy,
-            longitude_deg,
-            latitude_deg,
-            course_over_ground,
-            true_heading,
-            timestamp,
-            special_maneuver,
+            longitude_deg: field_arg(longitude_deg)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            course_over_ground: field_arg(course_over_ground)?,
+            true_heading: field_arg(true_heading)?,
+            timestamp: field_arg(timestamp)?,
+            special_maneuver: field_arg(special_maneuver)?,
             raim,
             radio_status,
-        }
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "PositionReportA(mmsi={}, lat={:?}, lon={:?}, sog={:?})",
-            self.mmsi, self.latitude_deg, self.longitude_deg, self.speed_over_ground,
-        )
+    #[getter]
+    fn navigation_status(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.navigation_status)
+    }
+    #[getter]
+    fn rate_of_turn(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.rate_of_turn.clone())
+    }
+    #[getter]
+    fn speed_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed_over_ground)
+    }
+    #[getter]
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
+    }
+    #[getter]
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
+    }
+    #[getter]
+    fn course_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_over_ground)
+    }
+    #[getter]
+    fn true_heading(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.true_heading)
+    }
+    #[getter]
+    fn timestamp(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.timestamp.clone())
+    }
+    #[getter]
+    fn special_maneuver(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.special_maneuver)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "PositionReportA(mmsi={}, lat={}, lon={}, sog={})",
+            self.mmsi,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+            repr_state(py, self.speed_over_ground)?,
+        ))
     }
 }
 
-impl From<RustPositionReportA> for PyPositionReportA {
-    fn from(d: RustPositionReportA) -> Self {
-        let (rate_of_turn, turn_direction) = match d.rate_of_turn {
-            Some(RustRateOfTurn::DegPerMin(v)) => (Some(v), None),
-            Some(RustRateOfTurn::NoIndicator(dir)) => (None, Some(dir.into())),
-            None => (None, None),
-        };
-        Self {
+impl TryFrom<RustPositionReportA> for PyPositionReportA {
+    type Error = PyErr;
+
+    fn try_from(d: RustPositionReportA) -> PyResult<Self> {
+        Ok(Self {
             mmsi: d.mmsi,
-            navigation_status: d.navigation_status.into(),
-            rate_of_turn,
-            turn_direction,
+            navigation_status: enum_state(d.navigation_status)?,
+            rate_of_turn: d.rate_of_turn.map(PyRateOfTurn::from),
             speed_over_ground: d.speed_over_ground,
             position_accuracy: d.position_accuracy,
             longitude_deg: d.longitude_deg,
             latitude_deg: d.latitude_deg,
             course_over_ground: d.course_over_ground,
             true_heading: d.true_heading,
-            timestamp: d.timestamp,
-            special_maneuver: d.special_maneuver.into(),
+            timestamp: d.timestamp.map(PyTimestamp::from),
+            special_maneuver: enum_state(d.special_maneuver)?,
             raim: d.raim,
             radio_status: d.radio_status,
-        }
+        })
     }
 }
 
 // ---------- StaticAndVoyageA (Type 5) ----------
 
 /// Class A static and voyage data payload (Type 5).
+///
+/// Every attribute the wire can leave without a value is a
+/// `marlin.field.FieldState`, `dte` included: a 420- or 422-bit payload
+/// ends before the DTE bit, so `dte` is `FieldState.NotAvailable()`
+/// there. `dimensions` and `eta` carry a field state per member. The
+/// constructor accepts `FieldState[T] | T | None` per field-state
+/// attribute and defaults every such keyword to
+/// `FieldState.NotAvailable()`; `dimensions` and `eta` default to all
+/// members not available.
 #[pyclass(name = "StaticAndVoyageA", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyStaticAndVoyageA {
@@ -652,26 +1025,18 @@ pub struct PyStaticAndVoyageA {
     mmsi: u32,
     #[pyo3(get)]
     ais_version: PyAisVersion,
-    #[pyo3(get)]
-    imo_number: Option<u32>,
-    #[pyo3(get)]
-    call_sign: Option<String>,
-    #[pyo3(get)]
-    vessel_name: Option<String>,
-    #[pyo3(get)]
-    ship_type: u8,
+    imo_number: FieldState<u32>,
+    call_sign: FieldState<String>,
+    vessel_name: FieldState<String>,
+    ship_type: FieldState<u8>,
     #[pyo3(get)]
     dimensions: PyDimensions,
-    #[pyo3(get)]
-    epfd: PyEpfdType,
+    epfd: FieldState<PyEpfdType>,
     #[pyo3(get)]
     eta: PyEta,
-    #[pyo3(get)]
-    draught_m: Option<f32>,
-    #[pyo3(get)]
-    destination: Option<String>,
-    #[pyo3(get)]
-    dte: bool,
+    draught_m: FieldState<f32>,
+    destination: FieldState<String>,
+    dte: FieldState<bool>,
 }
 
 #[pymethods]
@@ -684,64 +1049,92 @@ impl PyStaticAndVoyageA {
         imo_number = None,
         call_sign = None,
         vessel_name = None,
-        ship_type = 0,
+        ship_type = None,
         dimensions = None,
-        epfd = PyEpfdType::Undefined,
+        epfd = None,
         eta = None,
         draught_m = None,
         destination = None,
-        dte = false,
+        dte = None,
     ))]
     fn new(
         mmsi: u32,
         ais_version: PyAisVersion,
-        imo_number: Option<u32>,
-        call_sign: Option<String>,
-        vessel_name: Option<String>,
-        ship_type: u8,
+        imo_number: Option<&Bound<'_, PyAny>>,
+        call_sign: Option<&Bound<'_, PyAny>>,
+        vessel_name: Option<&Bound<'_, PyAny>>,
+        ship_type: Option<&Bound<'_, PyAny>>,
         dimensions: Option<PyDimensions>,
-        epfd: PyEpfdType,
+        epfd: Option<&Bound<'_, PyAny>>,
         eta: Option<PyEta>,
-        draught_m: Option<f32>,
-        destination: Option<String>,
-        dte: bool,
-    ) -> Self {
-        let dimensions = dimensions.unwrap_or_else(|| {
-            PyDimensions::from(RustDimensions {
-                to_bow_m: None,
-                to_stern_m: None,
-                to_port_m: None,
-                to_starboard_m: None,
-            })
-        });
-        let eta = eta.unwrap_or_else(|| PyEta::from(RustEta::default()));
-        Self {
+        draught_m: Option<&Bound<'_, PyAny>>,
+        destination: Option<&Bound<'_, PyAny>>,
+        dte: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
             mmsi,
             ais_version,
-            imo_number,
-            call_sign,
-            vessel_name,
-            ship_type,
-            dimensions,
-            epfd,
-            eta,
-            draught_m,
-            destination,
-            dte,
-        }
+            imo_number: field_arg(imo_number)?,
+            call_sign: field_arg(call_sign)?,
+            vessel_name: field_arg(vessel_name)?,
+            ship_type: field_arg(ship_type)?,
+            dimensions: dimensions.unwrap_or_else(PyDimensions::all_not_available),
+            epfd: field_arg(epfd)?,
+            eta: eta.unwrap_or_else(PyEta::all_not_available),
+            draught_m: field_arg(draught_m)?,
+            destination: field_arg(destination)?,
+            dte: field_arg(dte)?,
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "StaticAndVoyageA(mmsi={}, vessel_name={:?}, destination={:?})",
-            self.mmsi, self.vessel_name, self.destination,
-        )
+    #[getter]
+    fn imo_number(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.imo_number)
+    }
+    #[getter]
+    fn call_sign(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.call_sign.clone())
+    }
+    #[getter]
+    fn vessel_name(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.vessel_name.clone())
+    }
+    #[getter]
+    fn ship_type(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.ship_type)
+    }
+    #[getter]
+    fn epfd(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.epfd)
+    }
+    #[getter]
+    fn draught_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.draught_m)
+    }
+    #[getter]
+    fn destination(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.destination.clone())
+    }
+    #[getter]
+    fn dte(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.dte)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "StaticAndVoyageA(mmsi={}, vessel_name={}, destination={})",
+            self.mmsi,
+            repr_state(py, self.vessel_name.clone())?,
+            repr_state(py, self.destination.clone())?,
+        ))
     }
 }
 
-impl From<RustStaticAndVoyageA> for PyStaticAndVoyageA {
-    fn from(d: RustStaticAndVoyageA) -> Self {
-        Self {
+impl TryFrom<RustStaticAndVoyageA> for PyStaticAndVoyageA {
+    type Error = PyErr;
+
+    fn try_from(d: RustStaticAndVoyageA) -> PyResult<Self> {
+        Ok(Self {
             mmsi: d.mmsi,
             ais_version: d.ais_version.into(),
             imo_number: d.imo_number,
@@ -749,12 +1142,12 @@ impl From<RustStaticAndVoyageA> for PyStaticAndVoyageA {
             vessel_name: d.vessel_name,
             ship_type: d.ship_type,
             dimensions: d.dimensions.into(),
-            epfd: d.epfd.into(),
+            epfd: enum_state(d.epfd)?,
             eta: d.eta.into(),
             draught_m: d.draught_m,
             destination: d.destination,
             dte: d.dte,
-        }
+        })
     }
 }
 
@@ -762,10 +1155,15 @@ impl From<RustStaticAndVoyageA> for PyStaticAndVoyageA {
 
 /// Standard SAR aircraft position report payload (Type 9).
 ///
-/// `altitude_m` and `speed_over_ground` are whole metres / whole knots
-/// (not 0.1 kn as on the vessel reports); `None` is the not-available
-/// code, over-range codes (4094 m, 1022 kn) pass through (ADR-0001).
+/// `altitude_m` and `speed_over_ground` are `FieldState[int]` in whole
+/// metres / whole knots (not 0.1 kn as on the vessel reports): the codes
+/// 4095 / 1023 are `FieldState.NotAvailable()` and the over-range codes
+/// 4094 / 1022 are `FieldState.AtLeast(4094)` / `FieldState.AtLeast(1022)`.
 /// No heading, rate of turn or navigational status exists on Type 9.
+/// `dte` is a plain `bool`: the 168-bit floor covers the bit. The
+/// constructor accepts `FieldState[T] | T | None` per field-state
+/// attribute and defaults every such keyword to
+/// `FieldState.NotAvailable()`.
 // 4 bools (`position_accuracy`, `dte`, `assigned_flag`, `raim`) are
 // ITU-R M.1371 wire-format flags — the wire reality.
 #[allow(clippy::struct_excessive_bools)]
@@ -774,20 +1172,14 @@ impl From<RustStaticAndVoyageA> for PyStaticAndVoyageA {
 pub struct PySarAircraftPositionReport {
     #[pyo3(get)]
     mmsi: u32,
-    #[pyo3(get)]
-    altitude_m: Option<u16>,
-    #[pyo3(get)]
-    speed_over_ground: Option<u16>,
+    altitude_m: FieldState<u16>,
+    speed_over_ground: FieldState<u16>,
     #[pyo3(get)]
     position_accuracy: bool,
-    #[pyo3(get)]
-    longitude_deg: Option<f64>,
-    #[pyo3(get)]
-    latitude_deg: Option<f64>,
-    #[pyo3(get)]
-    course_over_ground: Option<f32>,
-    #[pyo3(get)]
-    timestamp: u8,
+    longitude_deg: FieldState<f64>,
+    latitude_deg: FieldState<f64>,
+    course_over_ground: FieldState<f32>,
+    timestamp: FieldState<PyTimestamp>,
     #[pyo3(get)]
     altitude_sensor: PyAltitudeSensor,
     #[pyo3(get)]
@@ -812,7 +1204,7 @@ impl PySarAircraftPositionReport {
         longitude_deg = None,
         latitude_deg = None,
         course_over_ground = None,
-        timestamp = 60,
+        timestamp = None,
         altitude_sensor = PyAltitudeSensor::Gnss,
         dte = false,
         assigned_flag = false,
@@ -821,41 +1213,69 @@ impl PySarAircraftPositionReport {
     ))]
     fn new(
         mmsi: u32,
-        altitude_m: Option<u16>,
-        speed_over_ground: Option<u16>,
+        altitude_m: Option<&Bound<'_, PyAny>>,
+        speed_over_ground: Option<&Bound<'_, PyAny>>,
         position_accuracy: bool,
-        longitude_deg: Option<f64>,
-        latitude_deg: Option<f64>,
-        course_over_ground: Option<f32>,
-        timestamp: u8,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
+        course_over_ground: Option<&Bound<'_, PyAny>>,
+        timestamp: Option<&Bound<'_, PyAny>>,
         altitude_sensor: PyAltitudeSensor,
         dte: bool,
         assigned_flag: bool,
         raim: bool,
         radio_status: u32,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             mmsi,
-            altitude_m,
-            speed_over_ground,
+            altitude_m: field_arg(altitude_m)?,
+            speed_over_ground: field_arg(speed_over_ground)?,
             position_accuracy,
-            longitude_deg,
-            latitude_deg,
-            course_over_ground,
-            timestamp,
+            longitude_deg: field_arg(longitude_deg)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            course_over_ground: field_arg(course_over_ground)?,
+            timestamp: field_arg(timestamp)?,
             altitude_sensor,
             dte,
             assigned_flag,
             raim,
             radio_status,
-        }
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "SarAircraftPositionReport(mmsi={}, altitude_m={:?}, lat={:?}, lon={:?})",
-            self.mmsi, self.altitude_m, self.latitude_deg, self.longitude_deg,
-        )
+    #[getter]
+    fn altitude_m(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.altitude_m)
+    }
+    #[getter]
+    fn speed_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed_over_ground)
+    }
+    #[getter]
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
+    }
+    #[getter]
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
+    }
+    #[getter]
+    fn course_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_over_ground)
+    }
+    #[getter]
+    fn timestamp(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.timestamp.clone())
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "SarAircraftPositionReport(mmsi={}, altitude_m={}, lat={}, lon={})",
+            self.mmsi,
+            repr_state(py, self.altitude_m)?,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+        ))
     }
 }
 
@@ -869,7 +1289,7 @@ impl From<RustSarAircraftPositionReport> for PySarAircraftPositionReport {
             longitude_deg: d.longitude_deg,
             latitude_deg: d.latitude_deg,
             course_over_ground: d.course_over_ground,
-            timestamp: d.timestamp,
+            timestamp: d.timestamp.map(PyTimestamp::from),
             altitude_sensor: d.altitude_sensor.into(),
             dte: d.dte,
             assigned_flag: d.assigned_flag,
@@ -882,6 +1302,12 @@ impl From<RustSarAircraftPositionReport> for PySarAircraftPositionReport {
 // ---------- PositionReportB (Type 18) ----------
 
 /// Class B CS position report payload (Type 18).
+///
+/// The position, speed, course, heading and timestamp attributes are
+/// `marlin.field.FieldState`s as on `PositionReportA`; the Class B
+/// capability flags are plain. The constructor accepts
+/// `FieldState[T] | T | None` per field-state attribute and defaults
+/// every such keyword to `FieldState.NotAvailable()`.
 // The five `class_b_*_flag` bits are ITU-R M.1371 wire-format flags;
 // bundling them is the wire reality, so silence `struct_excessive_bools`.
 #[allow(clippy::struct_excessive_bools)]
@@ -890,20 +1316,14 @@ impl From<RustSarAircraftPositionReport> for PySarAircraftPositionReport {
 pub struct PyPositionReportB {
     #[pyo3(get)]
     mmsi: u32,
-    #[pyo3(get)]
-    speed_over_ground: Option<f32>,
+    speed_over_ground: FieldState<f32>,
     #[pyo3(get)]
     position_accuracy: bool,
-    #[pyo3(get)]
-    longitude_deg: Option<f64>,
-    #[pyo3(get)]
-    latitude_deg: Option<f64>,
-    #[pyo3(get)]
-    course_over_ground: Option<f32>,
-    #[pyo3(get)]
-    true_heading: Option<u16>,
-    #[pyo3(get)]
-    timestamp: u8,
+    longitude_deg: FieldState<f64>,
+    latitude_deg: FieldState<f64>,
+    course_over_ground: FieldState<f32>,
+    true_heading: FieldState<u16>,
+    timestamp: FieldState<PyTimestamp>,
     #[pyo3(get)]
     class_b_cs_flag: bool,
     #[pyo3(get)]
@@ -934,7 +1354,7 @@ impl PyPositionReportB {
         latitude_deg = None,
         course_over_ground = None,
         true_heading = None,
-        timestamp = 60,
+        timestamp = None,
         class_b_cs_flag = false,
         class_b_display_flag = false,
         class_b_dsc_flag = false,
@@ -946,13 +1366,13 @@ impl PyPositionReportB {
     ))]
     fn new(
         mmsi: u32,
-        speed_over_ground: Option<f32>,
+        speed_over_ground: Option<&Bound<'_, PyAny>>,
         position_accuracy: bool,
-        longitude_deg: Option<f64>,
-        latitude_deg: Option<f64>,
-        course_over_ground: Option<f32>,
-        true_heading: Option<u16>,
-        timestamp: u8,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
+        course_over_ground: Option<&Bound<'_, PyAny>>,
+        true_heading: Option<&Bound<'_, PyAny>>,
+        timestamp: Option<&Bound<'_, PyAny>>,
         class_b_cs_flag: bool,
         class_b_display_flag: bool,
         class_b_dsc_flag: bool,
@@ -961,16 +1381,16 @@ impl PyPositionReportB {
         assigned_flag: bool,
         raim: bool,
         radio_status: u32,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             mmsi,
-            speed_over_ground,
+            speed_over_ground: field_arg(speed_over_ground)?,
             position_accuracy,
-            longitude_deg,
-            latitude_deg,
-            course_over_ground,
-            true_heading,
-            timestamp,
+            longitude_deg: field_arg(longitude_deg)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            course_over_ground: field_arg(course_over_ground)?,
+            true_heading: field_arg(true_heading)?,
+            timestamp: field_arg(timestamp)?,
             class_b_cs_flag,
             class_b_display_flag,
             class_b_dsc_flag,
@@ -979,14 +1399,42 @@ impl PyPositionReportB {
             assigned_flag,
             raim,
             radio_status,
-        }
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "PositionReportB(mmsi={}, lat={:?}, lon={:?}, sog={:?})",
-            self.mmsi, self.latitude_deg, self.longitude_deg, self.speed_over_ground,
-        )
+    #[getter]
+    fn speed_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed_over_ground)
+    }
+    #[getter]
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
+    }
+    #[getter]
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
+    }
+    #[getter]
+    fn course_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_over_ground)
+    }
+    #[getter]
+    fn true_heading(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.true_heading)
+    }
+    #[getter]
+    fn timestamp(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.timestamp.clone())
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "PositionReportB(mmsi={}, lat={}, lon={}, sog={})",
+            self.mmsi,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+            repr_state(py, self.speed_over_ground)?,
+        ))
     }
 }
 
@@ -1000,7 +1448,7 @@ impl From<RustPositionReportB> for PyPositionReportB {
             latitude_deg: d.latitude_deg,
             course_over_ground: d.course_over_ground,
             true_heading: d.true_heading,
-            timestamp: d.timestamp,
+            timestamp: d.timestamp.map(PyTimestamp::from),
             class_b_cs_flag: d.class_b_cs_flag,
             class_b_display_flag: d.class_b_display_flag,
             class_b_dsc_flag: d.class_b_dsc_flag,
@@ -1016,6 +1464,15 @@ impl From<RustPositionReportB> for PyPositionReportB {
 // ---------- ExtendedPositionReportB (Type 19) ----------
 
 /// Class B extended position report payload (Type 19).
+///
+/// The Type 18 position attributes plus the Type 5 static tail
+/// (`vessel_name`, `ship_type`, `dimensions`, `epfd`), each a
+/// `marlin.field.FieldState` where the wire can leave it without a
+/// value. `dte` is a plain `bool`: the 312-bit floor covers the bit.
+/// The constructor accepts `FieldState[T] | T | None` per field-state
+/// attribute and defaults every such keyword to
+/// `FieldState.NotAvailable()`; `dimensions` defaults to all members
+/// not available.
 // 4 bools (`position_accuracy`, `raim`, `dte`, `assigned_flag`) are
 // ITU-R M.1371 wire-format flags — the wire reality.
 #[allow(clippy::struct_excessive_bools)]
@@ -1024,28 +1481,19 @@ impl From<RustPositionReportB> for PyPositionReportB {
 pub struct PyExtendedPositionReportB {
     #[pyo3(get)]
     mmsi: u32,
-    #[pyo3(get)]
-    speed_over_ground: Option<f32>,
+    speed_over_ground: FieldState<f32>,
     #[pyo3(get)]
     position_accuracy: bool,
-    #[pyo3(get)]
-    longitude_deg: Option<f64>,
-    #[pyo3(get)]
-    latitude_deg: Option<f64>,
-    #[pyo3(get)]
-    course_over_ground: Option<f32>,
-    #[pyo3(get)]
-    true_heading: Option<u16>,
-    #[pyo3(get)]
-    timestamp: u8,
-    #[pyo3(get)]
-    vessel_name: Option<String>,
-    #[pyo3(get)]
-    ship_type: u8,
+    longitude_deg: FieldState<f64>,
+    latitude_deg: FieldState<f64>,
+    course_over_ground: FieldState<f32>,
+    true_heading: FieldState<u16>,
+    timestamp: FieldState<PyTimestamp>,
+    vessel_name: FieldState<String>,
+    ship_type: FieldState<u8>,
     #[pyo3(get)]
     dimensions: PyDimensions,
-    #[pyo3(get)]
-    epfd: PyEpfdType,
+    epfd: FieldState<PyEpfdType>,
     #[pyo3(get)]
     raim: bool,
     #[pyo3(get)]
@@ -1066,70 +1514,104 @@ impl PyExtendedPositionReportB {
         latitude_deg = None,
         course_over_ground = None,
         true_heading = None,
-        timestamp = 60,
+        timestamp = None,
         vessel_name = None,
-        ship_type = 0,
+        ship_type = None,
         dimensions = None,
-        epfd = PyEpfdType::Undefined,
+        epfd = None,
         raim = false,
         dte = false,
         assigned_flag = false,
     ))]
     fn new(
         mmsi: u32,
-        speed_over_ground: Option<f32>,
+        speed_over_ground: Option<&Bound<'_, PyAny>>,
         position_accuracy: bool,
-        longitude_deg: Option<f64>,
-        latitude_deg: Option<f64>,
-        course_over_ground: Option<f32>,
-        true_heading: Option<u16>,
-        timestamp: u8,
-        vessel_name: Option<String>,
-        ship_type: u8,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
+        course_over_ground: Option<&Bound<'_, PyAny>>,
+        true_heading: Option<&Bound<'_, PyAny>>,
+        timestamp: Option<&Bound<'_, PyAny>>,
+        vessel_name: Option<&Bound<'_, PyAny>>,
+        ship_type: Option<&Bound<'_, PyAny>>,
         dimensions: Option<PyDimensions>,
-        epfd: PyEpfdType,
+        epfd: Option<&Bound<'_, PyAny>>,
         raim: bool,
         dte: bool,
         assigned_flag: bool,
-    ) -> Self {
-        let dimensions = dimensions.unwrap_or_else(|| {
-            PyDimensions::from(RustDimensions {
-                to_bow_m: None,
-                to_stern_m: None,
-                to_port_m: None,
-                to_starboard_m: None,
-            })
-        });
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             mmsi,
-            speed_over_ground,
+            speed_over_ground: field_arg(speed_over_ground)?,
             position_accuracy,
-            longitude_deg,
-            latitude_deg,
-            course_over_ground,
-            true_heading,
-            timestamp,
-            vessel_name,
-            ship_type,
-            dimensions,
-            epfd,
+            longitude_deg: field_arg(longitude_deg)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            course_over_ground: field_arg(course_over_ground)?,
+            true_heading: field_arg(true_heading)?,
+            timestamp: field_arg(timestamp)?,
+            vessel_name: field_arg(vessel_name)?,
+            ship_type: field_arg(ship_type)?,
+            dimensions: dimensions.unwrap_or_else(PyDimensions::all_not_available),
+            epfd: field_arg(epfd)?,
             raim,
             dte,
             assigned_flag,
-        }
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "ExtendedPositionReportB(mmsi={}, vessel_name={:?}, lat={:?}, lon={:?})",
-            self.mmsi, self.vessel_name, self.latitude_deg, self.longitude_deg,
-        )
+    #[getter]
+    fn speed_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.speed_over_ground)
+    }
+    #[getter]
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
+    }
+    #[getter]
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
+    }
+    #[getter]
+    fn course_over_ground(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.course_over_ground)
+    }
+    #[getter]
+    fn true_heading(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.true_heading)
+    }
+    #[getter]
+    fn timestamp(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.timestamp.clone())
+    }
+    #[getter]
+    fn vessel_name(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.vessel_name.clone())
+    }
+    #[getter]
+    fn ship_type(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.ship_type)
+    }
+    #[getter]
+    fn epfd(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.epfd)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "ExtendedPositionReportB(mmsi={}, vessel_name={}, lat={}, lon={})",
+            self.mmsi,
+            repr_state(py, self.vessel_name.clone())?,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+        ))
     }
 }
 
-impl From<RustExtendedPositionReportB> for PyExtendedPositionReportB {
-    fn from(d: RustExtendedPositionReportB) -> Self {
-        Self {
+impl TryFrom<RustExtendedPositionReportB> for PyExtendedPositionReportB {
+    type Error = PyErr;
+
+    fn try_from(d: RustExtendedPositionReportB) -> PyResult<Self> {
+        Ok(Self {
             mmsi: d.mmsi,
             speed_over_ground: d.speed_over_ground,
             position_accuracy: d.position_accuracy,
@@ -1137,15 +1619,15 @@ impl From<RustExtendedPositionReportB> for PyExtendedPositionReportB {
             latitude_deg: d.latitude_deg,
             course_over_ground: d.course_over_ground,
             true_heading: d.true_heading,
-            timestamp: d.timestamp,
+            timestamp: d.timestamp.map(PyTimestamp::from),
             vessel_name: d.vessel_name,
             ship_type: d.ship_type,
             dimensions: d.dimensions.into(),
-            epfd: d.epfd.into(),
+            epfd: enum_state(d.epfd)?,
             raim: d.raim,
             dte: d.dte,
             assigned_flag: d.assigned_flag,
-        }
+        })
     }
 }
 
@@ -1155,8 +1637,13 @@ impl From<RustExtendedPositionReportB> for PyExtendedPositionReportB {
 ///
 /// `name` is the 20-character name joined with the optional extension
 /// (up to 14 more characters) and trimmed of trailing `@` / spaces; an
-/// `@` inside the name is kept. `dimensions` is all-`None` for virtual
-/// AtoN and reference points; `aton_status` is the raw 8-bit field.
+/// `@` inside the name is kept; all padding is `FieldState.NotAvailable()`.
+/// `dimensions` carries a field state per member and is all not
+/// available for virtual AtoN and reference points; `aton_status` is
+/// the plain 8-bit field. The constructor accepts
+/// `FieldState[T] | T | None` per field-state attribute and defaults
+/// every such keyword to `FieldState.NotAvailable()`; `dimensions`
+/// defaults to all members not available.
 // 5 bools (`position_accuracy`, `off_position`, `raim`, `virtual_aton`,
 // `assigned_flag`) are ITU-R M.1371 wire-format flags — the wire reality.
 #[allow(clippy::struct_excessive_bools)]
@@ -1167,20 +1654,15 @@ pub struct PyAidToNavigationReport {
     mmsi: u32,
     #[pyo3(get)]
     aton_type: PyAtonType,
-    #[pyo3(get)]
-    name: Option<String>,
+    name: FieldState<String>,
     #[pyo3(get)]
     position_accuracy: bool,
-    #[pyo3(get)]
-    longitude_deg: Option<f64>,
-    #[pyo3(get)]
-    latitude_deg: Option<f64>,
+    longitude_deg: FieldState<f64>,
+    latitude_deg: FieldState<f64>,
     #[pyo3(get)]
     dimensions: PyDimensions,
-    #[pyo3(get)]
-    epfd: PyEpfdType,
-    #[pyo3(get)]
-    timestamp: u8,
+    epfd: FieldState<PyEpfdType>,
+    timestamp: FieldState<PyTimestamp>,
     #[pyo3(get)]
     off_position: bool,
     #[pyo3(get)]
@@ -1205,8 +1687,8 @@ impl PyAidToNavigationReport {
         longitude_deg = None,
         latitude_deg = None,
         dimensions = None,
-        epfd = PyEpfdType::Undefined,
-        timestamp = 60,
+        epfd = None,
+        timestamp = None,
         off_position = false,
         aton_status = 0,
         raim = false,
@@ -1216,50 +1698,75 @@ impl PyAidToNavigationReport {
     fn new(
         mmsi: u32,
         aton_type: PyAtonType,
-        name: Option<String>,
+        name: Option<&Bound<'_, PyAny>>,
         position_accuracy: bool,
-        longitude_deg: Option<f64>,
-        latitude_deg: Option<f64>,
+        longitude_deg: Option<&Bound<'_, PyAny>>,
+        latitude_deg: Option<&Bound<'_, PyAny>>,
         dimensions: Option<PyDimensions>,
-        epfd: PyEpfdType,
-        timestamp: u8,
+        epfd: Option<&Bound<'_, PyAny>>,
+        timestamp: Option<&Bound<'_, PyAny>>,
         off_position: bool,
         aton_status: u8,
         raim: bool,
         virtual_aton: bool,
         assigned_flag: bool,
-    ) -> Self {
-        let dimensions =
-            dimensions.unwrap_or_else(|| PyDimensions::from(RustDimensions::default()));
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             mmsi,
             aton_type,
-            name,
+            name: field_arg(name)?,
             position_accuracy,
-            longitude_deg,
-            latitude_deg,
-            dimensions,
-            epfd,
-            timestamp,
+            longitude_deg: field_arg(longitude_deg)?,
+            latitude_deg: field_arg(latitude_deg)?,
+            dimensions: dimensions.unwrap_or_else(PyDimensions::all_not_available),
+            epfd: field_arg(epfd)?,
+            timestamp: field_arg(timestamp)?,
             off_position,
             aton_status,
             raim,
             virtual_aton,
             assigned_flag,
-        }
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "AidToNavigationReport(mmsi={}, aton_type={:?}, name={:?}, lat={:?}, lon={:?})",
-            self.mmsi, self.aton_type, self.name, self.latitude_deg, self.longitude_deg,
-        )
+    #[getter]
+    fn name(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.name.clone())
+    }
+    #[getter]
+    fn longitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.longitude_deg)
+    }
+    #[getter]
+    fn latitude_deg(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.latitude_deg)
+    }
+    #[getter]
+    fn epfd(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.epfd)
+    }
+    #[getter]
+    fn timestamp(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.timestamp.clone())
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "AidToNavigationReport(mmsi={}, aton_type={:?}, name={}, lat={}, lon={})",
+            self.mmsi,
+            self.aton_type,
+            repr_state(py, self.name.clone())?,
+            repr_state(py, self.latitude_deg)?,
+            repr_state(py, self.longitude_deg)?,
+        ))
     }
 }
 
-impl From<RustAidToNavigationReport> for PyAidToNavigationReport {
-    fn from(d: RustAidToNavigationReport) -> Self {
-        Self {
+impl TryFrom<RustAidToNavigationReport> for PyAidToNavigationReport {
+    type Error = PyErr;
+
+    fn try_from(d: RustAidToNavigationReport) -> PyResult<Self> {
+        Ok(Self {
             mmsi: d.mmsi,
             aton_type: d.aton_type.into(),
             name: d.name,
@@ -1267,42 +1774,53 @@ impl From<RustAidToNavigationReport> for PyAidToNavigationReport {
             longitude_deg: d.longitude_deg,
             latitude_deg: d.latitude_deg,
             dimensions: d.dimensions.into(),
-            epfd: d.epfd.into(),
-            timestamp: d.timestamp,
+            epfd: enum_state(d.epfd)?,
+            timestamp: d.timestamp.map(PyTimestamp::from),
             off_position: d.off_position,
             aton_status: d.aton_status,
             raim: d.raim,
             virtual_aton: d.virtual_aton,
             assigned_flag: d.assigned_flag,
-        }
+        })
     }
 }
 
 // ---------- StaticDataB24A (Type 24 Part A) ----------
 
-/// Class B static data Part A payload (Type 24A).
+/// Class B static data Part A payload (Type 24 Part A): the vessel name
+/// as a `marlin.field.FieldState[str]`, `FieldState.NotAvailable()` on
+/// all padding. The constructor accepts `FieldState[str] | str | None`
+/// and defaults to `FieldState.NotAvailable()`.
 #[pyclass(name = "StaticDataB24A", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyStaticDataB24A {
     #[pyo3(get)]
     mmsi: u32,
-    #[pyo3(get)]
-    vessel_name: Option<String>,
+    vessel_name: FieldState<String>,
 }
 
 #[pymethods]
 impl PyStaticDataB24A {
     #[new]
     #[pyo3(signature = (mmsi = 0, vessel_name = None))]
-    fn new(mmsi: u32, vessel_name: Option<String>) -> Self {
-        Self { mmsi, vessel_name }
+    fn new(mmsi: u32, vessel_name: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        Ok(Self {
+            mmsi,
+            vessel_name: field_arg(vessel_name)?,
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "StaticDataB24A(mmsi={}, vessel_name={:?})",
-            self.mmsi, self.vessel_name,
-        )
+    #[getter]
+    fn vessel_name(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.vessel_name.clone())
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "StaticDataB24A(mmsi={}, vessel_name={})",
+            self.mmsi,
+            repr_state(py, self.vessel_name.clone())?,
+        ))
     }
 }
 
@@ -1317,29 +1835,27 @@ impl From<RustStaticDataB24A> for PyStaticDataB24A {
 
 // ---------- StaticDataB24B (Type 24 Part B) ----------
 
-/// Class B static data Part B payload (Type 24B).
+/// Class B static data Part B payload (Type 24 Part B).
 ///
-/// The Rust `extent: Type24BExtent` sum type is flattened into two
-/// sibling optionals (ADR-0003): `dimensions` for every other MMSI,
-/// `mothership_mmsi` for an auxiliary craft (`98MIDxxxx`, ADR-0002).
-/// Parser output sets exactly one; the constructor validates nothing.
+/// `extent` is a `Type24BExtent`: `Type24BExtent.Dimensions(dimensions)`
+/// for every ordinary MMSI, `Type24BExtent.MothershipMmsi(mmsi)` for an
+/// auxiliary craft (`98MIDxxxx`, ADR-0002). Every other attribute the
+/// wire can leave without a value is a `marlin.field.FieldState`. The
+/// constructor accepts `FieldState[T] | T | None` per field-state
+/// attribute and defaults every such keyword to
+/// `FieldState.NotAvailable()`; `extent` defaults to dimensions with
+/// every member not available.
 #[pyclass(name = "StaticDataB24B", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyStaticDataB24B {
     #[pyo3(get)]
     mmsi: u32,
+    ship_type: FieldState<u8>,
+    vendor_id: FieldState<String>,
+    call_sign: FieldState<String>,
     #[pyo3(get)]
-    ship_type: u8,
-    #[pyo3(get)]
-    vendor_id: Option<String>,
-    #[pyo3(get)]
-    call_sign: Option<String>,
-    #[pyo3(get)]
-    dimensions: Option<PyDimensions>,
-    #[pyo3(get)]
-    mothership_mmsi: Option<u32>,
-    #[pyo3(get)]
-    epfd: PyEpfdType,
+    extent: PyType24BExtent,
+    epfd: FieldState<PyEpfdType>,
 }
 
 #[pymethods]
@@ -1347,64 +1863,79 @@ impl PyStaticDataB24B {
     #[new]
     #[pyo3(signature = (
         mmsi = 0,
-        ship_type = 0,
+        ship_type = None,
         vendor_id = None,
         call_sign = None,
-        dimensions = None,
-        mothership_mmsi = None,
-        epfd = PyEpfdType::Undefined,
+        extent = None,
+        epfd = None,
     ))]
     fn new(
         mmsi: u32,
-        ship_type: u8,
-        vendor_id: Option<String>,
-        call_sign: Option<String>,
-        dimensions: Option<PyDimensions>,
-        mothership_mmsi: Option<u32>,
-        epfd: PyEpfdType,
-    ) -> Self {
-        Self {
+        ship_type: Option<&Bound<'_, PyAny>>,
+        vendor_id: Option<&Bound<'_, PyAny>>,
+        call_sign: Option<&Bound<'_, PyAny>>,
+        extent: Option<PyType24BExtent>,
+        epfd: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
             mmsi,
-            ship_type,
-            vendor_id,
-            call_sign,
-            dimensions,
-            mothership_mmsi,
-            epfd,
-        }
+            ship_type: field_arg(ship_type)?,
+            vendor_id: field_arg(vendor_id)?,
+            call_sign: field_arg(call_sign)?,
+            extent: extent.unwrap_or_else(|| PyType24BExtent::Dimensions {
+                dimensions: PyDimensions::all_not_available(),
+            }),
+            epfd: field_arg(epfd)?,
+        })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "StaticDataB24B(mmsi={}, call_sign={:?}, vendor_id={:?})",
-            self.mmsi, self.call_sign, self.vendor_id,
-        )
+    #[getter]
+    fn ship_type(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.ship_type)
+    }
+    #[getter]
+    fn vendor_id(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.vendor_id.clone())
+    }
+    #[getter]
+    fn call_sign(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.call_sign.clone())
+    }
+    #[getter]
+    fn epfd(&self, py: Python<'_>) -> PyResult<PyFieldState> {
+        to_py(py, self.epfd)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "StaticDataB24B(mmsi={}, call_sign={}, vendor_id={})",
+            self.mmsi,
+            repr_state(py, self.call_sign.clone())?,
+            repr_state(py, self.vendor_id.clone())?,
+        ))
     }
 }
 
-impl From<RustStaticDataB24B> for PyStaticDataB24B {
-    fn from(d: RustStaticDataB24B) -> Self {
-        let (dimensions, mothership_mmsi) = match d.extent {
-            RustType24BExtent::Dimensions(dims) => (Some(dims.into()), None),
-            RustType24BExtent::MothershipMmsi(mmsi) => (None, Some(mmsi)),
-        };
-        Self {
+impl TryFrom<RustStaticDataB24B> for PyStaticDataB24B {
+    type Error = PyErr;
+
+    fn try_from(d: RustStaticDataB24B) -> PyResult<Self> {
+        Ok(Self {
             mmsi: d.mmsi,
             ship_type: d.ship_type,
             vendor_id: d.vendor_id,
             call_sign: d.call_sign,
-            dimensions,
-            mothership_mmsi,
-            epfd: d.epfd.into(),
-        }
+            extent: d.extent.into(),
+            epfd: enum_state(d.epfd)?,
+        })
     }
 }
 
 // ---------- Other (catch-all for un-decoded msg_type) ----------
 
-/// Catch-all variant for AIS message types this crate does not yet
-/// decode. Preserves the raw bit buffer and total bit count so
-/// callers can plug in their own decoder.
+/// Catch-all for AIS message types this crate does not yet decode.
+/// Preserves the raw bit buffer and total bit count so callers can plug
+/// in their own decoder.
 #[pyclass(name = "Other", frozen, module = "marlin.ais")]
 #[derive(Clone, Debug)]
 pub struct PyOther {
@@ -1448,24 +1979,28 @@ impl PyOther {
 /// Convert a `marlin_ais::AisMessageBody` into a typed Python object.
 ///
 /// Types 1/2/3 all produce `PyPositionReportA` — the variant
-/// distinction is preserved at the `AisMessage` wrapper level (Task
-/// 12), not here. Unknown future variants of the `#[non_exhaustive]`
-/// upstream enum surface as `PyValueError` so the binding can be
-/// updated deliberately rather than silently misrouting payloads.
+/// distinction is preserved at the `AisMessage` wrapper level, not
+/// here. Unknown future variants of the `#[non_exhaustive]` upstream
+/// enum surface as `PyValueError` so the binding can be updated
+/// deliberately rather than silently misrouting payloads.
 pub(crate) fn message_body_to_py(py: Python<'_>, body: AisMessageBody) -> PyResult<Py<PyAny>> {
     Ok(match body {
-        AisMessageBody::Type1(d)
-        | AisMessageBody::Type2(d)
-        | AisMessageBody::Type3(d) => Py::new(py, PyPositionReportA::from(d))?.into_any(),
-        AisMessageBody::Type5(d) => Py::new(py, PyStaticAndVoyageA::from(d))?.into_any(),
+        AisMessageBody::Type1(d) | AisMessageBody::Type2(d) | AisMessageBody::Type3(d) => {
+            Py::new(py, PyPositionReportA::try_from(d)?)?.into_any()
+        }
+        AisMessageBody::Type5(d) => Py::new(py, PyStaticAndVoyageA::try_from(d)?)?.into_any(),
         AisMessageBody::Type9(d) => {
             Py::new(py, PySarAircraftPositionReport::from(d))?.into_any()
         }
         AisMessageBody::Type18(d) => Py::new(py, PyPositionReportB::from(d))?.into_any(),
-        AisMessageBody::Type19(d) => Py::new(py, PyExtendedPositionReportB::from(d))?.into_any(),
-        AisMessageBody::Type21(d) => Py::new(py, PyAidToNavigationReport::from(d))?.into_any(),
+        AisMessageBody::Type19(d) => {
+            Py::new(py, PyExtendedPositionReportB::try_from(d)?)?.into_any()
+        }
+        AisMessageBody::Type21(d) => {
+            Py::new(py, PyAidToNavigationReport::try_from(d)?)?.into_any()
+        }
         AisMessageBody::Type24A(d) => Py::new(py, PyStaticDataB24A::from(d))?.into_any(),
-        AisMessageBody::Type24B(d) => Py::new(py, PyStaticDataB24B::from(d))?.into_any(),
+        AisMessageBody::Type24B(d) => Py::new(py, PyStaticDataB24B::try_from(d)?)?.into_any(),
         AisMessageBody::Other {
             msg_type,
             raw_payload,
@@ -1494,8 +2029,7 @@ pub(crate) fn message_body_to_py(py: Python<'_>, body: AisMessageBody) -> PyResu
 /// (since Types 1/2/3 share one body struct), and the decoded body
 /// pyclass.
 ///
-/// Construct in Python for testing or via `from_rust` from the parser
-/// (Task 14).
+/// Construct in Python for testing or via `from_rust` from the parser.
 #[pyclass(name = "AisMessage", frozen, module = "marlin.ais")]
 #[derive(Debug)]
 pub struct PyAisMessage {
@@ -1882,17 +2416,29 @@ impl PyAisIterator {
 
 pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     let m = PyModule::new(py, "ais")?;
-    // Task 10 enums + value types:
+    // Enums and value types:
     m.add_class::<PyNavStatus>()?;
     m.add_class::<PyManeuverIndicator>()?;
     m.add_class::<PyTurnDirection>()?;
+    m.add_class::<PyPositioningStatus>()?;
     m.add_class::<PyAltitudeSensor>()?;
     m.add_class::<PyAtonType>()?;
     m.add_class::<PyEpfdType>()?;
     m.add_class::<PyAisVersion>()?;
     m.add_class::<PyDimensions>()?;
     m.add_class::<PyEta>()?;
-    // Task 11 message variants:
+    // Sum types in field position, their variant classes named after
+    // their variants:
+    m.add_class::<PyRateOfTurn>()?;
+    name_variants(&py.get_type::<PyRateOfTurn>(), &PyRateOfTurn::VARIANTS)?;
+    m.add_class::<PyTimestamp>()?;
+    name_variants(&py.get_type::<PyTimestamp>(), &PyTimestamp::VARIANTS)?;
+    m.add_class::<PyType24BExtent>()?;
+    name_variants(
+        &py.get_type::<PyType24BExtent>(),
+        &PyType24BExtent::VARIANTS,
+    )?;
+    // Message variants:
     m.add_class::<PyPositionReportA>()?;
     m.add_class::<PyStaticAndVoyageA>()?;
     m.add_class::<PySarAircraftPositionReport>()?;
@@ -1902,11 +2448,11 @@ pub(crate) fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult
     m.add_class::<PyStaticDataB24A>()?;
     m.add_class::<PyStaticDataB24B>()?;
     m.add_class::<PyOther>()?;
-    // Task 12 outer message wrapper:
+    // Outer message wrapper:
     m.add_class::<PyAisMessage>()?;
-    // Task 13 power-user primitive:
+    // Power-user primitive:
     m.add_class::<PyBitReader>()?;
-    // Task 14 parser + iterator:
+    // Parser + iterator:
     m.add_class::<PyAisParser>()?;
     m.add_class::<PyAisIterator>()?;
     parent.add_submodule(&m)?;

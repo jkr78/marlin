@@ -36,7 +36,7 @@ use marlin_nmea_envelope::Parser;
 
 use crate::envelope::{PyRawSentence, DEFAULT_MAX_SIZE};
 use crate::errors::{decode_err, envelope_err};
-use crate::field::{from_py, repr_state, to_py, PyFieldState};
+use crate::field::{enum_state, field_arg, repr_state, to_py, unsupported_variant, PyFieldState};
 
 // ---------- Enums ----------
 
@@ -425,37 +425,6 @@ impl From<RustUtcDate> for PyUtcDate {
             year_yy: d.year_yy,
         }
     }
-}
-
-// ---------- Field-state helpers ----------
-
-/// A constructor argument for a field-state attribute: absent or `None`
-/// is `NotAvailable`, a `FieldState` passes through, a bare value is
-/// `Value`; the payload is extracted to `T` and the extraction error is
-/// raised as is.
-fn field_arg<'py, T: FromPyObjectOwned<'py>>(
-    obj: Option<&Bound<'py, PyAny>>,
-) -> PyResult<FieldState<T>> {
-    obj.map_or(Ok(FieldState::NotAvailable), from_py)
-}
-
-/// A decoded state whose payload is a Rust enum, converted to the
-/// binding enum. The Rust enums are `#[non_exhaustive]`, so a variant
-/// these bindings do not know is an error, never a fabricated member.
-fn enum_state<R, P: TryFrom<R, Error = PyErr>>(state: FieldState<R>) -> PyResult<FieldState<P>> {
-    Ok(match state {
-        FieldState::Value(v) => FieldState::Value(P::try_from(v)?),
-        FieldState::AtLeast(v) => FieldState::AtLeast(P::try_from(v)?),
-        FieldState::NotAvailable => FieldState::NotAvailable,
-        FieldState::SenderError(code) => FieldState::SenderError(code),
-        FieldState::Invalid(why) => FieldState::Invalid(why),
-    })
-}
-
-fn unsupported_variant(enum_name: &str, variant: &dyn core::fmt::Debug) -> PyErr {
-    pyo3::exceptions::PyValueError::new_err(format!(
-        "marlin Python bindings encountered an unsupported {enum_name} variant {variant:?} — bindings need updating"
-    ))
 }
 
 // ---------- Gga ----------

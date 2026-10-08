@@ -11,23 +11,62 @@
       },
       "dimensions": {
         "__class__": "Dimensions",
-        "to_bow_m": 5,
-        "to_port_m": 5,
-        "to_starboard_m": 5,
-        "to_stern_m": 5
+        "to_bow_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 5
+        },
+        "to_port_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 5
+        },
+        "to_starboard_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 5
+        },
+        "to_stern_m": {
+          "__class__": "Value",
+          "kind": "value",
+          "value": 5
+        }
       },
       "epfd": {
-        "__enum__": "EpfdType",
-        "value": 1
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__enum__": "EpfdType",
+          "value": 1
+        }
       },
-      "latitude_deg": 47.92061833333333,
-      "longitude_deg": -122.69859166666667,
+      "latitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": 47.92061833333333
+      },
+      "longitude_deg": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": -122.69859166666667
+      },
       "mmsi": 123456789,
-      "name": "CHINA ROSE MURPHY EXPRESS ALERT",
+      "name": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": "CHINA ROSE MURPHY EXPRESS ALERT"
+      },
       "off_position": false,
       "position_accuracy": false,
       "raim": false,
-      "timestamp": 50,
+      "timestamp": {
+        "__class__": "Value",
+        "kind": "value",
+        "value": {
+          "__class__": "Timestamp.Second",
+          "second": 50
+        }
+      },
       "virtual_aton": false
     },
     "is_own_ship": false,

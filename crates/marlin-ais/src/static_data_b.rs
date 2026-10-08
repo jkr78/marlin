@@ -12,8 +12,11 @@
 
 use alloc::string::String;
 
+use marlin_field::FieldState;
+
 use crate::shared_types::{
-    is_auxiliary_craft_mmsi, read_dimensions, trim_ais_string, Dimensions, EpfdType,
+    is_auxiliary_craft_mmsi, read_dimensions, read_epfd, trim_ais_string, Dimensions, EpfdType,
+    SHIP_TYPE,
 };
 use crate::{AisError, BitReader};
 
@@ -33,8 +36,8 @@ pub const STATIC_DATA_B_24B_BITS: usize = 168;
 pub struct StaticDataB24A {
     /// Maritime Mobile Service Identity.
     pub mmsi: u32,
-    /// Vessel name (up to 20 characters). `None` on all-padding.
-    pub vessel_name: Option<String>,
+    /// Vessel name (up to 20 characters). Not available on all-padding.
+    pub vessel_name: FieldState<String>,
 }
 
 /// What the 30-bit extent field of a Type 24 Part B holds, decided by
@@ -48,10 +51,10 @@ pub struct StaticDataB24A {
 /// is the USCG MMSI-format convention as gpsd implements it;
 /// ITU-R M.1371-5 Table 79 does not state it.
 ///
-/// Both arms keep the 30 bits recoverable: `MothershipMmsi` holds them
-/// verbatim and `Dimensions` maps only `0` to `None`. Exhaustive: the
-/// discriminator is a fixed MMSI-prefix rule, so no third arm can
-/// appear.
+/// Both arms keep the 30 bits recoverable: `MothershipMmsi` is a plain
+/// field holding them verbatim and `Dimensions` carries a field state
+/// per member. Exhaustive: the discriminator is a fixed MMSI-prefix
+/// rule, so no third arm can appear.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type24BExtent {
     /// Dimensions A/B/C/D, for every MMSI that is not an auxiliary craft.
@@ -66,20 +69,23 @@ pub enum Type24BExtent {
 pub struct StaticDataB24B {
     /// Maritime Mobile Service Identity.
     pub mmsi: u32,
-    /// Ship and cargo type — ITU-R M.1371-5 Table 53 raw value.
-    pub ship_type: u8,
-    /// Vendor ID (up to 7 characters). `None` on all-padding. Per
+    /// Ship and cargo type — ITU-R M.1371-5 Table 53 raw code. Not
+    /// available on `0`; every other code is a value.
+    pub ship_type: FieldState<u8>,
+    /// Vendor ID (up to 7 characters). Not available on all-padding. Per
     /// ITU-R M.1371-5 Annex 8 §3.22, Table 79A this is a composite of a
     /// 3-char vendor ID, 4-bit unit-model code, and 20-bit serial number;
     /// we surface the entire 7-char string and let callers split.
-    pub vendor_id: Option<String>,
-    /// Call sign (up to 7 characters). `None` on all-padding.
-    pub call_sign: Option<String>,
+    pub vendor_id: FieldState<String>,
+    /// Call sign (up to 7 characters). Not available on all-padding.
+    pub call_sign: FieldState<String>,
     /// Vessel dimensions, or the mother ship's MMSI for an auxiliary
     /// craft. See [`Type24BExtent`].
     pub extent: Type24BExtent,
-    /// Electronic position-fixing device type (bits 162–165).
-    pub epfd: EpfdType,
+    /// Electronic position-fixing device type (bits 162–165). Not
+    /// available on `0`; invalid with the raw code on the reserved codes
+    /// `9..=14`.
+    pub epfd: FieldState<EpfdType>,
 }
 
 /// Dispatch result from [`decode_static_data_b`].
@@ -176,7 +182,7 @@ pub fn decode_static_data_b_24b(
     let _ = r.u(2); // repeat
     let mmsi = (r.u(30) & 0xFFFF_FFFF) as u32;
     let _part = r.u(2); // part number (should be 1)
-    let ship_type = (r.u(8) & 0xFF) as u8;
+    let ship_type = SHIP_TYPE.read(r.u(8));
     let vendor_id = trim_ais_string(r.string(7));
     let call_sign = trim_ais_string(r.string(7));
     let extent = if is_auxiliary_craft_mmsi(mmsi) {
@@ -184,7 +190,7 @@ pub fn decode_static_data_b_24b(
     } else {
         Type24BExtent::Dimensions(read_dimensions(&mut r))
     };
-    let epfd = EpfdType::from_u4((r.u(4) & 0x0F) as u8);
+    let epfd = read_epfd(&mut r);
     // Trailing 2 bits are spare.
     Ok(StaticDataB24B {
         mmsi,
@@ -209,7 +215,7 @@ pub fn decode_static_data_b_24b(
 )]
 mod tests {
     use super::*;
-    use crate::testing::{armor_encode, write_ais_str, BitWriter};
+    use crate::testing::{armor_encode, text, undefined, write_ais_str, BitWriter};
 
     fn build_part_a(mmsi: u32, name: &[u8]) -> (alloc::vec::Vec<u8>, usize) {
         let mut w = BitWriter::new();
@@ -231,28 +237,49 @@ mod tests {
             | u64::from(starboard)
     }
 
-    /// `extent_bits` is the raw 30-bit field: dimensions via
-    /// [`dimension_bits`] or a mother-ship MMSI verbatim.
-    fn build_part_b(
+    /// Every Table 79 field a test may want to vary. `extent_bits` is the
+    /// raw 30-bit field: dimensions via [`dimension_bits`] or a
+    /// mother-ship MMSI verbatim. The spare bits are zero.
+    struct Fields {
         mmsi: u32,
         ship_type: u8,
-        vendor: &[u8],
-        callsign: &[u8],
+        vendor: &'static [u8],
+        callsign: &'static [u8],
         extent_bits: u64,
         epfd: u8,
-    ) -> (alloc::vec::Vec<u8>, usize) {
+    }
+
+    impl Default for Fields {
+        fn default() -> Self {
+            Self {
+                mmsi: 123_456_789,
+                ship_type: 37,
+                vendor: b"VND1234",
+                callsign: b"CS001",
+                extent_bits: dimension_bits(30, 10, 5, 3),
+                epfd: 0,
+            }
+        }
+    }
+
+    fn build_part_b(f: &Fields) -> (alloc::vec::Vec<u8>, usize) {
         let mut w = BitWriter::new();
         w.u(6, 24);
         w.u(2, 0);
-        w.u(30, u64::from(mmsi));
+        w.u(30, u64::from(f.mmsi));
         w.u(2, 1); // part B
-        w.u(8, u64::from(ship_type));
-        write_ais_str(&mut w, vendor, 7);
-        write_ais_str(&mut w, callsign, 7);
-        w.u(30, extent_bits);
-        w.u(4, u64::from(epfd));
+        w.u(8, u64::from(f.ship_type));
+        write_ais_str(&mut w, f.vendor, 7);
+        write_ais_str(&mut w, f.callsign, 7);
+        w.u(30, f.extent_bits);
+        w.u(4, u64::from(f.epfd));
         w.u(2, 0); // spare; total 168
         w.finish()
+    }
+
+    fn decode_b(f: &Fields) -> StaticDataB24B {
+        let (bits, total) = build_part_b(f);
+        decode_static_data_b_24b(&bits, total).unwrap()
     }
 
     #[test]
@@ -260,42 +287,125 @@ mod tests {
         let (bits, total) = build_part_a(123_456_789, b"MY VESSEL");
         let msg = decode_static_data_b_24a(&bits, total).unwrap();
         assert_eq!(msg.mmsi, 123_456_789);
-        assert_eq!(msg.vessel_name.as_deref(), Some("MY VESSEL"));
+        assert_eq!(msg.vessel_name, text("MY VESSEL"));
     }
 
     #[test]
     fn part_b_decodes_all_fields() {
-        let (bits, total) = build_part_b(
-            123_456_789,
-            37,
-            b"VND1234",
-            b"CS001",
-            dimension_bits(30, 10, 5, 3),
-            0,
-        );
-        let msg = decode_static_data_b_24b(&bits, total).unwrap();
+        let msg = decode_b(&Fields::default());
         assert_eq!(msg.mmsi, 123_456_789);
-        assert_eq!(msg.ship_type, 37);
-        assert_eq!(msg.vendor_id.as_deref(), Some("VND1234"));
-        assert_eq!(msg.call_sign.as_deref(), Some("CS001"));
+        assert_eq!(msg.ship_type, FieldState::Value(37));
+        assert_eq!(msg.vendor_id, text("VND1234"));
+        assert_eq!(msg.call_sign, text("CS001"));
         assert_eq!(
             msg.extent,
             Type24BExtent::Dimensions(Dimensions {
-                to_bow_m: Some(30),
-                to_stern_m: Some(10),
-                to_port_m: Some(5),
-                to_starboard_m: Some(3),
+                to_bow_m: FieldState::Value(30),
+                to_stern_m: FieldState::Value(10),
+                to_port_m: FieldState::Value(5),
+                to_starboard_m: FieldState::Value(3),
             })
         );
-        assert_eq!(msg.epfd, EpfdType::Undefined);
+        assert_eq!(msg.epfd, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn part_b_every_not_available_code_decodes_to_not_available() {
+        let msg = decode_b(&Fields {
+            ship_type: 0,
+            vendor: b"",
+            callsign: b"",
+            extent_bits: 0,
+            epfd: 0,
+            ..Fields::default()
+        });
+        assert_eq!(msg.ship_type, FieldState::NotAvailable);
+        assert_eq!(msg.vendor_id, FieldState::NotAvailable);
+        assert_eq!(msg.call_sign, FieldState::NotAvailable);
+        assert_eq!(
+            msg.extent,
+            Type24BExtent::Dimensions(Dimensions {
+                to_bow_m: FieldState::NotAvailable,
+                to_stern_m: FieldState::NotAvailable,
+                to_port_m: FieldState::NotAvailable,
+                to_starboard_m: FieldState::NotAvailable,
+            })
+        );
+        assert_eq!(msg.epfd, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn part_b_ship_type_rows() {
+        for (raw, expected) in [
+            (0, FieldState::NotAvailable),
+            (1, FieldState::Value(1)),
+            (255, FieldState::Value(255)),
+        ] {
+            let msg = decode_b(&Fields {
+                ship_type: raw,
+                ..Fields::default()
+            });
+            assert_eq!(msg.ship_type, expected, "raw {raw}");
+        }
+    }
+
+    #[test]
+    fn part_b_dimension_rows() {
+        let msg = decode_b(&Fields {
+            extent_bits: dimension_bits(511, 510, 63, 62),
+            ..Fields::default()
+        });
+        assert_eq!(
+            msg.extent,
+            Type24BExtent::Dimensions(Dimensions {
+                to_bow_m: FieldState::AtLeast(511),
+                to_stern_m: FieldState::Value(510),
+                to_port_m: FieldState::AtLeast(63),
+                to_starboard_m: FieldState::Value(62),
+            })
+        );
+        let msg = decode_b(&Fields {
+            extent_bits: dimension_bits(1, 0, 1, 0),
+            ..Fields::default()
+        });
+        assert_eq!(
+            msg.extent,
+            Type24BExtent::Dimensions(Dimensions {
+                to_bow_m: FieldState::Value(1),
+                to_stern_m: FieldState::NotAvailable,
+                to_port_m: FieldState::Value(1),
+                to_starboard_m: FieldState::NotAvailable,
+            })
+        );
+    }
+
+    #[test]
+    fn part_b_epfd_rows() {
+        for (raw, expected) in [
+            (0, FieldState::NotAvailable),
+            (1, FieldState::Value(EpfdType::Gps)),
+            (8, FieldState::Value(EpfdType::Galileo)),
+            (9, FieldState::Invalid(undefined(9))),
+            (14, FieldState::Invalid(undefined(14))),
+            (15, FieldState::Value(EpfdType::InternalGnss)),
+        ] {
+            let msg = decode_b(&Fields {
+                epfd: raw,
+                ..Fields::default()
+            });
+            assert_eq!(msg.epfd, expected, "raw {raw}");
+        }
     }
 
     /// ADR-0002: for a `98MIDxxxx` auxiliary-craft MMSI the 30 extent
     /// bits are the mother ship's MMSI, surfaced verbatim.
     #[test]
     fn part_b_auxiliary_craft_mmsi_yields_mothership_mmsi() {
-        let (bits, total) = build_part_b(987_654_321, 37, b"VND1234", b"CS001", 211_000_123, 0);
-        let msg = decode_static_data_b_24b(&bits, total).unwrap();
+        let msg = decode_b(&Fields {
+            mmsi: 987_654_321,
+            extent_bits: 211_000_123,
+            ..Fields::default()
+        });
         assert_eq!(msg.extent, Type24BExtent::MothershipMmsi(211_000_123));
     }
 
@@ -303,16 +413,11 @@ mod tests {
     /// under a non-auxiliary MMSI read as dimensions.
     #[test]
     fn part_b_non_auxiliary_mmsi_reads_same_bits_as_dimensions() {
-        let (bits, total) = build_part_b(123_456_789, 37, b"VND1234", b"CS001", 211_000_123, 0);
-        let msg = decode_static_data_b_24b(&bits, total).unwrap();
+        let msg = decode_b(&Fields {
+            extent_bits: 211_000_123,
+            ..Fields::default()
+        });
         assert!(matches!(msg.extent, Type24BExtent::Dimensions(_)));
-    }
-
-    #[test]
-    fn part_b_decodes_epfd() {
-        let (bits, total) = build_part_b(1, 0, b"", b"", 0, EpfdType::Galileo.code());
-        let msg = decode_static_data_b_24b(&bits, total).unwrap();
-        assert_eq!(msg.epfd, EpfdType::Galileo);
     }
 
     /// Pins the armored form of an auxiliary-craft Part B so the Python
@@ -321,7 +426,12 @@ mod tests {
     /// armor to exactly 28 characters with zero fill bits.
     #[test]
     fn part_b_auxiliary_craft_payload_armors_to_known_string() {
-        let (bits, total) = build_part_b(987_654_321, 37, b"VND1234", b"CS001", 211_000_123, 1);
+        let (bits, total) = build_part_b(&Fields {
+            mmsi: 987_654_321,
+            extent_bits: 211_000_123,
+            epfd: 1,
+            ..Fields::default()
+        });
         let armored = b"H>eq`dDUF>4ijkl3Chhi00<Tqds4";
         assert_eq!(armor_encode(&bits, total), (armored.to_vec(), 0));
         assert_eq!(crate::armor::decode(armored, 0).unwrap(), (bits, total));
@@ -333,7 +443,7 @@ mod tests {
         match decode_static_data_b(&bits, total).unwrap() {
             StaticDataB::PartA(a) => {
                 assert_eq!(a.mmsi, 999);
-                assert_eq!(a.vessel_name.as_deref(), Some("TESTNAME"));
+                assert_eq!(a.vessel_name, text("TESTNAME"));
             }
             other => panic!("expected PartA, got {other:?}"),
         }
@@ -341,9 +451,16 @@ mod tests {
 
     #[test]
     fn dispatcher_routes_part_b() {
-        let (bits, total) = build_part_b(1, 70, b"V", b"C", dimension_bits(1, 1, 1, 1), 0);
+        let (bits, total) = build_part_b(&Fields {
+            mmsi: 1,
+            ship_type: 70,
+            vendor: b"V",
+            callsign: b"C",
+            extent_bits: dimension_bits(1, 1, 1, 1),
+            epfd: 0,
+        });
         match decode_static_data_b(&bits, total).unwrap() {
-            StaticDataB::PartB(b) => assert_eq!(b.ship_type, 70),
+            StaticDataB::PartB(b) => assert_eq!(b.ship_type, FieldState::Value(70)),
             other => panic!("expected PartB, got {other:?}"),
         }
     }
@@ -370,10 +487,10 @@ mod tests {
     }
 
     #[test]
-    fn part_a_all_padding_name_is_none() {
+    fn part_a_all_padding_name_is_not_available() {
         let (bits, total) = build_part_a(1, b"");
         let msg = decode_static_data_b_24a(&bits, total).unwrap();
-        assert_eq!(msg.vessel_name, None);
+        assert_eq!(msg.vessel_name, FieldState::NotAvailable);
     }
 
     #[test]
@@ -407,7 +524,10 @@ mod tests {
             StaticDataB::PartA(via_dispatcher) => {
                 assert_eq!(via_dispatcher, direct, "dispatcher and direct must agree");
                 assert_ne!(direct.mmsi, 0, "real payload has a non-zero MMSI");
-                assert!(direct.vessel_name.is_some(), "name field decodes");
+                assert!(
+                    matches!(direct.vessel_name, FieldState::Value(_)),
+                    "name field decodes"
+                );
             }
             other => panic!("expected PartA, got {other:?}"),
         }

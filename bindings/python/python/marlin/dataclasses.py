@@ -20,10 +20,12 @@ Enum-typed fields (GgaFixQuality, NavStatus, EpfdType, etc.) are stored
 as their integer values for JSON-friendly output, inside the field-state
 mirror where the binding class carries a `FieldState`.
 
-A dataclass mirror has the same name and the same field names as its
-binding class; `to_dataclass` relies on both to convert without a
-per-class function. To add a message, write its dataclass here and
-export it. `tests/unit/test_dataclass_agreement.py` checks the pairing.
+A dataclass mirror has the same qualified name and the same field names
+as its binding class; `to_dataclass` relies on both to convert without a
+per-class function. A variant class of a sum type (`RateOfTurn.DegPerMin`)
+is mirrored by a dataclass nested under a namespace class of the sum
+type's name. To add a message, write its dataclass here and export it.
+`tests/unit/test_dataclass_agreement.py` checks the pairing.
 """
 
 from __future__ import annotations
@@ -114,22 +116,94 @@ class UtcDate:
 
 @dataclass(frozen=True)
 class Eta:
-    """Dataclass mirror of marlin.ais.Eta. All fields are Optional[int]."""
+    """Dataclass mirror of marlin.ais.Eta. Each member is a `FieldState[int]`."""
 
-    month: Optional[int]
-    day: Optional[int]
-    hour: Optional[int]
-    minute: Optional[int]
+    month: FieldState[int]
+    day: FieldState[int]
+    hour: FieldState[int]
+    minute: FieldState[int]
 
 
 @dataclass(frozen=True)
 class Dimensions:
-    """Dataclass mirror of marlin.ais.Dimensions. All fields are Optional[int]."""
+    """Dataclass mirror of marlin.ais.Dimensions.
 
-    to_bow_m: Optional[int]
-    to_stern_m: Optional[int]
-    to_port_m: Optional[int]
-    to_starboard_m: Optional[int]
+    Each member is a `FieldState[int]`; the field maximum is the over-range
+    bound `AtLeast(511)` / `AtLeast(63)`.
+    """
+
+    to_bow_m: FieldState[int]
+    to_stern_m: FieldState[int]
+    to_port_m: FieldState[int]
+    to_starboard_m: FieldState[int]
+
+
+# ---------- AIS sum types in field position ----------
+
+# Mirrors of the variant classes of `marlin.ais.RateOfTurn`, `Timestamp`
+# and `Type24BExtent`, nested under a namespace class named like the sum
+# type so that `Timestamp.PositioningStatus` and `Type24BExtent.Dimensions`
+# do not collide with the `PositioningStatus` enum and the `Dimensions`
+# value type. An enum payload is the member's integer value. The converter
+# finds a mirror by the binding class's qualified name.
+
+# `Type24BExtent.Dimensions` shadows the value type inside its namespace.
+_Dimensions = Dimensions
+
+
+class RateOfTurn:
+    """Namespace of the mirrors of marlin.ais.RateOfTurn's variant classes."""
+
+    @dataclass(frozen=True, slots=True)
+    class DegPerMin:
+        """Dataclass mirror of marlin.ais.RateOfTurn.DegPerMin."""
+
+        deg_per_min: float
+
+    @dataclass(frozen=True, slots=True)
+    class NoIndicator:
+        """Dataclass mirror of marlin.ais.RateOfTurn.NoIndicator.
+
+        `direction` is the `TurnDirection` member's integer value.
+        """
+
+        direction: int
+
+
+class Timestamp:
+    """Namespace of the mirrors of marlin.ais.Timestamp's variant classes."""
+
+    @dataclass(frozen=True, slots=True)
+    class Second:
+        """Dataclass mirror of marlin.ais.Timestamp.Second."""
+
+        second: int
+
+    @dataclass(frozen=True, slots=True)
+    class PositioningStatus:
+        """Dataclass mirror of marlin.ais.Timestamp.PositioningStatus.
+
+        `status` is the `PositioningStatus` member's integer value, the
+        timestamp wire code 61, 62 or 63.
+        """
+
+        status: int
+
+
+class Type24BExtent:
+    """Namespace of the mirrors of marlin.ais.Type24BExtent's variant classes."""
+
+    @dataclass(frozen=True, slots=True)
+    class Dimensions:
+        """Dataclass mirror of marlin.ais.Type24BExtent.Dimensions."""
+
+        dimensions: _Dimensions
+
+    @dataclass(frozen=True, slots=True)
+    class MothershipMmsi:
+        """Dataclass mirror of marlin.ais.Type24BExtent.MothershipMmsi."""
+
+        mmsi: int
 
 
 # ---------- envelope dataclass mirror ----------
@@ -356,30 +430,30 @@ class Prdid:
 
 # ---------- AIS dataclass mirrors ----------
 
+# Every attribute the wire can leave without a value is a `FieldState`
+# mirror; an enum payload is stored as the member's integer value.
+
 
 @dataclass(frozen=True)
 class PositionReportA:
     """Dataclass mirror of marlin.ais.PositionReportA (Types 1/2/3).
 
-    `navigation_status` and `special_maneuver` are stored as int (wire values).
-    `turn_direction` is stored as int too, but it is the `TurnDirection`
-    enum value (RIGHT = 0, LEFT = 1), not a wire code: on the wire the
-    status is raw ROT ±127. At most one of `rate_of_turn` and
-    `turn_direction` is set; both are None for the −128 sentinel.
+    `navigation_status` and `special_maneuver` carry the enum member's
+    int value (the wire code). `rate_of_turn` and `timestamp` carry the
+    `RateOfTurn` and `Timestamp` variant mirrors.
     """
 
     mmsi: int
-    navigation_status: int
-    rate_of_turn: Optional[float]
-    turn_direction: Optional[int]
-    speed_over_ground: Optional[float]
+    navigation_status: FieldState[int]
+    rate_of_turn: FieldState[Union[RateOfTurn.DegPerMin, RateOfTurn.NoIndicator]]
+    speed_over_ground: FieldState[float]
     position_accuracy: bool
-    longitude_deg: Optional[float]
-    latitude_deg: Optional[float]
-    course_over_ground: Optional[float]
-    true_heading: Optional[int]
-    timestamp: int
-    special_maneuver: int
+    longitude_deg: FieldState[float]
+    latitude_deg: FieldState[float]
+    course_over_ground: FieldState[float]
+    true_heading: FieldState[int]
+    timestamp: FieldState[Union[Timestamp.Second, Timestamp.PositioningStatus]]
+    special_maneuver: FieldState[int]
     raim: bool
     radio_status: int
 
@@ -388,22 +462,23 @@ class PositionReportA:
 class StaticAndVoyageA:
     """Dataclass mirror of marlin.ais.StaticAndVoyageA (Type 5).
 
-    `ais_version` and `epfd` are stored as int (wire values).
-    `dimensions` and `eta` are always present (non-Optional) per the Rust type.
+    `ais_version` and the `epfd` payload are int (wire values).
+    `dimensions` and `eta` are always present (non-Optional) per the Rust
+    type, each member a `FieldState`.
     """
 
     mmsi: int
     ais_version: int
-    imo_number: Optional[int]
-    call_sign: Optional[str]
-    vessel_name: Optional[str]
-    ship_type: int
+    imo_number: FieldState[int]
+    call_sign: FieldState[str]
+    vessel_name: FieldState[str]
+    ship_type: FieldState[int]
     dimensions: Dimensions
-    epfd: int
+    epfd: FieldState[int]
     eta: Eta
-    draught_m: Optional[float]
-    destination: Optional[str]
-    dte: bool
+    draught_m: FieldState[float]
+    destination: FieldState[str]
+    dte: FieldState[bool]
 
 
 @dataclass(frozen=True)
@@ -411,18 +486,18 @@ class SarAircraftPositionReport:
     """Dataclass mirror of marlin.ais.SarAircraftPositionReport (Type 9).
 
     `altitude_m` and `speed_over_ground` are whole metres / whole knots;
-    None is the not-available code and over-range codes pass through.
-    `altitude_sensor` is stored as int (wire value: GNSS = 0, BAROMETRIC = 1).
+    an over-range code is the `AtLeast` mirror. `altitude_sensor` is int
+    (wire value: GNSS = 0, BAROMETRIC = 1).
     """
 
     mmsi: int
-    altitude_m: Optional[int]
-    speed_over_ground: Optional[int]
+    altitude_m: FieldState[int]
+    speed_over_ground: FieldState[int]
     position_accuracy: bool
-    longitude_deg: Optional[float]
-    latitude_deg: Optional[float]
-    course_over_ground: Optional[float]
-    timestamp: int
+    longitude_deg: FieldState[float]
+    latitude_deg: FieldState[float]
+    course_over_ground: FieldState[float]
+    timestamp: FieldState[Union[Timestamp.Second, Timestamp.PositioningStatus]]
     altitude_sensor: int
     dte: bool
     assigned_flag: bool
@@ -435,13 +510,13 @@ class PositionReportB:
     """Dataclass mirror of marlin.ais.PositionReportB (Type 18)."""
 
     mmsi: int
-    speed_over_ground: Optional[float]
+    speed_over_ground: FieldState[float]
     position_accuracy: bool
-    longitude_deg: Optional[float]
-    latitude_deg: Optional[float]
-    course_over_ground: Optional[float]
-    true_heading: Optional[int]
-    timestamp: int
+    longitude_deg: FieldState[float]
+    latitude_deg: FieldState[float]
+    course_over_ground: FieldState[float]
+    true_heading: FieldState[int]
+    timestamp: FieldState[Union[Timestamp.Second, Timestamp.PositioningStatus]]
     class_b_cs_flag: bool
     class_b_display_flag: bool
     class_b_dsc_flag: bool
@@ -456,21 +531,21 @@ class PositionReportB:
 class ExtendedPositionReportB:
     """Dataclass mirror of marlin.ais.ExtendedPositionReportB (Type 19).
 
-    `epfd` is stored as int (wire value). `dimensions` is always present.
+    The `epfd` payload is int (wire value). `dimensions` is always present.
     """
 
     mmsi: int
-    speed_over_ground: Optional[float]
+    speed_over_ground: FieldState[float]
     position_accuracy: bool
-    longitude_deg: Optional[float]
-    latitude_deg: Optional[float]
-    course_over_ground: Optional[float]
-    true_heading: Optional[int]
-    timestamp: int
-    vessel_name: Optional[str]
-    ship_type: int
+    longitude_deg: FieldState[float]
+    latitude_deg: FieldState[float]
+    course_over_ground: FieldState[float]
+    true_heading: FieldState[int]
+    timestamp: FieldState[Union[Timestamp.Second, Timestamp.PositioningStatus]]
+    vessel_name: FieldState[str]
+    ship_type: FieldState[int]
     dimensions: Dimensions
-    epfd: int
+    epfd: FieldState[int]
     raim: bool
     dte: bool
     assigned_flag: bool
@@ -480,20 +555,21 @@ class ExtendedPositionReportB:
 class AidToNavigationReport:
     """Dataclass mirror of marlin.ais.AidToNavigationReport (Type 21).
 
-    `aton_type` and `epfd` are stored as int (wire values). `name` is the
-    joined and trimmed 20 + up to 14 character name; `dimensions` is
-    always present (all-None for virtual AtoN and reference points).
+    `aton_type` and the `epfd` payload are int (wire values). `name` is
+    the joined and trimmed 20 + up to 14 character name; `dimensions` is
+    always present (all not available for virtual AtoN and reference
+    points).
     """
 
     mmsi: int
     aton_type: int
-    name: Optional[str]
+    name: FieldState[str]
     position_accuracy: bool
-    longitude_deg: Optional[float]
-    latitude_deg: Optional[float]
+    longitude_deg: FieldState[float]
+    latitude_deg: FieldState[float]
     dimensions: Dimensions
-    epfd: int
-    timestamp: int
+    epfd: FieldState[int]
+    timestamp: FieldState[Union[Timestamp.Second, Timestamp.PositioningStatus]]
     off_position: bool
     aton_status: int
     raim: bool
@@ -506,26 +582,24 @@ class StaticDataB24A:
     """Dataclass mirror of marlin.ais.StaticDataB24A (Type 24 Part A)."""
 
     mmsi: int
-    vessel_name: Optional[str]
+    vessel_name: FieldState[str]
 
 
 @dataclass(frozen=True)
 class StaticDataB24B:
     """Dataclass mirror of marlin.ais.StaticDataB24B (Type 24 Part B).
 
-    Exactly one of `dimensions` and `mothership_mmsi` is set on parser
-    output: the latter for an auxiliary craft (MMSI `98MIDxxxx`), whose
-    30 extent bits carry the mother ship's MMSI instead of dimensions.
-    `epfd` is stored as int (wire value).
+    `extent` is the `Type24BExtent` variant mirror: dimensions, or the
+    mother ship's MMSI for an auxiliary craft (MMSI `98MIDxxxx`). The
+    `epfd` payload is int (wire value).
     """
 
     mmsi: int
-    ship_type: int
-    vendor_id: Optional[str]
-    call_sign: Optional[str]
-    dimensions: Optional[Dimensions]
-    mothership_mmsi: Optional[int]
-    epfd: int
+    ship_type: FieldState[int]
+    vendor_id: FieldState[str]
+    call_sign: FieldState[str]
+    extent: Union[Type24BExtent.Dimensions, Type24BExtent.MothershipMmsi]
+    epfd: FieldState[int]
 
 
 @dataclass(frozen=True)
@@ -603,14 +677,34 @@ def to_dataclass(msg: object) -> object:
 
 
 def _mirror_of(value: object) -> Optional[type]:
-    """The dataclass mirror named like `value`'s binding class, if any."""
+    """The dataclass mirror of `value`'s binding class, if any.
+
+    A mirror is found by the binding class's qualified name: a nested
+    variant class (`Type24BExtent.Dimensions`) is the dataclass of the same
+    name under the namespace class of the same name here. The `FieldState`
+    mirrors are flat because `FieldState` is the union alias, so a name
+    the path does not resolve is looked up bare (`Value`).
+    """
     binding_class = type(value)
     if binding_class.__module__ not in _BINDING_MODULES:
         return None
-    mirror = globals().get(binding_class.__name__)
+    mirror = _resolve(binding_class.__qualname__.split("."))
+    if mirror is None:
+        mirror = globals().get(binding_class.__name__)
     if isinstance(mirror, type) and is_dataclass(mirror):
         return mirror
     return None
+
+
+def _resolve(path: list[str]) -> object:
+    """Walk `path` from this module's globals through class attributes."""
+    head, *rest = path
+    node: object = globals().get(head)
+    for name in rest:
+        if not isinstance(node, type):
+            return None
+        node = vars(node).get(name)
+    return node
 
 
 def _convert(value: object) -> object:
@@ -659,6 +753,7 @@ __all__ = [
     "PrdidRaw",
     "PrdidRollPitchHeading",
     "Psxn",
+    "RateOfTurn",
     "RawSentence",
     "Rmc",
     "SarAircraftPositionReport",
@@ -666,8 +761,10 @@ __all__ = [
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
+    "Timestamp",
     "Tll",
     "Ttm",
+    "Type24BExtent",
     "Unknown",
     "UtcDate",
     "UtcTime",

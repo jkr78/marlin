@@ -80,13 +80,18 @@ def main() -> int:
                 if isinstance(
                     body, (PositionReportA, PositionReportB, ExtendedPositionReportB)
                 ):
-                    if body.latitude_deg is not None and body.longitude_deg is not None:
-                        positions[body.mmsi] = (body.latitude_deg, body.longitude_deg)
+                    lat = body.latitude_deg.value
+                    lon = body.longitude_deg.value
+                    if lat is not None and lon is not None:
+                        positions[body.mmsi] = (lat, lon)
                 if isinstance(
                     body, (StaticAndVoyageA, StaticDataB24A, ExtendedPositionReportB)
                 ):
-                    if body.vessel_name:
-                        names[body.mmsi] = body.vessel_name
+                    # A field state is always truthy: read `.value`, which is
+                    # None unless the name is a value.
+                    name = body.vessel_name.value
+                    if name is not None:
+                        names[body.mmsi] = name
             if time.monotonic() - last_render >= REFRESH_S:
                 render(env_frames, env_bad, type_counts, positions, names)
                 last_render = time.monotonic()
