@@ -161,6 +161,13 @@ table. Fields past the transmitted end are not available; a text field
 keeps the whole characters transmitted and loses only the partial one.
 _Avoid_: minimum length, table length, nominal length
 
+**Framing order**:
+The item order `marlin_klv::encode` emits: Tag 2, Tag 65, the scaled tags in
+ascending tag order, unknown tags in their original order, Tag 1 last. A
+decoded packet already in framing order re-encodes to its source bytes; any
+other order re-encodes to the same set in different bytes.
+_Avoid_: canonical order, item order, wire order (for the output)
+
 **Turn indicator (TI)**:
 The onboard rate-of-turn sensor behind the ROT field. Codes ±127 mean "turning
 right/left at more than 5° per 30 s (no TI available)": a status, not a rate.
