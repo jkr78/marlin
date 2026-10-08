@@ -371,7 +371,7 @@ mod tests {
         let s = parser.next_sentence().unwrap().unwrap();
         assert_eq!(s.talker, Some(*b"GP"));
         assert_eq!(s.sentence_type, "ZDA");
-        assert!(s.fields.is_empty());
+        assert_eq!(s.fields, [] as [&[u8]; 0]);
     }
 
     // -----------------------------------------------------------------

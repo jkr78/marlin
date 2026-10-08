@@ -192,7 +192,7 @@ mod tests {
     fn decode_empty_payload_with_zero_fill_is_empty() {
         let (bits, total) = decode(b"", 0).unwrap();
         assert_eq!(total, 0);
-        assert!(bits.is_empty());
+        assert_eq!(bits, [] as [u8; 0]);
     }
 
     #[test]

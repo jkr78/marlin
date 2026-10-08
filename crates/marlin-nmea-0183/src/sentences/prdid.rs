@@ -273,7 +273,7 @@ mod tests {
             other => panic!("expected Raw, got {other:?}"),
         };
         assert_eq!(fields.len(), 3);
-        assert!(fields[1].is_empty());
+        assert_eq!(fields[1], [] as [u8; 0]);
     }
 
     #[test]
