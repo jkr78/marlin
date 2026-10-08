@@ -58,10 +58,11 @@ same strings, so logs from both languages agree.
 
 ## marlin-klv
 
-Standalone `#![no_std]` + `alloc` crate: a MISB ST 0601 (UAS
-Datalink Local Set) KLV encoder/decoder. Unlike `marlin-nmea-0183` and
-`marlin-ais`, it does not depend on `marlin-nmea-envelope`: KLV is not
-NMEA-framed, so there's no shared envelope layer to sit on.
+`#![no_std]` + `alloc` crate: a MISB ST 0601 (UAS Datalink Local Set)
+KLV encoder/decoder. Unlike `marlin-nmea-0183` and `marlin-ais`, it does
+not depend on `marlin-nmea-envelope`: KLV is not NMEA-framed, so there's
+no shared envelope layer to sit on. Its only marlin dependency is
+`marlin-field`, from 0.3.0, as the `marlin-field` section above says.
 
 ### Modules
 
