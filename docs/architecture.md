@@ -40,10 +40,12 @@ Unrecognized tags round-trip verbatim through
 
 ### Invariants
 
-- **Byte-exact round-trip.** `decode(encode(set)) == set` for this
-  crate's own output. `encode` reproduces the source bytes for any
-  packet it can decode, including a known tag with an unexpected wire
-  length (falls back to `unknown` rather than erroring).
+- **Round-trip.** `decode(encode(set)) == set` for this crate's own
+  output. `encode` reproduces the source bytes of a decodable packet
+  whose items already sit in the framing order below, including a known
+  tag with an unexpected wire length (kept verbatim in `unknown`). A
+  packet in any other item order decodes to the same set but re-encodes
+  in framing order, so its bytes differ.
 - **Tolerant decode.** A malformed known tag doesn't fail the whole
   decode; it lands in `unknown` instead. Tag 2 (precision timestamp) is
   the one exception — mandatory, so a malformed Tag 2 fails the whole
