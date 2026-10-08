@@ -244,5 +244,13 @@ _Avoid_: mirror, wrapper class, Py class
 
 **Dataclass mirror**:
 The frozen dataclass in `marlin.dataclasses` that holds the same fields as a
-binding class, with enum fields as plain integers.
+binding class, with enum fields as plain integers and field states as the
+mirrors of their variant classes.
 _Avoid_: mirror (alone), dataclass copy
+
+**Variant class**:
+The Python class of one state of a binding-class sum type, nested under the
+type's class and matched by `isinstance` or `match`: `FieldState.Value`,
+`RateOfTurn.NoIndicator`. A field state is read through its variant class,
+never through a sentinel value.
+_Avoid_: subclass, nested class, case class
