@@ -91,8 +91,9 @@ with no known bound is a sender error, not over-range.
 _Avoid_: error indicator (MISB's wording for one case), flagged, fault
 
 **Invalid**:
-The field state for a wire value the decoder could not give a meaning,
-whether unparsable text or a number the spec leaves undefined.
+The field state for a wire value the decoder could not give a meaning: a
+number inside the field's width the spec leaves undefined, or bytes from
+which no such number can be read (unparsable text, a wrong-length tag).
 _Avoid_: rejected, malformed (reserved for sentence framing), unparsable,
 corrupt
 

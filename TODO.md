@@ -365,6 +365,8 @@ track deliverables (not conversational state).
   Covers the wire types of every crate, including the `marlin-ais` structs (not
   only the envelope). nexus maps into its own model by hand and does not need it
   (noted 2026-10-02).
+  `marlin-field` gains the feature in the same change: the message structs
+  cannot derive without it (noted 2026-10-08, field-state ticket 18).
 - [ ] `arbitrary` derive for `RawSentence` (helps structure-aware fuzzing of higher crates)
 
 ---
