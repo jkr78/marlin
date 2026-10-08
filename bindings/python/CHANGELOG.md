@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not-available sentinel are unchanged. Consumers that treated
   `abs(rate_of_turn) > 708.7` as the no-turn-indicator case should test
   `turn_direction is not None` instead.
+  `turn_direction` is short-lived: the next breaking minor folds it back
+  into `rate_of_turn` as a tagged value, and gives `mothership_mmsi`
+  below the same treatment.
 - `StaticDataB24B.dimensions` is `Optional[Dimensions]`: `None` for an
   auxiliary craft, whose extent surfaces as `mothership_mmsi` instead
   (ADR-0003 flattening; parser output sets exactly one of the two). The

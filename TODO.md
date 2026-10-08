@@ -15,16 +15,19 @@ track deliverables (not conversational state).
   Pick one convention and apply it everywhere. The operation prefix
   pairs naturally with the `EncodeError` the field-state work adds to
   marlin-klv, whose `Error` is already changing shape in 0.3.0, so that
-  release is the natural moment; the migration ticket of that effort
-  should decide whether this rides along. [workspace][0.3.0][draft]
+  release is the natural moment. Decided 2026-10-08: it rides 0.3.0,
+  settled in its own short design round before the marlin-klv encode
+  work lands. [workspace][0.3.0][ready]
 - [ ] Align unit suffixes on numeric field names across the three crates
   AIS mixes `latitude_deg` with `speed_over_ground` and `true_heading`;
   KLV spells the unit out (`_degrees`, `_meters`, `_mps`); 0183 has its
   own mix. One convention, applied everywhere, is a public rename of
   most numeric fields, so it only makes sense inside a breaking release.
   0.3.0 already changes every field's type for the field-state work and
-  is the natural moment; the migration ticket of that effort should
-  decide whether this rides along. [workspace][0.3.0][draft]
+  is the natural moment. Decided 2026-10-08: an optional passenger, not
+  a gate. It needs its own design round and lands in 0.3.0 only if ready
+  before release prep starts; otherwise the next breaking minor.
+  [workspace][0.3.0][draft]
 - [ ] Decide what a duplicated tag in one ST 0601 local set decodes to
   `marlin_klv::decode` lets a later occurrence of a typed tag silently
   overwrite an earlier one, so a set with two Tag 13 items yields the
@@ -32,7 +35,8 @@ track deliverables (not conversational state).
   no rule to cite, no captured stream has shown a duplicate, and the
   decode loop is rewritten for 0.3.0 anyway. Re-check the standard
   before choosing between last-wins, first-wins and the invalid field
-  state. [marlin-klv][draft]
+  state. Decided 2026-10-08: an optional passenger for 0.3.0, not a gate.
+  [marlin-klv][draft]
 - [ ] Expose the nmea-0183 field helpers for downstream proprietary decoders
   The crate docs promise an extension story: a downstream crate builds
   its own enum and delegates to the public per-sentence decoders. A
@@ -59,7 +63,9 @@ track deliverables (not conversational state).
   hazardous-cargo class, so the honest shape is probably a category enum
   plus a cargo-class enum, not 250 variants; it needs its own short
   design round. Timing: 0.3.0 is already breaking, so landing it there
-  spares consumers a second break. May not be needed: the doc comment
+  spares consumers a second break, but it is an optional passenger, not
+  a gate (decided 2026-10-08): it ships in 0.3.0 only if its design round
+  finishes before release prep starts. May not be needed: the doc comment
   says most callers use their own lookup, and nexus re-derives only code
   0, which the not-available state now covers. Re-check that before
   building. [marlin-ais][draft]
