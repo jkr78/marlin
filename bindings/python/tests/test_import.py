@@ -1,6 +1,6 @@
 def test_marlin_imports():
     import marlin
-    assert marlin.__version__ == "0.1.4"
+    assert marlin.__version__ == "0.2.0"
 
 
 def test_core_extension_loads():
