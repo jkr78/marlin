@@ -8,6 +8,15 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Give every crate error type a crate or operation prefix
+  The workspace names its error enums three ways: crate prefix
+  (`AisError`, `Nmea0183Error`), operation prefix (`DecodeError` in
+  marlin-nmea-0183) and bare `Error` (marlin-klv, marlin-nmea-envelope).
+  Pick one convention and apply it everywhere. The operation prefix
+  pairs naturally with the `EncodeError` the field-state work adds to
+  marlin-klv, whose `Error` is already changing shape in 0.3.0, so that
+  release is the natural moment; the migration ticket of that effort
+  should decide whether this rides along. [workspace][0.3.0][draft]
 - [ ] Align unit suffixes on numeric field names across the three crates
   AIS mixes `latitude_deg` with `speed_over_ground` and `true_heading`;
   KLV spells the unit out (`_degrees`, `_meters`, `_mps`); 0183 has its
