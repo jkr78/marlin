@@ -75,7 +75,7 @@ accepted.
 _Avoid_: valid, ok, present
 
 **Sentinel**:
-A reserved wire value that carries a status instead of a measurement.
+A reserved raw code that carries a status instead of a value.
 _Avoid_: magic number, placeholder
 
 **Not available**:
@@ -91,7 +91,7 @@ with no known bound is a sender error, not over-range.
 _Avoid_: error indicator (MISB's wording for one case), flagged, fault
 
 **Invalid**:
-The field state for a wire value the decoder could not give a meaning: a
+The field state for a wire field the decoder could not give a meaning: a
 number inside the field's width the spec leaves undefined, or bytes from
 which no such number can be read (unparsable text, a wrong-length tag).
 _Avoid_: rejected, malformed (reserved for sentence framing), corrupt
@@ -136,7 +136,7 @@ A void status does not change the field state of the fields it qualifies.
 _Avoid_: flag field, validity field
 
 **Status-carrying field**:
-A measurement field whose code space also carries defined statuses, such as
+A numeric field whose code space also carries defined statuses, such as
 the AIS timestamp (61–63: manual input, dead reckoning, inoperative) or rate
 of turn (±127: turning with no indicator). A status is a value of the field,
 not a field state; only the not-available code is a field state.

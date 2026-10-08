@@ -1,8 +1,64 @@
 # Architecture
 
+## marlin-field
+
+Leaf crate holding the field state type every decoder re-exports:
+`FieldState<T>`, `Kind`, `RawCode` and `Invalid`, flat at the root with
+no other public item. It is `#![no_std]` **without** `alloc`, unlike the
+decoder crates: the type holds no heap data of its own, and a
+`FieldState<String>` works because the caller supplies the `T`. It has no
+dependencies. `marlin-nmea-0183`, `marlin-ais` and `marlin-klv` depend on
+it and re-export the four items from 0.3.0; `marlin-nmea-envelope` does
+not depend on it, since the envelope yields raw sentences and assigns no
+field a state. The decision and the per-crate consequences are ADR-0008.
+
+### Surface
+
+```rust
+pub struct RawCode(pub i64);
+pub enum Invalid { Undefined(RawCode), Unparsable }
+pub enum Kind { Value, AtLeast, NotAvailable, SenderError(RawCode), Invalid(Invalid) }
+pub enum FieldState<T> { Value(T), AtLeast(T), NotAvailable, SenderError(RawCode), Invalid(Invalid) }
+
+impl Kind { fn name(&self) -> &'static str }
+impl<T> FieldState<T> {
+    fn value(self) -> Option<T>;            // Value only
+    fn value_or_bound(self) -> Option<T>;   // Value or AtLeast
+    fn kind(&self) -> Kind;
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> FieldState<U>;
+    fn as_ref(&self) -> FieldState<&T>;
+    fn as_mut(&mut self) -> FieldState<&mut T>;
+}
+impl<T> From<T> for FieldState<T>;          // T → Value(T)
+```
+
+All four types derive `Debug, Clone, Copy, PartialEq, Eq, Hash`, bounded
+on `T` by the derive itself, so `FieldState<f64>` has `PartialEq` but no
+`Eq` or `Hash`. Deliberately absent: `Default` (no fabricated value),
+`#[non_exhaustive]` (clients match exhaustively), `Display` (rendering is
+client presentation), `PartialOrd`/`Ord` (variant order is not a ranking),
+`serde` (no consumer yet), `From<Option<T>>` (`None` would silently mean
+not available where invalid was meant), predicates and `Option`
+combinator duplicates (`value()` reaches them in one call), and any
+decoder-side construction helper (the three decoders map code spaces
+three ways).
+
+### `Kind::name()`
+
+The one table of state names. The Python `kind` attribute prints the
+same strings, so logs from both languages agree.
+
+| `Kind` | `name()` |
+| --- | --- |
+| `Value` | `value` |
+| `AtLeast` | `at_least` |
+| `NotAvailable` | `not_available` |
+| `SenderError(_)` | `sender_error` |
+| `Invalid(_)` | `invalid` |
+
 ## marlin-klv
 
-Standalone `#![no_std]` + `alloc` leaf crate: a MISB ST 0601 (UAS
+Standalone `#![no_std]` + `alloc` crate: a MISB ST 0601 (UAS
 Datalink Local Set) KLV encoder/decoder. Unlike `marlin-nmea-0183` and
 `marlin-ais`, it does not depend on `marlin-nmea-envelope`: KLV is not
 NMEA-framed, so there's no shared envelope layer to sit on.
