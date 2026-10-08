@@ -80,7 +80,8 @@ _Avoid_: magic number, placeholder
 
 **Not available**:
 The field state meaning the sender supplied no value for the field, by
-sentinel code, empty 0183 field or omitted optional KLV tag.
+sentinel code, empty 0183 field, omitted optional KLV tag, or a payload that
+ends before the field.
 _Avoid_: unknown, invalid, missing, null, absent
 
 **Sender error**:
@@ -156,7 +157,8 @@ _Avoid_: schema, format, shape (reserved for the Rust type of a field)
 **Floor**:
 The shortest payload length at which a message type's layout is still
 identifiable, taken from traffic seen in the wild rather than the standard's
-table. Fields past the transmitted end are not available.
+table. Fields past the transmitted end are not available; a text field
+keeps the whole characters transmitted and loses only the partial one.
 _Avoid_: minimum length, table length, nominal length
 
 **Turn indicator (TI)**:
