@@ -16,7 +16,12 @@ use marlin_nmea_envelope::Error as RustEnvelopeError;
 
 create_exception!(_core, MarlinError, PyException);
 create_exception!(_core, EnvelopeError, MarlinError);
-create_exception!(_core, DecodeError, MarlinError);
+create_exception!(
+    _core,
+    DecodeError,
+    MarlinError,
+    "A typed NMEA 0183 decode failed: the sentence has fewer fields than its decoder's floor. The one reason a typed decode fails; a field's value never does, it decodes to a FieldState."
+);
 create_exception!(_core, AisError, MarlinError);
 create_exception!(_core, ReassemblyError, AisError);
 create_exception!(_core, KlvError, MarlinError);

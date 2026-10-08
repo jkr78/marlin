@@ -18,9 +18,10 @@ use crate::{decode_with, DecodeError, DecodeOptions, Nmea0183Message};
 ///
 /// - [`Self::Envelope`] — framing, checksum, TAG block, buffer overflow.
 ///   The sentence bytes are malformed at the NMEA 0183 envelope layer.
-/// - [`Self::Decode`] — the envelope parsed cleanly, but the typed
-///   decoder couldn't interpret the fields (wrong field count,
-///   invalid number, out-of-range coordinate, etc.).
+/// - [`Self::Decode`] — the envelope parsed cleanly, but the sentence
+///   has fewer fields than its typed decoder's floor. A field's value
+///   never fails the sentence; it decodes to a
+///   [`FieldState`](crate::FieldState).
 ///
 /// Both categories are recoverable — a parser that hits either error
 /// has advanced past the offending sentence and can continue to the
@@ -31,7 +32,7 @@ pub enum Nmea0183Error {
     /// Envelope-level failure (framing, checksum, TAG block, ...).
     #[error("envelope error: {0}")]
     Envelope(#[from] marlin_nmea_envelope::Error),
-    /// Typed-decode failure (malformed field, wrong field count, ...).
+    /// Typed-decode failure: fewer fields than the sentence's floor.
     #[error("decode error: {0}")]
     Decode(#[from] DecodeError),
 }
@@ -149,8 +150,8 @@ where
     ///   has advanced past the offending bytes and is ready to
     ///   continue.
     /// - `Some(Err(Nmea0183Error::Decode(_)))` — envelope succeeded
-    ///   but the typed decoder rejected the fields. Same recovery
-    ///   semantic.
+    ///   but the sentence has fewer fields than its decoder's floor.
+    ///   Same recovery semantic.
     /// - `None` — no complete sentence is available yet; call
     ///   [`feed`](Self::feed) with more bytes.
     pub fn next_message(&mut self) -> Option<Result<Nmea0183Message<'_>, Nmea0183Error>> {
@@ -183,7 +184,7 @@ mod tests {
 
     use super::*;
     use crate::testing::build;
-    use crate::{GgaFixQuality, PrdidData, PrdidDialect, PsxnLayout};
+    use crate::{FieldState, GgaFixQuality, PrdidData, PrdidDialect, PsxnLayout};
     use alloc::vec::Vec;
 
     // -----------------------------------------------------------------
@@ -200,8 +201,8 @@ mod tests {
             other => panic!("expected Gga, got {other:?}"),
         };
         assert_eq!(gga.talker, Some(*b"GP"));
-        assert_eq!(gga.satellites_used, Some(8));
-        assert_eq!(gga.fix_quality, GgaFixQuality::GpsFix);
+        assert_eq!(gga.satellites_used, FieldState::Value(8));
+        assert_eq!(gga.fix_quality, FieldState::Value(GgaFixQuality::GpsFix));
     }
 
     #[test]
@@ -246,7 +247,7 @@ mod tests {
         let msg = parser.next_message().unwrap().unwrap();
         match msg {
             Nmea0183Message::Prdid(PrdidData::PitchRollHeading(prh)) => {
-                assert!((prh.pitch_deg.unwrap() - 1.0).abs() < 0.01);
+                assert!((prh.pitch_deg.value().unwrap() - 1.0).abs() < 0.01);
             }
             other => panic!("expected Prdid PRH, got {other:?}"),
         }
@@ -282,7 +283,7 @@ mod tests {
         parser.feed(&build(b"PRDID,3.0,4.0,90.0"));
         match parser.next_message().unwrap().unwrap() {
             Nmea0183Message::Prdid(PrdidData::RollPitchHeading(rph)) => {
-                assert!((rph.roll_deg.unwrap() - 3.0).abs() < 0.01);
+                assert!((rph.roll_deg.value().unwrap() - 3.0).abs() < 0.01);
             }
             other => panic!("expected Prdid RPH after set_options, got {other:?}"),
         }
@@ -297,9 +298,9 @@ mod tests {
         parser.feed(&build(b"PSXN,10,tok,0.017453,0.034907,0.5,,,"));
         match parser.next_message().unwrap().unwrap() {
             Nmea0183Message::Psxn(d) => {
-                assert_eq!(d.id, Some(10));
-                assert!((d.roll_deg.unwrap() - 1.0).abs() < 0.01);
-                assert!((d.heave_m.unwrap() - 0.5).abs() < 0.01);
+                assert_eq!(d.id, FieldState::Value(10));
+                assert!((d.roll_deg.value().unwrap() - 1.0).abs() < 0.01);
+                assert!((d.heave_m.value().unwrap() - 0.5).abs() < 0.01);
             }
             other => panic!("expected Psxn, got {other:?}"),
         }
@@ -377,7 +378,7 @@ mod tests {
         parser.feed(&build(b"INHDT,123.4,T"));
         match parser.next_message().unwrap().unwrap() {
             Nmea0183Message::Hdt(d) => {
-                assert!((d.heading_true_deg.unwrap() - 123.4).abs() < 0.01);
+                assert!((d.heading_true_deg.value().unwrap() - 123.4).abs() < 0.01);
             }
             other => panic!("expected Hdt, got {other:?}"),
         }
@@ -389,7 +390,7 @@ mod tests {
         parser.feed(&build(b"INHDT,123.4,T"));
         match parser.next_message().unwrap().unwrap() {
             Nmea0183Message::Hdt(d) => {
-                assert!((d.heading_true_deg.unwrap() - 123.4).abs() < 0.01);
+                assert!((d.heading_true_deg.value().unwrap() - 123.4).abs() < 0.01);
             }
             other => panic!("expected Hdt, got {other:?}"),
         }

@@ -3,13 +3,14 @@
 //! The sentence has a pre-NMEA-2.3 form with 8 fields (course/unit
 //! pairs for true + magnetic, speed/unit pairs for knots + km/h) and a
 //! NMEA-2.3+ form that adds a 9th field — the mode indicator. This
-//! decoder accepts both: the mode is an [`Option<VtgMode>`] that's
-//! `None` for pre-2.3 sentences *and* for sentences where the mode
-//! field is present but empty.
+//! decoder accepts both: the mode is not available for pre-2.3
+//! sentences *and* for sentences where the mode field is present but
+//! empty.
 
+use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
-use crate::util::optional_f32;
+use crate::util::{code, number, optional};
 use crate::DecodeError;
 
 /// Decoded fields of a `$__VTG` sentence.
@@ -24,25 +25,28 @@ pub struct VtgData {
     /// but the field is `Option` to match
     /// [`RawSentence::talker`]'s shape.
     pub talker: Option<[u8; 2]>,
-    /// Course over ground, true (degrees). `None` for empty field.
-    pub course_true_deg: Option<f32>,
-    /// Course over ground, magnetic (degrees). `None` for empty field
-    /// or for receivers without a compass sensor.
-    pub course_magnetic_deg: Option<f32>,
-    /// Speed over ground in knots. `None` for empty field.
-    pub speed_knots: Option<f32>,
-    /// Speed over ground in kilometres per hour. `None` for empty field.
-    pub speed_kmh: Option<f32>,
-    /// Mode indicator (NMEA 2.3+). `None` if the sentence predates 2.3
-    /// (fewer than 9 fields) or if the field is present but empty.
-    pub mode: Option<VtgMode>,
+    /// Course over ground, true (degrees).
+    pub course_true_deg: FieldState<f32>,
+    /// Course over ground, magnetic (degrees). Not available for
+    /// receivers without a compass sensor.
+    pub course_magnetic_deg: FieldState<f32>,
+    /// Speed over ground in knots.
+    pub speed_knots: FieldState<f32>,
+    /// Speed over ground in kilometres per hour.
+    pub speed_kmh: FieldState<f32>,
+    /// Mode indicator (NMEA 2.3+). Not available if the sentence
+    /// predates 2.3 (fewer than 9 fields) or if the field is present but
+    /// empty.
+    pub mode: FieldState<VtgMode>,
 }
 
 /// NMEA 2.3+ mode indicator — 9th field of VTG.
 ///
 /// Describes how the reported fix was obtained. Safety-critical
 /// consumers often check this field and reject `NotValid` or
-/// `Estimated` modes before acting on the speed/course values.
+/// `Estimated` modes before acting on the speed/course values. An
+/// unnamed byte decodes to the invalid field state with the byte as its
+/// raw code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VtgMode {
@@ -58,21 +62,18 @@ pub enum VtgMode {
     Manual,
     /// `S` — Simulator mode.
     Simulator,
-    /// Any letter not covered above; the raw byte is preserved so
-    /// downstream consumers can decide whether to warn or pass.
-    Other(u8),
 }
 
 impl VtgMode {
-    pub(crate) fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Option<Self> {
         match b {
-            b'A' | b'a' => Self::Autonomous,
-            b'D' | b'd' => Self::Differential,
-            b'E' | b'e' => Self::Estimated,
-            b'N' | b'n' => Self::NotValid,
-            b'M' | b'm' => Self::Manual,
-            b'S' | b's' => Self::Simulator,
-            other => Self::Other(other),
+            b'A' | b'a' => Some(Self::Autonomous),
+            b'D' | b'd' => Some(Self::Differential),
+            b'E' | b'e' => Some(Self::Estimated),
+            b'N' | b'n' => Some(Self::NotValid),
+            b'M' | b'm' => Some(Self::Manual),
+            b'S' | b's' => Some(Self::Simulator),
+            _ => None,
         }
     }
 }
@@ -106,8 +107,6 @@ const VTG_MIN_FIELDS: usize = 8;
 ///
 /// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 8
 ///   fields.
-/// - [`DecodeError::InvalidNumber`] or [`DecodeError::InvalidUtf8`] if
-///   a numeric field is non-empty and malformed.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_vtg(raw: &RawSentence<'_>) -> Result<VtgData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -118,25 +117,14 @@ pub fn decode_vtg(raw: &RawSentence<'_>) -> Result<VtgData, DecodeError> {
         });
     }
 
-    let course_true_deg = optional_f32(f[0], 0)?;
-    let course_magnetic_deg = optional_f32(f[2], 2)?;
-    let speed_knots = optional_f32(f[4], 4)?;
-    let speed_kmh = optional_f32(f[6], 6)?;
-
-    // Mode indicator (NMEA 2.3+) — may be missing entirely or empty.
-    let mode = f
-        .get(8)
-        .filter(|bytes| !bytes.is_empty())
-        .and_then(|bytes| bytes.first().copied())
-        .map(VtgMode::from_byte);
-
     Ok(VtgData {
         talker: raw.talker,
-        course_true_deg,
-        course_magnetic_deg,
-        speed_knots,
-        speed_kmh,
-        mode,
+        course_true_deg: number(f[0]),
+        course_magnetic_deg: number(f[2]),
+        speed_knots: number(f[4]),
+        speed_kmh: number(f[6]),
+        // Mode indicator (NMEA 2.3+) — may be missing entirely or empty.
+        mode: code(optional(f, 8), VtgMode::from_byte),
     })
 }
 
@@ -148,8 +136,16 @@ pub fn decode_vtg(raw: &RawSentence<'_>) -> Result<VtgData, DecodeError> {
     clippy::indexing_slicing
 )]
 mod tests {
+    use marlin_field::{Invalid, RawCode};
+
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
+
+    fn decode(body: &[u8]) -> VtgData {
+        let bytes = build(body);
+        let raw = parse_raw(&bytes);
+        decode_vtg(&raw).expect("parse")
+    }
 
     // -----------------------------------------------------------------
     // Happy path — NMEA 2.3+ full sentence
@@ -157,16 +153,14 @@ mod tests {
 
     #[test]
     fn decode_vtg_full_with_mode() {
-        let bytes = build(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,A");
-        let raw = parse_raw(&bytes);
-        let vtg = decode_vtg(&raw).expect("parse");
+        let vtg = decode(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,A");
 
         assert_eq!(vtg.talker, Some(*b"GP"));
-        assert!((vtg.course_true_deg.unwrap() - 54.7).abs() < 0.01);
-        assert!((vtg.course_magnetic_deg.unwrap() - 34.4).abs() < 0.01);
-        assert!((vtg.speed_knots.unwrap() - 5.5).abs() < 0.01);
-        assert!((vtg.speed_kmh.unwrap() - 10.2).abs() < 0.01);
-        assert_eq!(vtg.mode, Some(VtgMode::Autonomous));
+        assert!((vtg.course_true_deg.value().unwrap() - 54.7).abs() < 0.01);
+        assert!((vtg.course_magnetic_deg.value().unwrap() - 34.4).abs() < 0.01);
+        assert!((vtg.speed_knots.value().unwrap() - 5.5).abs() < 0.01);
+        assert!((vtg.speed_kmh.value().unwrap() - 10.2).abs() < 0.01);
+        assert_eq!(vtg.mode, FieldState::Value(VtgMode::Autonomous));
     }
 
     // -----------------------------------------------------------------
@@ -174,27 +168,21 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_vtg_pre_nmea_2_3_returns_none_mode() {
+    fn decode_vtg_pre_nmea_2_3_mode_is_not_available() {
         // Exactly 8 fields — no 9th mode indicator at all.
         let bytes = build(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K");
         let raw = parse_raw(&bytes);
         assert_eq!(raw.fields.len(), 8, "fixture sanity: pre-2.3 has 8 fields");
 
         let vtg = decode_vtg(&raw).expect("parse");
-        assert_eq!(vtg.mode, None);
-        assert!((vtg.speed_knots.unwrap() - 5.5).abs() < 0.01);
+        assert_eq!(vtg.mode, FieldState::NotAvailable);
+        assert!((vtg.speed_knots.value().unwrap() - 5.5).abs() < 0.01);
     }
 
-    // -----------------------------------------------------------------
-    // Empty mode field → mode: None (distinct from pre-2.3)
-    // -----------------------------------------------------------------
-
     #[test]
-    fn decode_vtg_empty_mode_field_is_none() {
-        let bytes = build(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,");
-        let raw = parse_raw(&bytes);
-        let vtg = decode_vtg(&raw).expect("parse");
-        assert_eq!(vtg.mode, None);
+    fn decode_vtg_empty_mode_field_is_not_available() {
+        let vtg = decode(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,");
+        assert_eq!(vtg.mode, FieldState::NotAvailable);
     }
 
     // -----------------------------------------------------------------
@@ -202,48 +190,50 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_vtg_all_empty_numeric_fields_decode_to_none() {
-        let bytes = build(b"GPVTG,,T,,M,,N,,K,N");
-        let raw = parse_raw(&bytes);
-        let vtg = decode_vtg(&raw).expect("parse");
-        assert_eq!(vtg.course_true_deg, None);
-        assert_eq!(vtg.course_magnetic_deg, None);
-        assert_eq!(vtg.speed_knots, None);
-        assert_eq!(vtg.speed_kmh, None);
-        assert_eq!(vtg.mode, Some(VtgMode::NotValid));
+    fn decode_vtg_all_empty_numeric_fields_are_not_available() {
+        let vtg = decode(b"GPVTG,,T,,M,,N,,K,N");
+        assert_eq!(vtg.course_true_deg, FieldState::NotAvailable);
+        assert_eq!(vtg.course_magnetic_deg, FieldState::NotAvailable);
+        assert_eq!(vtg.speed_knots, FieldState::NotAvailable);
+        assert_eq!(vtg.speed_kmh, FieldState::NotAvailable);
+        assert_eq!(vtg.mode, FieldState::Value(VtgMode::NotValid));
     }
 
-    // -----------------------------------------------------------------
-    // Missing compass — course_magnetic empty, others present
-    // (common on GPS-only receivers)
-    // -----------------------------------------------------------------
+    #[test]
+    fn decode_vtg_every_unreadable_field_is_invalid() {
+        let vtg = decode(b"GPVTG,x,T,x,M,x,N,x,K,AD");
+        assert_eq!(vtg.course_true_deg, unparsable());
+        assert_eq!(vtg.course_magnetic_deg, unparsable());
+        assert_eq!(vtg.speed_knots, unparsable());
+        assert_eq!(vtg.speed_kmh, unparsable());
+        assert_eq!(vtg.mode, unparsable());
+    }
 
     #[test]
     fn decode_vtg_receiver_without_compass_has_no_magnetic_course() {
-        let bytes = build(b"GPVTG,054.7,T,,M,005.5,N,010.2,K,A");
-        let raw = parse_raw(&bytes);
-        let vtg = decode_vtg(&raw).expect("parse");
-        assert!(vtg.course_true_deg.is_some());
-        assert_eq!(vtg.course_magnetic_deg, None);
-        assert!(vtg.speed_knots.is_some());
+        let vtg = decode(b"GPVTG,054.7,T,,M,005.5,N,010.2,K,A");
+        assert!(vtg.course_true_deg.value().is_some());
+        assert_eq!(vtg.course_magnetic_deg, FieldState::NotAvailable);
+        assert!(vtg.speed_knots.value().is_some());
     }
 
     // -----------------------------------------------------------------
-    // Mode indicator — every recognized variant
+    // Mode indicator — every recognized variant, through the decoder
     // -----------------------------------------------------------------
 
     #[test]
     fn decode_vtg_covers_every_recognized_mode() {
-        for (byte, expected) in [
-            (b'A', VtgMode::Autonomous),
-            (b'D', VtgMode::Differential),
-            (b'E', VtgMode::Estimated),
-            (b'N', VtgMode::NotValid),
-            (b'M', VtgMode::Manual),
-            (b'S', VtgMode::Simulator),
-            (b'X', VtgMode::Other(b'X')),
+        for (letter, expected) in [
+            (b"A", VtgMode::Autonomous),
+            (b"D", VtgMode::Differential),
+            (b"E", VtgMode::Estimated),
+            (b"N", VtgMode::NotValid),
+            (b"M", VtgMode::Manual),
+            (b"S", VtgMode::Simulator),
         ] {
-            assert_eq!(VtgMode::from_byte(byte), expected);
+            let mut body = b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,".to_vec();
+            body.extend_from_slice(letter);
+            assert_eq!(decode(&body).mode, FieldState::Value(expected));
         }
     }
 
@@ -251,8 +241,23 @@ mod tests {
     fn decode_vtg_mode_is_case_insensitive() {
         // Most NMEA sentences use uppercase, but case-insensitivity is
         // a sane default — match what the envelope does for hex digits.
-        assert_eq!(VtgMode::from_byte(b'a'), VtgMode::Autonomous);
-        assert_eq!(VtgMode::from_byte(b'd'), VtgMode::Differential);
+        let vtg = decode(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,d");
+        assert_eq!(vtg.mode, FieldState::Value(VtgMode::Differential));
+    }
+
+    #[test]
+    fn decode_vtg_unnamed_mode_letter_is_invalid_with_the_byte() {
+        let vtg = decode(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,X");
+        assert_eq!(
+            vtg.mode,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'X'))))
+        );
+    }
+
+    #[test]
+    fn decode_vtg_two_byte_mode_is_invalid_without_a_code() {
+        let vtg = decode(b"GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,AD");
+        assert_eq!(vtg.mode, FieldState::Invalid(Invalid::Unparsable));
     }
 
     // -----------------------------------------------------------------
@@ -273,16 +278,14 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Error: invalid number in a numeric field
+    // An unparsable number is an invalid field, not a sentence failure
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_vtg_rejects_malformed_speed() {
-        let bytes = build(b"GPVTG,054.7,T,034.4,M,not-a-number,N,010.2,K,A");
-        let raw = parse_raw(&bytes);
-        match decode_vtg(&raw) {
-            Err(DecodeError::InvalidNumber { field_index: 4 }) => {}
-            other => panic!("expected InvalidNumber field 4, got {other:?}"),
-        }
+    fn decode_vtg_unparsable_speed_is_invalid_and_the_rest_decodes() {
+        let vtg = decode(b"GPVTG,054.7,T,034.4,M,not-a-number,N,010.2,K,A");
+        assert_eq!(vtg.speed_knots, FieldState::Invalid(Invalid::Unparsable));
+        assert!((vtg.speed_kmh.value().unwrap() - 10.2).abs() < 0.01);
+        assert_eq!(vtg.mode, FieldState::Value(VtgMode::Autonomous));
     }
 }

@@ -12,24 +12,26 @@
 //! - **4.10+**: 13 fields, adds a navigational status byte (S/C/U/V).
 //!
 //! This decoder accepts all three forms — the trailing fields are
-//! optional and decode to `None` when absent or empty.
+//! optional and not available when absent or empty.
 
+use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
-use crate::util::{non_empty, optional_coordinate, optional_f32};
+use crate::util::{code, latitude, longitude, number, optional, signed_ew};
 use crate::DecodeError;
 
-use super::{DataStatus, UtcTime, VtgMode};
+use super::{DataStatus, UtcDate, UtcTime, VtgMode};
 
 /// Decoded fields of an `$__RMC` sentence.
 ///
 /// The talker ID is preserved — `$GPRMC`, `$GNRMC`, `$INRMC` all decode
 /// to `RmcData` with distinct [`talker`](Self::talker) values.
 ///
-/// Empty NMEA fields decode to `None`. The [`status`](Self::status)
+/// An empty NMEA field is not available. The [`status`](Self::status)
 /// field is the receiver's own validity assertion; safety-critical
 /// consumers should reject `DataStatus::Void` regardless of how
-/// well-formed the other fields look.
+/// well-formed the other fields look. The status does not change the
+/// other fields' state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RmcData {
     /// Two-byte talker ID (e.g. `Some(*b"GP")`). `None` is not expected
@@ -37,77 +39,38 @@ pub struct RmcData {
     /// [`RawSentence::talker`].
     pub talker: Option<[u8; 2]>,
     /// UTC time-of-day of the position fix.
-    pub utc: Option<UtcTime>,
+    pub utc: FieldState<UtcTime>,
     /// Validity status — `A` (active/valid) or `V` (void/invalid).
-    pub status: DataStatus,
-    /// Latitude in signed decimal degrees (north positive).
-    pub latitude_deg: Option<f64>,
-    /// Longitude in signed decimal degrees (east positive).
-    pub longitude_deg: Option<f64>,
+    pub status: FieldState<DataStatus>,
+    /// Latitude in signed decimal degrees (north positive). A paired
+    /// field with the `N`/`S` hemisphere letter.
+    pub latitude_deg: FieldState<f64>,
+    /// Longitude in signed decimal degrees (east positive). A paired
+    /// field with the `E`/`W` hemisphere letter.
+    pub longitude_deg: FieldState<f64>,
     /// Speed over ground in knots.
-    pub speed_knots: Option<f32>,
+    pub speed_knots: FieldState<f32>,
     /// Course over ground, true (degrees).
-    pub course_true_deg: Option<f32>,
+    pub course_true_deg: FieldState<f32>,
     /// UTC date (`ddmmyy`). The 2-digit year is preserved as raw —
     /// callers apply their own century-resolution rule.
-    pub date: Option<UtcDate>,
+    pub date: FieldState<UtcDate>,
     /// Magnetic variation in signed decimal degrees (east positive,
-    /// west negative). `None` for empty fields.
-    pub magnetic_variation_deg: Option<f32>,
-    /// Mode indicator (NMEA 2.3+). `None` if the sentence predates 2.3
-    /// or the field is present but empty.
-    pub mode: Option<VtgMode>,
-    /// Navigational status (NMEA 4.10+). `None` for sentences that
-    /// predate 4.10 or where the field is empty.
-    pub nav_status: Option<RmcNavStatus>,
-}
-
-/// UTC calendar date as carried by RMC's `ddmmyy` field.
-///
-/// The 2-digit year is preserved verbatim — the spec does not pin a
-/// pivot year for century resolution, and different vendors use
-/// different rules. Consumers convert to a full year by their own
-/// policy (typically `+ 2000` if `year_yy < 80`, else `+ 1900`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UtcDate {
-    /// Day of month (1..=31).
-    pub day: u8,
-    /// Month of year (1..=12).
-    pub month: u8,
-    /// Year, last two digits (0..=99).
-    pub year_yy: u8,
-}
-
-impl UtcDate {
-    #[allow(clippy::indexing_slicing)] // length validated above each slice
-    pub(crate) fn parse(bytes: &[u8], field_index: usize) -> Result<Self, DecodeError> {
-        if bytes.len() != 6 || !bytes.iter().all(u8::is_ascii_digit) {
-            return Err(DecodeError::InvalidUtcTime { field_index });
-        }
-        let s =
-            core::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtcTime { field_index })?;
-        let parse_pair = |src: &str| -> Result<u8, DecodeError> {
-            src.parse::<u8>()
-                .map_err(|_| DecodeError::InvalidUtcTime { field_index })
-        };
-        let day = parse_pair(&s[0..2])?;
-        let month = parse_pair(&s[2..4])?;
-        let year_yy = parse_pair(&s[4..6])?;
-        if !(1..=31).contains(&day) || !(1..=12).contains(&month) {
-            return Err(DecodeError::InvalidUtcTime { field_index });
-        }
-        Ok(Self {
-            day,
-            month,
-            year_yy,
-        })
-    }
+    /// west negative). A paired field with the `E`/`W` direction letter.
+    pub magnetic_variation_deg: FieldState<f32>,
+    /// Mode indicator (NMEA 2.3+). Not available if the sentence
+    /// predates 2.3 or the field is present but empty.
+    pub mode: FieldState<VtgMode>,
+    /// Navigational status (NMEA 4.10+). Not available for sentences
+    /// that predate 4.10 or where the field is empty.
+    pub nav_status: FieldState<RmcNavStatus>,
 }
 
 /// NMEA 4.10+ navigational-status byte — 13th field of RMC.
 ///
 /// Used by ECDIS-aware receivers to signal a higher-level safety
-/// assessment than the receiver-internal `Status` byte.
+/// assessment than the receiver-internal `Status` byte. An unnamed byte
+/// decodes to the invalid field state with the byte as its raw code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RmcNavStatus {
@@ -119,18 +82,16 @@ pub enum RmcNavStatus {
     Unsafe,
     /// `V` — Navigational status not valid (equipment doesn't compute it).
     NotValid,
-    /// Any letter not covered above; raw byte preserved.
-    Other(u8),
 }
 
 impl RmcNavStatus {
-    fn from_byte(b: u8) -> Self {
+    pub(crate) fn from_byte(b: u8) -> Option<Self> {
         match b {
-            b'S' | b's' => Self::Safe,
-            b'C' | b'c' => Self::Caution,
-            b'U' | b'u' => Self::Unsafe,
-            b'V' | b'v' => Self::NotValid,
-            other => Self::Other(other),
+            b'S' | b's' => Some(Self::Safe),
+            b'C' | b'c' => Some(Self::Caution),
+            b'U' | b'u' => Some(Self::Unsafe),
+            b'V' | b'v' => Some(Self::NotValid),
+            _ => None,
         }
     }
 }
@@ -163,11 +124,6 @@ const RMC_MIN_FIELDS: usize = 11;
 ///
 /// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 11
 ///   fields.
-/// - [`DecodeError::InvalidUtcTime`] for malformed time or date.
-/// - [`DecodeError::InvalidHemisphere`] for an empty value paired with
-///   a non-empty direction byte (or vice versa) in the variation field.
-/// - [`DecodeError::InvalidNumber`], [`DecodeError::InvalidUtf8`],
-///   [`DecodeError::OutOfRange`] for per-field malformations.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_rmc(raw: &RawSentence<'_>) -> Result<RmcData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -178,75 +134,18 @@ pub fn decode_rmc(raw: &RawSentence<'_>) -> Result<RmcData, DecodeError> {
         });
     }
 
-    let utc = if f[0].is_empty() {
-        None
-    } else {
-        Some(UtcTime::parse(f[0], 0)?)
-    };
-
-    let status = match f[1].first() {
-        None => DataStatus::Other(0),
-        Some(&b) => DataStatus::from_byte(b),
-    };
-
-    let latitude_deg = optional_coordinate(f[2], f[3], 2, 3, false)?;
-    let longitude_deg = optional_coordinate(f[4], f[5], 4, 5, true)?;
-
-    let speed_knots = optional_f32(f[6], 6)?;
-    let course_true_deg = optional_f32(f[7], 7)?;
-
-    let date = if f[8].is_empty() {
-        None
-    } else {
-        Some(UtcDate::parse(f[8], 8)?)
-    };
-
-    // Magnetic variation: magnitude in field 9, direction (E/W) in
-    // field 10. Both empty → None. One empty / one not → InvalidHemisphere.
-    let magnetic_variation_deg = match (f[9].is_empty(), f[10].is_empty()) {
-        (true, true) => None,
-        (true, false) | (false, true) => {
-            return Err(DecodeError::InvalidHemisphere { field_index: 10 });
-        }
-        (false, false) => {
-            let mag =
-                optional_f32(f[9], 9)?.ok_or(DecodeError::InvalidNumber { field_index: 9 })?;
-            let dir = *f[10].first().unwrap_or(&0);
-            let signed = match dir {
-                b'E' | b'e' => mag,
-                b'W' | b'w' => -mag,
-                _ => {
-                    return Err(DecodeError::InvalidHemisphere { field_index: 10 });
-                }
-            };
-            Some(signed)
-        }
-    };
-
-    let mode = f
-        .get(11)
-        .and_then(|bytes| non_empty(bytes))
-        .and_then(|bytes| bytes.first().copied())
-        .map(VtgMode::from_byte);
-
-    let nav_status = f
-        .get(12)
-        .and_then(|bytes| non_empty(bytes))
-        .and_then(|bytes| bytes.first().copied())
-        .map(RmcNavStatus::from_byte);
-
     Ok(RmcData {
         talker: raw.talker,
-        utc,
-        status,
-        latitude_deg,
-        longitude_deg,
-        speed_knots,
-        course_true_deg,
-        date,
-        magnetic_variation_deg,
-        mode,
-        nav_status,
+        utc: number(f[0]),
+        status: code(f[1], DataStatus::from_byte),
+        latitude_deg: latitude(f[2], f[3]),
+        longitude_deg: longitude(f[4], f[5]),
+        speed_knots: number(f[6]),
+        course_true_deg: number(f[7]),
+        date: number(f[8]),
+        magnetic_variation_deg: signed_ew(f[9], f[10]),
+        mode: code(optional(f, 11), VtgMode::from_byte),
+        nav_status: code(optional(f, 12), RmcNavStatus::from_byte),
     })
 }
 
@@ -258,8 +157,16 @@ pub fn decode_rmc(raw: &RawSentence<'_>) -> Result<RmcData, DecodeError> {
     clippy::indexing_slicing
 )]
 mod tests {
+    use marlin_field::{Invalid, RawCode};
+
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
+
+    fn decode(body: &[u8]) -> RmcData {
+        let bytes = build(body);
+        let raw = parse_raw(&bytes);
+        decode_rmc(&raw).expect("parse")
+    }
 
     // -----------------------------------------------------------------
     // Happy path — NMEA 2.3+ full sentence
@@ -267,37 +174,64 @@ mod tests {
 
     #[test]
     fn decode_rmc_full_with_mode() {
-        // Build with auto-computed checksum to avoid hand-typing one.
-        let bytes = build(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A");
-        let raw = parse_raw(&bytes);
-        let rmc = decode_rmc(&raw).expect("parse");
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A");
 
         assert_eq!(rmc.talker, Some(*b"GP"));
         assert_eq!(
             rmc.utc,
-            Some(UtcTime {
+            FieldState::Value(UtcTime {
                 hour: 12,
                 minute: 35,
                 second: 19,
                 millisecond: 0
             })
         );
-        assert_eq!(rmc.status, DataStatus::Active);
-        assert!((rmc.latitude_deg.unwrap() - 48.1173).abs() < 0.0001);
-        assert!((rmc.longitude_deg.unwrap() - 11.51667).abs() < 0.0001);
-        assert!((rmc.speed_knots.unwrap() - 22.4).abs() < 0.01);
-        assert!((rmc.course_true_deg.unwrap() - 84.4).abs() < 0.01);
+        assert_eq!(rmc.status, FieldState::Value(DataStatus::Active));
+        assert!((rmc.latitude_deg.value().unwrap() - 48.1173).abs() < 0.0001);
+        assert!((rmc.longitude_deg.value().unwrap() - 11.51667).abs() < 0.0001);
+        assert!((rmc.speed_knots.value().unwrap() - 22.4).abs() < 0.01);
+        assert!((rmc.course_true_deg.value().unwrap() - 84.4).abs() < 0.01);
         assert_eq!(
             rmc.date,
-            Some(UtcDate {
+            FieldState::Value(UtcDate {
                 day: 23,
                 month: 3,
                 year_yy: 94
             })
         );
-        assert!((rmc.magnetic_variation_deg.unwrap() - (-3.1)).abs() < 0.01);
-        assert_eq!(rmc.mode, Some(VtgMode::Autonomous));
-        assert_eq!(rmc.nav_status, None);
+        assert!((rmc.magnetic_variation_deg.value().unwrap() - (-3.1)).abs() < 0.01);
+        assert_eq!(rmc.mode, FieldState::Value(VtgMode::Autonomous));
+        assert_eq!(rmc.nav_status, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_rmc_every_empty_field_is_not_available() {
+        let rmc = decode(b"GPRMC,,,,,,,,,,,,,");
+        assert_eq!(rmc.utc, FieldState::NotAvailable);
+        assert_eq!(rmc.status, FieldState::NotAvailable);
+        assert_eq!(rmc.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(rmc.longitude_deg, FieldState::NotAvailable);
+        assert_eq!(rmc.speed_knots, FieldState::NotAvailable);
+        assert_eq!(rmc.course_true_deg, FieldState::NotAvailable);
+        assert_eq!(rmc.date, FieldState::NotAvailable);
+        assert_eq!(rmc.magnetic_variation_deg, FieldState::NotAvailable);
+        assert_eq!(rmc.mode, FieldState::NotAvailable);
+        assert_eq!(rmc.nav_status, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_rmc_every_unreadable_field_is_invalid() {
+        let rmc = decode(b"GPRMC,x,AV,x,N,x,E,x,x,x,x,W,AD,SC");
+        assert_eq!(rmc.utc, unparsable());
+        assert_eq!(rmc.status, unparsable());
+        assert_eq!(rmc.latitude_deg, unparsable());
+        assert_eq!(rmc.longitude_deg, unparsable());
+        assert_eq!(rmc.speed_knots, unparsable());
+        assert_eq!(rmc.course_true_deg, unparsable());
+        assert_eq!(rmc.date, unparsable());
+        assert_eq!(rmc.magnetic_variation_deg, unparsable());
+        assert_eq!(rmc.mode, unparsable());
+        assert_eq!(rmc.nav_status, unparsable());
     }
 
     // -----------------------------------------------------------------
@@ -305,13 +239,13 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_rmc_pre_nmea_2_3_returns_none_mode() {
+    fn decode_rmc_pre_nmea_2_3_trailing_fields_are_not_available() {
         let bytes = build(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W");
         let raw = parse_raw(&bytes);
         assert_eq!(raw.fields.len(), 11);
         let rmc = decode_rmc(&raw).expect("parse");
-        assert_eq!(rmc.mode, None);
-        assert_eq!(rmc.nav_status, None);
+        assert_eq!(rmc.mode, FieldState::NotAvailable);
+        assert_eq!(rmc.nav_status, FieldState::NotAvailable);
     }
 
     // -----------------------------------------------------------------
@@ -320,98 +254,137 @@ mod tests {
 
     #[test]
     fn decode_rmc_with_nav_status() {
-        let bytes = build(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A,S");
-        let raw = parse_raw(&bytes);
-        let rmc = decode_rmc(&raw).expect("parse");
-        assert_eq!(rmc.mode, Some(VtgMode::Autonomous));
-        assert_eq!(rmc.nav_status, Some(RmcNavStatus::Safe));
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A,S");
+        assert_eq!(rmc.mode, FieldState::Value(VtgMode::Autonomous));
+        assert_eq!(rmc.nav_status, FieldState::Value(RmcNavStatus::Safe));
+    }
+
+    #[test]
+    fn decode_rmc_every_nav_status_letter() {
+        for (letter, expected) in [
+            (b"S", RmcNavStatus::Safe),
+            (b"C", RmcNavStatus::Caution),
+            (b"U", RmcNavStatus::Unsafe),
+            (b"V", RmcNavStatus::NotValid),
+            (b"c", RmcNavStatus::Caution),
+        ] {
+            let mut body =
+                b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A,".to_vec();
+            body.extend_from_slice(letter);
+            assert_eq!(decode(&body).nav_status, FieldState::Value(expected));
+        }
+    }
+
+    #[test]
+    fn decode_rmc_unnamed_nav_status_is_invalid_with_the_byte() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A,X");
+        assert_eq!(
+            rmc.nav_status,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'X'))))
+        );
+    }
+
+    #[test]
+    fn decode_rmc_two_byte_nav_status_is_invalid_without_a_code() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A,SC");
+        assert_eq!(rmc.nav_status, FieldState::Invalid(Invalid::Unparsable));
     }
 
     // -----------------------------------------------------------------
-    // Void status — receiver flagged the fix as unreliable
+    // Status field: void qualifies, never stamps the other fields
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_rmc_void_status_propagates() {
-        let bytes = build(b"GPRMC,,V,,,,,,,,,,N");
-        let raw = parse_raw(&bytes);
-        let rmc = decode_rmc(&raw).expect("parse");
-        assert_eq!(rmc.status, DataStatus::Void);
-        assert_eq!(rmc.utc, None);
-        assert_eq!(rmc.latitude_deg, None);
-        assert_eq!(rmc.mode, Some(VtgMode::NotValid));
+    fn decode_rmc_void_status_leaves_sibling_states_alone() {
+        let rmc = decode(b"GPRMC,,V,,,,,,,,,,N");
+        assert_eq!(rmc.status, FieldState::Value(DataStatus::Void));
+        assert_eq!(rmc.utc, FieldState::NotAvailable);
+        assert_eq!(rmc.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(rmc.magnetic_variation_deg, FieldState::NotAvailable);
+        assert_eq!(rmc.mode, FieldState::Value(VtgMode::NotValid));
+    }
+
+    #[test]
+    fn decode_rmc_empty_status_is_not_available() {
+        let rmc = decode(b"GPRMC,123519,,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A");
+        assert_eq!(rmc.status, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_rmc_unnamed_status_byte_is_invalid_with_the_byte() {
+        let rmc = decode(b"GPRMC,123519,Z,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W,A");
+        assert_eq!(
+            rmc.status,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'Z'))))
+        );
     }
 
     // -----------------------------------------------------------------
-    // Eastern variation reads positive
+    // Magnetic variation: a paired field
     // -----------------------------------------------------------------
 
     #[test]
     fn decode_rmc_eastern_variation_is_positive() {
-        let bytes = build(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,005.0,E,A");
-        let raw = parse_raw(&bytes);
-        let rmc = decode_rmc(&raw).expect("parse");
-        assert!((rmc.magnetic_variation_deg.unwrap() - 5.0).abs() < 0.01);
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,005.0,E,A");
+        assert!((rmc.magnetic_variation_deg.value().unwrap() - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn decode_rmc_variation_magnitude_without_direction_is_invalid() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,005.0,,A");
+        assert_eq!(
+            rmc.magnetic_variation_deg,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
+        assert_eq!(rmc.mode, FieldState::Value(VtgMode::Autonomous));
+    }
+
+    #[test]
+    fn decode_rmc_variation_direction_without_magnitude_is_invalid() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,,W,A");
+        assert_eq!(
+            rmc.magnetic_variation_deg,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
+    }
+
+    #[test]
+    fn decode_rmc_variation_direction_outside_the_pair_is_invalid_with_the_byte() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,005.0,N,A");
+        assert_eq!(
+            rmc.magnetic_variation_deg,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'N'))))
+        );
     }
 
     // -----------------------------------------------------------------
-    // Date validation
+    // Date and numbers
     // -----------------------------------------------------------------
 
     #[test]
-    fn utc_date_parses_ddmmyy() {
-        let d = UtcDate::parse(b"230394", 8).unwrap();
-        assert_eq!(d.day, 23);
-        assert_eq!(d.month, 3);
-        assert_eq!(d.year_yy, 94);
+    fn decode_rmc_unparsable_date_is_invalid_and_the_rest_decodes() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,231394,003.1,W,A");
+        assert_eq!(rmc.date, FieldState::Invalid(Invalid::Unparsable));
+        assert!((rmc.speed_knots.value().unwrap() - 22.4).abs() < 0.01);
     }
 
     #[test]
-    fn utc_date_rejects_wrong_length() {
-        match UtcDate::parse(b"23039", 8) {
-            Err(DecodeError::InvalidUtcTime { field_index: 8 }) => {}
-            other => panic!("expected InvalidUtcTime, got {other:?}"),
-        }
+    fn decode_rmc_zero_day_date_is_invalid() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,000394,003.1,W,A");
+        assert_eq!(rmc.date, FieldState::Invalid(Invalid::Unparsable));
     }
 
     #[test]
-    fn utc_date_rejects_invalid_month() {
-        match UtcDate::parse(b"231394", 8) {
-            Err(DecodeError::InvalidUtcTime { field_index: 8 }) => {}
-            other => panic!("expected InvalidUtcTime, got {other:?}"),
-        }
+    fn decode_rmc_unparsable_speed_is_invalid() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,N,01131.000,E,fast,084.4,230394,003.1,W,A");
+        assert_eq!(rmc.speed_knots, FieldState::Invalid(Invalid::Unparsable));
     }
 
     #[test]
-    fn utc_date_rejects_zero_day() {
-        match UtcDate::parse(b"000394", 8) {
-            Err(DecodeError::InvalidUtcTime { field_index: 8 }) => {}
-            other => panic!("expected InvalidUtcTime, got {other:?}"),
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // Magnetic variation — partial fields
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn decode_rmc_variation_magnitude_without_direction_errors() {
-        let bytes = build(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,005.0,,A");
-        let raw = parse_raw(&bytes);
-        match decode_rmc(&raw) {
-            Err(DecodeError::InvalidHemisphere { field_index: 10 }) => {}
-            other => panic!("expected InvalidHemisphere, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn decode_rmc_variation_direction_without_magnitude_errors() {
-        let bytes = build(b"GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,,W,A");
-        let raw = parse_raw(&bytes);
-        match decode_rmc(&raw) {
-            Err(DecodeError::InvalidHemisphere { field_index: 10 }) => {}
-            other => panic!("expected InvalidHemisphere, got {other:?}"),
-        }
+    fn decode_rmc_half_filled_latitude_pair_is_invalid() {
+        let rmc = decode(b"GPRMC,123519,A,4807.038,,01131.000,E,022.4,084.4,230394,003.1,W,A");
+        assert_eq!(rmc.latitude_deg, FieldState::Invalid(Invalid::Unparsable));
+        assert!(rmc.longitude_deg.value().is_some());
     }
 
     // -----------------------------------------------------------------
@@ -428,23 +401,6 @@ mod tests {
                 got: 3,
             }) => {}
             other => panic!("expected NotEnoughFields, got {other:?}"),
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // Nav status — every recognized variant
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn rmc_nav_status_covers_all_recognized_letters() {
-        for (byte, expected) in [
-            (b'S', RmcNavStatus::Safe),
-            (b'C', RmcNavStatus::Caution),
-            (b'U', RmcNavStatus::Unsafe),
-            (b'V', RmcNavStatus::NotValid),
-            (b'X', RmcNavStatus::Other(b'X')),
-        ] {
-            assert_eq!(RmcNavStatus::from_byte(byte), expected);
         }
     }
 }

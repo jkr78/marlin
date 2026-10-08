@@ -12,6 +12,7 @@ keywords = ["nmea", "nmea-0183", "parser", "maritime", "gnss"]
 categories = ["parser-implementations"]
 
 [dependencies]
+marlin-field = { path = "../marlin-field", version = "0.2.0" }
 marlin-nmea-envelope = { path = "../marlin-nmea-envelope", version = "0.2.0" }
 thiserror = { workspace = true }
 # Pure-Rust transcendental math (sin/cos/asin) for no_std builds.

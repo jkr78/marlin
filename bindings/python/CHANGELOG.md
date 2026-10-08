@@ -31,6 +31,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+- Every `marlin.nmea` message attribute but `talker` is a
+  `marlin.field.FieldState` instead of an `Optional` value or a bare
+  enum: an empty field is `FieldState.NotAvailable()`, text the decoder
+  cannot read is `FieldState.Invalid(None)`, an unnamed letter code is
+  `FieldState.Invalid(byte)`, and a message with one bad field now
+  decodes instead of raising `DecodeError`. Read a field with `.value`
+  (`None` unless the state is `Value`), `isinstance` or `match`. Trap:
+  `if msg.speed_knots:` is always true, `NotAvailable()` included; port
+  `if msg.field is not None:` to `if msg.field.value is not None:` or
+  to a state check. Per shape:
+  - `Gga.fix_quality`, `Gll.status` and `Rmc.status` were bare enums
+    and are `FieldState[...]` like every other field; an empty status
+    byte is `NotAvailable()`, where it used to read as `DataStatus.VOID`.
+  - `Ttm.reference_target` and `Tll.reference_target` are
+    `FieldState[bool]`: `Value(False)` for an empty or absent field,
+    never `NotAvailable()`.
+  - `Psxn` and the two `Prdid` typed bodies carry `FieldState` on every
+    attribute; a PSXN angle the data fields cannot produce is
+    `Invalid(None)`.
+  - Message constructors accept `FieldState[T] | T | None` per
+    field-state attribute, coerce a bare value to `Value` and `None` to
+    `NotAvailable()`, default every such keyword to `NotAvailable()`,
+    and raise the payload extraction error as is: `TypeError` for a
+    payload of the wrong type, `OverflowError` for an integer outside
+    the field's width.
+  - Message `__repr__`s print the variant form
+    (`lat=FieldState.Value(48.5)`).
+- `GgaFixQuality.INVALID` is renamed `NO_FIX`: the sender's own "no
+  fix" is a value, and "invalid" now always means the decoder could
+  not give the field a meaning.
+- The catch-all members `TargetStatus.UNKNOWN`, `AngleReference.UNKNOWN`,
+  `DistanceUnits.UNKNOWN` and `AcquisitionType.UNKNOWN` are removed, and
+  an unnamed `VtgMode`, `DataStatus` or `RmcNavStatus` letter no longer
+  collapses onto `NOT_VALID` / `VOID`: every unnamed letter is
+  `FieldState.Invalid(byte)` on the message.
+- `marlin.nmea.DecodeError` is raised for one reason only: the sentence
+  has fewer fields than its decoder's floor. Its docstring says so.
+- `marlin.dataclasses` NMEA mirrors carry the `FieldState` mirrors on
+  the same attributes, with an enum payload stored as its integer value
+  (`Gga.fix_quality: FieldState[int]`); `asdict` yields
+  `{"speed_knots": {"kind": "value", "value": 22.4}}`.
 - Python floor is 3.10 (`requires-python >= 3.10`, `abi3-py310` wheels):
   3.9 is past end of life and cannot parse the `match` statement the
   field-state documentation and tests use.

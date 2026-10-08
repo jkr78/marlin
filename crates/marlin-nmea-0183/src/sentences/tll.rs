@@ -6,11 +6,12 @@
 
 use alloc::string::String;
 
+use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::sentences::status::TargetStatus;
 use crate::sentences::utc_time::UtcTime;
-use crate::util::{optional_coordinate, optional_string, optional_u16};
+use crate::util::{code, latitude, longitude, number, optional, reference_target, text};
 use crate::DecodeError;
 
 /// Decoded fields of a `$__TLL` sentence.
@@ -19,19 +20,23 @@ pub struct TllData {
     /// Two-byte talker ID (e.g. `Some(*b"RA")` for radar).
     pub talker: Option<[u8; 2]>,
     /// Target number (00–99 per spec; wider values tolerated).
-    pub target_number: Option<u16>,
-    /// Target latitude in signed decimal degrees (`S` negative).
-    pub latitude_deg: Option<f64>,
-    /// Target longitude in signed decimal degrees (`W` negative).
-    pub longitude_deg: Option<f64>,
-    /// Target label.
-    pub name: Option<String>,
-    /// UTC time of the data. `None` if absent or empty.
-    pub utc_time: Option<UtcTime>,
-    /// Tracking state.
-    pub status: Option<TargetStatus>,
+    pub target_number: FieldState<u16>,
+    /// Target latitude in signed decimal degrees (`S` negative). A
+    /// paired field with the `N`/`S` hemisphere letter.
+    pub latitude_deg: FieldState<f64>,
+    /// Target longitude in signed decimal degrees (`W` negative). A
+    /// paired field with the `E`/`W` hemisphere letter.
+    pub longitude_deg: FieldState<f64>,
+    /// Target label. Not available when absent or empty.
+    pub name: FieldState<String>,
+    /// UTC time of the data. Not available when absent or empty.
+    pub utc_time: FieldState<UtcTime>,
+    /// Tracking state. Not available when absent or empty.
+    pub status: FieldState<TargetStatus>,
     /// `true` when this target is flagged (`R`) as the reference target.
-    pub reference_target: bool,
+    /// An empty or absent field is `Value(false)`, the standard's
+    /// encoding of "not the reference target"; never not available.
+    pub reference_target: FieldState<bool>,
 }
 
 /// Minimum fields: target number + latitude pair + longitude pair
@@ -44,10 +49,6 @@ const TLL_MIN_FIELDS: usize = 5;
 /// # Errors
 ///
 /// - [`DecodeError::NotEnoughFields`] if fewer than 5 fields.
-/// - [`DecodeError::InvalidNumber`] / [`DecodeError::OutOfRange`] /
-///   [`DecodeError::InvalidHemisphere`] on a malformed coordinate.
-/// - [`DecodeError::InvalidUtf8`] on a non-UTF-8 target name.
-/// - [`DecodeError::InvalidUtcTime`] on a malformed non-empty UTC field.
 #[allow(clippy::indexing_slicing)] // indices 0..5 validated; 5..9 via get
 pub fn decode_tll(raw: &RawSentence<'_>) -> Result<TllData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -57,33 +58,15 @@ pub fn decode_tll(raw: &RawSentence<'_>) -> Result<TllData, DecodeError> {
             got: f.len(),
         });
     }
-
-    let target_number = optional_u16(f[0], 0)?;
-    let latitude_deg = optional_coordinate(f[1], f[2], 1, 2, false)?;
-    let longitude_deg = optional_coordinate(f[3], f[4], 3, 4, true)?;
-    let name = match f.get(5) {
-        Some(bytes) => optional_string(bytes, 5)?,
-        None => None,
-    };
-    let utc_time = match f.get(6) {
-        Some(bytes) => UtcTime::parse_optional(bytes, 6)?,
-        None => None,
-    };
-    let status = f
-        .get(7)
-        .and_then(|b| b.first().copied())
-        .map(TargetStatus::from_byte);
-    let reference_target = matches!(f.get(8).and_then(|b| b.first().copied()), Some(b'R' | b'r'));
-
     Ok(TllData {
         talker: raw.talker,
-        target_number,
-        latitude_deg,
-        longitude_deg,
-        name,
-        utc_time,
-        status,
-        reference_target,
+        target_number: number(f[0]),
+        latitude_deg: latitude(f[1], f[2]),
+        longitude_deg: longitude(f[3], f[4]),
+        name: text(optional(f, 5)),
+        utc_time: number(optional(f, 6)),
+        status: code(optional(f, 7), TargetStatus::from_byte),
+        reference_target: reference_target(optional(f, 8)),
     })
 }
 
@@ -95,55 +78,84 @@ pub fn decode_tll(raw: &RawSentence<'_>) -> Result<TllData, DecodeError> {
     clippy::indexing_slicing
 )]
 mod tests {
+    use alloc::string::ToString;
+
+    use marlin_field::{Invalid, RawCode};
+
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
+
+    fn decode(body: &[u8]) -> TllData {
+        let bytes = build(body);
+        let raw = parse_raw(&bytes);
+        decode_tll(&raw).expect("parse")
+    }
 
     #[test]
     fn decode_tll_full() {
-        let bytes = build(b"RATLL,7,4807.038,N,01131.000,E,TGT7,123519,T,R");
-        let raw = parse_raw(&bytes);
-        let tll = decode_tll(&raw).expect("parse");
+        let tll = decode(b"RATLL,7,4807.038,N,01131.000,E,TGT7,123519,T,R");
         assert_eq!(tll.talker, Some(*b"RA"));
-        assert_eq!(tll.target_number, Some(7));
-        assert!((tll.latitude_deg.unwrap() - 48.1173).abs() < 0.0001);
-        assert!((tll.longitude_deg.unwrap() - 11.51667).abs() < 0.0001);
-        assert_eq!(tll.name.as_deref(), Some("TGT7"));
+        assert_eq!(tll.target_number, FieldState::Value(7));
+        assert!((tll.latitude_deg.value().unwrap() - 48.1173).abs() < 0.0001);
+        assert!((tll.longitude_deg.value().unwrap() - 11.51667).abs() < 0.0001);
+        assert_eq!(tll.name, FieldState::Value("TGT7".to_string()));
         assert_eq!(
             tll.utc_time,
-            Some(UtcTime {
+            FieldState::Value(UtcTime {
                 hour: 12,
                 minute: 35,
                 second: 19,
                 millisecond: 0
             })
         );
-        assert_eq!(tll.status, Some(TargetStatus::Tracking));
-        assert!(tll.reference_target);
+        assert_eq!(tll.status, FieldState::Value(TargetStatus::Tracking));
+        assert_eq!(tll.reference_target, FieldState::Value(true));
     }
 
     #[test]
     fn decode_tll_southern_western_negative() {
-        let bytes = build(b"RATLL,1,4807.038,S,01131.000,W,,,L,");
-        let raw = parse_raw(&bytes);
-        let tll = decode_tll(&raw).expect("parse");
-        assert!(tll.latitude_deg.unwrap() < 0.0);
-        assert!(tll.longitude_deg.unwrap() < 0.0);
-        assert_eq!(tll.name, None);
-        assert_eq!(tll.utc_time, None);
-        assert_eq!(tll.status, Some(TargetStatus::Lost));
-        assert!(!tll.reference_target);
+        let tll = decode(b"RATLL,1,4807.038,S,01131.000,W,,,L,");
+        assert!(tll.latitude_deg.value().unwrap() < 0.0);
+        assert!(tll.longitude_deg.value().unwrap() < 0.0);
+        assert_eq!(tll.name, FieldState::NotAvailable);
+        assert_eq!(tll.utc_time, FieldState::NotAvailable);
+        assert_eq!(tll.status, FieldState::Value(TargetStatus::Lost));
+        assert_eq!(tll.reference_target, FieldState::Value(false));
     }
 
     #[test]
     fn decode_tll_position_only_five_fields() {
-        let bytes = build(b"RATLL,2,5000.00,N,00500.00,E");
-        let raw = parse_raw(&bytes);
-        let tll = decode_tll(&raw).expect("parse");
-        assert_eq!(tll.target_number, Some(2));
-        assert!(tll.latitude_deg.is_some());
-        assert_eq!(tll.name, None);
-        assert_eq!(tll.status, None);
-        assert!(!tll.reference_target);
+        let tll = decode(b"RATLL,2,5000.00,N,00500.00,E");
+        assert_eq!(tll.target_number, FieldState::Value(2));
+        assert!(tll.latitude_deg.value().is_some());
+        assert_eq!(tll.name, FieldState::NotAvailable);
+        assert_eq!(tll.utc_time, FieldState::NotAvailable);
+        assert_eq!(tll.status, FieldState::NotAvailable);
+        assert_eq!(tll.reference_target, FieldState::Value(false));
+    }
+
+    #[test]
+    fn decode_tll_every_empty_field_is_not_available() {
+        let tll = decode(b"RATLL,,,,,,,,,");
+        assert_eq!(tll.target_number, FieldState::NotAvailable);
+        assert_eq!(tll.latitude_deg, FieldState::NotAvailable);
+        assert_eq!(tll.longitude_deg, FieldState::NotAvailable);
+        assert_eq!(tll.name, FieldState::NotAvailable);
+        assert_eq!(tll.utc_time, FieldState::NotAvailable);
+        assert_eq!(tll.status, FieldState::NotAvailable);
+        assert_eq!(tll.reference_target, FieldState::Value(false));
+    }
+
+    #[test]
+    fn decode_tll_every_unreadable_field_is_invalid() {
+        let tll = decode(b"RATLL,x,x,N,x,E,\xFF,x,LQ,RR");
+        assert_eq!(tll.target_number, unparsable());
+        assert_eq!(tll.latitude_deg, unparsable());
+        assert_eq!(tll.longitude_deg, unparsable());
+        assert_eq!(tll.name, unparsable());
+        assert_eq!(tll.utc_time, unparsable());
+        assert_eq!(tll.status, unparsable());
+        assert_eq!(tll.reference_target, unparsable());
     }
 
     #[test]
@@ -160,12 +172,64 @@ mod tests {
     }
 
     #[test]
-    fn decode_tll_rejects_invalid_hemisphere() {
-        let bytes = build(b"RATLL,2,5000.00,X,00500.00,E");
-        let raw = parse_raw(&bytes);
-        match decode_tll(&raw) {
-            Err(DecodeError::InvalidHemisphere { field_index: 2 }) => {}
-            other => panic!("expected InvalidHemisphere 2, got {other:?}"),
-        }
+    fn decode_tll_unnamed_hemisphere_is_invalid_with_the_byte() {
+        let tll = decode(b"RATLL,2,5000.00,X,00500.00,E");
+        assert_eq!(
+            tll.latitude_deg,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'X'))))
+        );
+        assert!(tll.longitude_deg.value().is_some());
+    }
+
+    #[test]
+    fn decode_tll_unparsable_target_number_is_invalid() {
+        let tll = decode(b"RATLL,two,5000.00,N,00500.00,E");
+        assert_eq!(tll.target_number, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_tll_non_utf8_name_is_invalid() {
+        let tll = decode(b"RATLL,2,5000.00,N,00500.00,E,\xFF\xFE,,T,");
+        assert_eq!(tll.name, FieldState::Invalid(Invalid::Unparsable));
+        assert_eq!(tll.status, FieldState::Value(TargetStatus::Tracking));
+    }
+
+    #[test]
+    fn decode_tll_unparsable_utc_is_invalid() {
+        let tll = decode(b"RATLL,2,5000.00,N,00500.00,E,TGT,noon,T,");
+        assert_eq!(tll.utc_time, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_tll_unnamed_status_is_invalid_with_the_byte() {
+        let tll = decode(b"RATLL,2,5000.00,N,00500.00,E,TGT,,Z,");
+        assert_eq!(
+            tll.status,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'Z'))))
+        );
+    }
+
+    #[test]
+    fn decode_tll_lowercase_reference_flag_is_true() {
+        let tll = decode(b"RATLL,2,5000.00,N,00500.00,E,TGT,,T,r");
+        assert_eq!(tll.reference_target, FieldState::Value(true));
+    }
+
+    #[test]
+    fn decode_tll_unnamed_reference_flag_is_invalid_with_the_byte() {
+        let tll = decode(b"RATLL,2,5000.00,N,00500.00,E,TGT,,T,X");
+        assert_eq!(
+            tll.reference_target,
+            FieldState::Invalid(Invalid::Undefined(RawCode(i64::from(b'X'))))
+        );
+    }
+
+    #[test]
+    fn decode_tll_two_byte_reference_flag_is_invalid_without_a_code() {
+        let tll = decode(b"RATLL,2,5000.00,N,00500.00,E,TGT,,T,RR");
+        assert_eq!(
+            tll.reference_target,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
     }
 }

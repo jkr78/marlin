@@ -63,7 +63,7 @@ def test_aiter_nmea_messages_yields_gga() -> None:
     msgs = asyncio.run(run())
     assert len(msgs) == 1
     assert isinstance(msgs[0], Gga)
-    assert msgs[0].latitude_deg is not None
+    assert msgs[0].latitude_deg.value is not None
 
 
 def test_aiter_ais_messages_yields_type1() -> None:

@@ -17,6 +17,7 @@ cargo +nightly fuzz run envelope       -- -max_total_time=60
 cargo +nightly fuzz run ais_armor      -- -max_total_time=60
 cargo +nightly fuzz run ais_bit_reader -- -max_total_time=60
 cargo +nightly fuzz run ais_parser     -- -max_total_time=60
+cargo +nightly fuzz run nmea_0183_decode -- -max_total_time=60
 
 # Via just:
 just fuzz envelope 60
@@ -32,17 +33,15 @@ just fuzz-release              # one CPU-hour per target, before a release
 | `ais_armor`      | `armor::decode(payload, fill_bits)`                      |
 | `ais_bit_reader` | `BitReader::{u,i,b,string}` over arbitrary packed bytes  |
 | `ais_parser`     | Full `AisFragmentParser<Streaming>` pipeline (envelope → AIVDM wrapper → reassembler → armor → typed decode) |
-
-Targets for `marlin-nmea-0183` land when the crate needs dedicated
-coverage beyond what's exercised via `envelope` + the typed NMEA
-decoders' unit tests.
+| `nmea_0183_decode` | `marlin_nmea_envelope::parse` → `marlin_nmea_0183::decode`; asserts the only decode error is `NotEnoughFields` |
 
 ## What is being fuzzed
 
 The contract: **no panic on any input**. Fuzz targets feed arbitrary bytes
 into the parser and drain every available sentence. Successful parses and
 errors are both acceptable outcomes; the only failure mode is a crash
-(panic, UB, OOM).
+(panic, UB, OOM). `nmea_0183_decode` adds a property: a typed decode
+fails only for too few fields, never for a field's value.
 
 ## Workspace relationship
 

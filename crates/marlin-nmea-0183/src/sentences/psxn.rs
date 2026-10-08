@@ -43,9 +43,10 @@
 use alloc::vec::Vec;
 use core::str::FromStr;
 
+use marlin_field::{FieldState, Invalid};
 use marlin_nmea_envelope::RawSentence;
 
-use crate::util::{non_empty, optional_f32, optional_u16};
+use crate::util::number;
 use crate::DecodeError;
 
 // ---------------------------------------------------------------------------
@@ -55,23 +56,26 @@ use crate::DecodeError;
 /// Decoded fields of a `$PSXN` sentence.
 ///
 /// Always the same shape regardless of which [`PsxnLayout`] was used to
-/// decode. Any slot not carrying a given quantity (or carrying an empty
-/// field on the wire) yields `None` for that quantity.
+/// decode. A quantity no data field carries under the layout, or whose
+/// data field is empty on the wire, is not available. The roll and pitch
+/// angles are derived, but carry a field state like every other field so
+/// the crate has one convention: a data field the decoder cannot read, or
+/// a sine-encoded value no angle can produce, is invalid.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PsxnData {
     /// `id` field from the wire (application-specific meaning).
-    pub id: Option<u16>,
+    pub id: FieldState<u16>,
     /// `token` field from the wire — opaque pass-through. Preserved as
     /// owned bytes so callers can keep it after the [`RawSentence`] is
-    /// dropped.
-    pub token: Option<Vec<u8>>,
+    /// dropped. Never invalid: any bytes are the token.
+    pub token: FieldState<Vec<u8>>,
     /// Roll in degrees (or radians if [`PsxnLayout::raw_radians`] is set).
-    pub roll_deg: Option<f32>,
+    pub roll_deg: FieldState<f32>,
     /// Pitch in degrees (or radians if [`PsxnLayout::raw_radians`] is set).
-    pub pitch_deg: Option<f32>,
+    pub pitch_deg: FieldState<f32>,
     /// Heave displacement in metres (positive = up by convention;
     /// verify against your sensor ICD).
-    pub heave_m: Option<f32>,
+    pub heave_m: FieldState<f32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -96,8 +100,9 @@ pub enum PsxnSlot {
     /// The decoder recovers roll via `asin(value / cos(pitch))`. This
     /// requires the layout to **also** contain a source of pitch
     /// ([`Self::Pitch`] or [`Self::PitchSineEncoded`]); if no pitch is
-    /// available, or if `cos(pitch)` is too close to zero (gimbal
-    /// lock), `roll_deg` resolves to `None`.
+    /// available, `roll_deg` takes the pitch's state; if `cos(pitch)` is
+    /// too close to zero (gimbal lock) or the ratio is outside ±1,
+    /// `roll_deg` is invalid.
     ///
     /// Legacy Python called this `rollHippy`. The encoding is common
     /// on TSS-family hydrographic sensors.
@@ -236,8 +241,7 @@ const COS_PITCH_MIN: f32 = 1e-6;
 ///
 /// - [`DecodeError::NotEnoughFields`] if fewer than 8 fields are
 ///   present (the wire format always has `id, token, data0..data5`).
-/// - [`DecodeError::InvalidNumber`] / [`DecodeError::InvalidUtf8`] if
-///   `id` or any non-empty data slot fails to parse as a number.
+///   A data field that is not a number is invalid, not an error.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_psxn(raw: &RawSentence<'_>, layout: &PsxnLayout) -> Result<PsxnData, DecodeError> {
     let f = raw.fields.as_slice();
@@ -248,28 +252,28 @@ pub fn decode_psxn(raw: &RawSentence<'_>, layout: &PsxnLayout) -> Result<PsxnDat
         });
     }
 
-    // Field 0: id (u16, optional).
-    let id = optional_u16(f[0], 0)?;
+    // Field 0: id.
+    let id = number(f[0]);
 
     // Field 1: token — opaque bytes, preserved as an owned Vec so the
     // returned PsxnData is 'static-safe (callers can move it freely).
-    let token = non_empty(f[1]).map(<[u8]>::to_vec);
+    let token = if f[1].is_empty() {
+        FieldState::NotAvailable
+    } else {
+        FieldState::Value(f[1].to_vec())
+    };
 
-    // Fields 2..8: six data slots, each an optional f32.
-    let mut slot_values = [None::<f32>; 6];
-    for i in 0..6 {
-        slot_values[i] = optional_f32(f[2 + i], 2 + i)?;
-    }
-
-    // Collect the raw-value-by-role map from the layout.
-    let mut roll_direct: Option<f32> = None;
-    let mut pitch_direct: Option<f32> = None;
-    let mut heave_m: Option<f32> = None;
-    let mut roll_sine: Option<f32> = None;
-    let mut pitch_sine: Option<f32> = None;
+    // Fields 2..8: six data fields, each a number. Collect the state-by-
+    // role map from the layout; a role no data field carries stays not
+    // available.
+    let mut roll_direct = FieldState::NotAvailable;
+    let mut pitch_direct = FieldState::NotAvailable;
+    let mut heave_m = FieldState::NotAvailable;
+    let mut roll_sine = FieldState::NotAvailable;
+    let mut pitch_sine = FieldState::NotAvailable;
 
     for (i, slot) in layout.slots.iter().enumerate() {
-        let v = slot_values[i];
+        let v: FieldState<f32> = number(f[2 + i]);
         match slot {
             PsxnSlot::Roll => roll_direct = v,
             PsxnSlot::Pitch => pitch_direct = v,
@@ -281,40 +285,33 @@ pub fn decode_psxn(raw: &RawSentence<'_>, layout: &PsxnLayout) -> Result<PsxnDat
     }
 
     // Resolve pitch first — it's needed to de-encode sine-encoded roll.
-    // Direct value wins; fall back to sine-encoded recovery.
-    let pitch_rad = match (pitch_direct, pitch_sine) {
-        (Some(p), _) => Some(p),
-        (None, Some(ps)) => {
-            let arg = -ps;
-            if (-1.0..=1.0).contains(&arg) {
-                Some(libm::asinf(arg))
-            } else {
-                None
-            }
-        }
-        (None, None) => None,
+    // A direct data field wins unless it is not available; then the
+    // sine-encoded data field's state is used.
+    let pitch_rad = match pitch_direct {
+        FieldState::NotAvailable => match pitch_sine {
+            FieldState::Value(ps) => asin_or_invalid(-ps),
+            other => other,
+        },
+        direct => direct,
     };
 
-    // Resolve roll. For the sine-encoded path we need cos(pitch).
-    let roll_rad = match (roll_direct, roll_sine, pitch_rad) {
-        (Some(r), _, _) => Some(r),
-        (None, Some(rs), Some(p)) => {
-            let cp = libm::cosf(p);
-            if cp.abs() <= COS_PITCH_MIN {
-                // Gimbal lock — can't recover roll from the sine form.
-                None
-            } else {
-                let ratio = rs / cp;
-                if (-1.0..=1.0).contains(&ratio) {
-                    Some(libm::asinf(ratio))
+    // Resolve roll the same way. For the sine-encoded path we need
+    // cos(pitch); a pitch that is not a value hands its state to roll.
+    let roll_rad = match roll_direct {
+        FieldState::NotAvailable => match (roll_sine, pitch_rad) {
+            (FieldState::Value(rs), FieldState::Value(p)) => {
+                let cp = libm::cosf(p);
+                if cp.abs() <= COS_PITCH_MIN {
+                    // Gimbal lock — can't recover roll from the sine form.
+                    FieldState::Invalid(Invalid::Unparsable)
                 } else {
-                    None
+                    asin_or_invalid(rs / cp)
                 }
             }
-        }
-        // RollSineEncoded in layout but no pitch source → can't resolve.
-        // Also: no roll slot at all → None.
-        (None, Some(_), None) | (None, None, _) => None,
+            (FieldState::Value(_), pitch) => pitch,
+            (other, _) => other,
+        },
+        direct => direct,
     };
 
     // Apply radians→degrees conversion unless the layout opted out.
@@ -323,16 +320,24 @@ pub fn decode_psxn(raw: &RawSentence<'_>, layout: &PsxnLayout) -> Result<PsxnDat
     } else {
         180.0 / core::f32::consts::PI
     };
-    let roll_deg = roll_rad.map(|r| r * factor);
-    let pitch_deg = pitch_rad.map(|p| p * factor);
 
     Ok(PsxnData {
         id,
         token,
-        roll_deg,
-        pitch_deg,
+        roll_deg: roll_rad.map(|r| r * factor),
+        pitch_deg: pitch_rad.map(|p| p * factor),
         heave_m,
     })
+}
+
+/// `asin` of a sine-encoded argument; an argument outside ±1 is no
+/// angle, so the field is invalid.
+fn asin_or_invalid(arg: f32) -> FieldState<f32> {
+    if (-1.0..=1.0).contains(&arg) {
+        FieldState::Value(libm::asinf(arg))
+    } else {
+        FieldState::Invalid(Invalid::Unparsable)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +353,7 @@ pub fn decode_psxn(raw: &RawSentence<'_>, layout: &PsxnLayout) -> Result<PsxnDat
 )]
 mod tests {
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
 
     // -----------------------------------------------------------------
     // Envelope-level contract — proprietary, no standard talker
@@ -373,27 +378,49 @@ mod tests {
         let raw = parse_raw(&bytes);
         let data = decode_psxn(&raw, &PsxnLayout::default()).expect("parse");
 
-        assert_eq!(data.id, Some(10));
-        assert_eq!(data.token.as_deref(), Some(b"mytoken".as_slice()));
-        assert!((data.roll_deg.unwrap() - 1.0).abs() < 0.01);
-        assert!((data.pitch_deg.unwrap() - 2.0).abs() < 0.01);
-        assert!((data.heave_m.unwrap() - 0.5).abs() < 0.001);
+        assert_eq!(data.id, FieldState::Value(10));
+        assert_eq!(data.token, FieldState::Value(b"mytoken".to_vec()));
+        assert!((data.roll_deg.value().unwrap() - 1.0).abs() < 0.01);
+        assert!((data.pitch_deg.value().unwrap() - 2.0).abs() < 0.01);
+        assert!((data.heave_m.value().unwrap() - 0.5).abs() < 0.001);
     }
 
     // -----------------------------------------------------------------
-    // Empty fields → None across the board
+    // Empty fields → not available across the board
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_psxn_all_empty_data_fields_decode_to_none() {
+    fn decode_psxn_all_empty_data_fields_are_not_available() {
         let bytes = build(b"PSXN,,,,,,,,");
         let raw = parse_raw(&bytes);
         let data = decode_psxn(&raw, &PsxnLayout::default()).expect("parse");
-        assert_eq!(data.id, None);
-        assert_eq!(data.token, None);
-        assert_eq!(data.roll_deg, None);
-        assert_eq!(data.pitch_deg, None);
-        assert_eq!(data.heave_m, None);
+        assert_eq!(data.id, FieldState::NotAvailable);
+        assert_eq!(data.token, FieldState::NotAvailable);
+        assert_eq!(data.roll_deg, FieldState::NotAvailable);
+        assert_eq!(data.pitch_deg, FieldState::NotAvailable);
+        assert_eq!(data.heave_m, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_psxn_every_unreadable_data_field_is_invalid() {
+        let bytes = build(b"PSXN,x,tok,x,x,x,x,x,x");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &PsxnLayout::default()).expect("parse");
+        assert_eq!(data.id, unparsable());
+        assert_eq!(data.token, FieldState::Value(b"tok".to_vec()));
+        assert_eq!(data.roll_deg, unparsable());
+        assert_eq!(data.pitch_deg, unparsable());
+        assert_eq!(data.heave_m, unparsable());
+    }
+
+    #[test]
+    fn decode_psxn_role_no_data_field_carries_is_not_available() {
+        // Layout `rp`: no heave role at all, though data2 has a number.
+        let layout: PsxnLayout = "rp".parse().expect("layout parse");
+        let bytes = build(b"PSXN,10,,0.1,0.2,0.3,,,");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &layout).expect("parse");
+        assert_eq!(data.heave_m, FieldState::NotAvailable);
     }
 
     // -----------------------------------------------------------------
@@ -410,8 +437,8 @@ mod tests {
         let raw = parse_raw(&bytes);
         let data = decode_psxn(&raw, &layout).expect("parse");
         // Not multiplied by 180/π — raw value preserved.
-        assert!((data.roll_deg.unwrap() - 0.1).abs() < 0.001);
-        assert!((data.pitch_deg.unwrap() - 0.2).abs() < 0.001);
+        assert!((data.roll_deg.value().unwrap() - 0.1).abs() < 0.001);
+        assert!((data.pitch_deg.value().unwrap() - 0.2).abs() < 0.001);
     }
 
     // -----------------------------------------------------------------
@@ -436,18 +463,28 @@ mod tests {
         let raw = parse_raw(&bytes);
         let data = decode_psxn(&raw, &layout).expect("parse");
         assert!(
-            (data.pitch_deg.unwrap() - 30.0).abs() < 0.1,
+            (data.pitch_deg.value().unwrap() - 30.0).abs() < 0.1,
             "got {:?}",
             data.pitch_deg
         );
     }
 
+    #[test]
+    fn decode_psxn_pitch_sine_outside_unit_range_is_invalid() {
+        // |sin(pitch)| can never exceed 1; 1.5 is no angle.
+        let layout: PsxnLayout = "q".parse().expect("layout parse");
+        let bytes = build(b"PSXN,10,,1.5,,,,,");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &layout).expect("parse");
+        assert_eq!(data.pitch_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
     // -----------------------------------------------------------------
-    // Sine-encoded roll alone (no pitch) → None
+    // Sine-encoded roll alone (no pitch) → not available
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_psxn_roll_sine_without_pitch_source_yields_none() {
+    fn decode_psxn_roll_sine_without_pitch_source_is_not_available() {
         let layout = PsxnLayout {
             slots: [
                 PsxnSlot::RollSineEncoded,
@@ -462,7 +499,28 @@ mod tests {
         let bytes = build(b"PSXN,10,,0.3,,,,,");
         let raw = parse_raw(&bytes);
         let data = decode_psxn(&raw, &layout).expect("parse");
-        assert_eq!(data.roll_deg, None);
+        assert_eq!(data.roll_deg, FieldState::NotAvailable);
+    }
+
+    #[test]
+    fn decode_psxn_roll_sine_with_invalid_pitch_takes_the_pitch_state() {
+        let layout: PsxnLayout = "ps".parse().expect("layout parse");
+        let bytes = build(b"PSXN,10,,abc,0.3,,,,");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &layout).expect("parse");
+        assert_eq!(data.pitch_deg, FieldState::Invalid(Invalid::Unparsable));
+        assert_eq!(data.roll_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
+    fn decode_psxn_roll_sine_ratio_outside_unit_range_is_invalid() {
+        // pitch = 60° → cos = 0.5; roll_sine 0.6 / 0.5 = 1.2 is no angle.
+        let layout: PsxnLayout = "ps".parse().expect("layout parse");
+        let bytes = build(b"PSXN,10,,1.0471976,0.6,,,,");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &layout).expect("parse");
+        assert_eq!(data.roll_deg, FieldState::Invalid(Invalid::Unparsable));
+        assert!((data.pitch_deg.value().unwrap() - 60.0).abs() < 0.01);
     }
 
     // -----------------------------------------------------------------
@@ -486,16 +544,32 @@ mod tests {
         let bytes = build(b"PSXN,10,,0.0,0.17365,,,,");
         let raw = parse_raw(&bytes);
         let data = decode_psxn(&raw, &layout).expect("parse");
-        assert!((data.roll_deg.unwrap() - 10.0).abs() < 0.1);
-        assert_eq!(data.pitch_deg, Some(0.0));
+        assert!((data.roll_deg.value().unwrap() - 10.0).abs() < 0.1);
+        assert_eq!(data.pitch_deg, FieldState::Value(0.0));
+    }
+
+    #[test]
+    fn decode_psxn_direct_data_field_wins_over_sine_encoded_unless_not_available() {
+        // Layout `rsp`: direct roll 0.1 rad beats the sine-encoded data
+        // field; an empty direct data field falls back to it.
+        let layout: PsxnLayout = "rsp".parse().expect("layout parse");
+        let bytes = build(b"PSXN,10,,0.1,0.17365,0.0,,,");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &layout).expect("parse");
+        assert!((data.roll_deg.value().unwrap() - 5.7296).abs() < 0.01);
+
+        let bytes = build(b"PSXN,10,,,0.17365,0.0,,,");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &layout).expect("parse");
+        assert!((data.roll_deg.value().unwrap() - 10.0).abs() < 0.1);
     }
 
     // -----------------------------------------------------------------
-    // Gimbal lock — cos(pitch) ≈ 0 → roll None
+    // Gimbal lock — cos(pitch) ≈ 0 → roll invalid
     // -----------------------------------------------------------------
 
     #[test]
-    fn decode_psxn_gimbal_lock_yields_none_for_sine_roll() {
+    fn decode_psxn_gimbal_lock_makes_sine_roll_invalid() {
         // pitch = π/2 rad = 90°. cos(90°) = 0 → can't recover roll.
         let layout = PsxnLayout {
             slots: [
@@ -511,8 +585,8 @@ mod tests {
         let bytes = build(b"PSXN,10,,1.5707963,0.5,,,,");
         let raw = parse_raw(&bytes);
         let data = decode_psxn(&raw, &layout).expect("parse");
-        assert_eq!(data.roll_deg, None);
-        assert!((data.pitch_deg.unwrap() - 90.0).abs() < 0.01);
+        assert_eq!(data.roll_deg, FieldState::Invalid(Invalid::Unparsable));
+        assert!((data.pitch_deg.value().unwrap() - 90.0).abs() < 0.01);
     }
 
     // -----------------------------------------------------------------
@@ -532,24 +606,32 @@ mod tests {
     }
 
     #[test]
-    fn decode_psxn_invalid_id_errors_at_field_0() {
+    fn decode_psxn_unparsable_id_is_invalid_and_the_rest_decodes() {
         let bytes = build(b"PSXN,abc,tok,1.0,2.0,3.0,0,0,0");
         let raw = parse_raw(&bytes);
-        match decode_psxn(&raw, &PsxnLayout::default()) {
-            Err(DecodeError::InvalidNumber { field_index: 0 }) => {}
-            other => panic!("expected InvalidNumber field 0, got {other:?}"),
-        }
+        let data = decode_psxn(&raw, &PsxnLayout::default()).expect("parse");
+        assert_eq!(data.id, FieldState::Invalid(Invalid::Unparsable));
+        assert!((data.heave_m.value().unwrap() - 3.0).abs() < 0.001);
     }
 
     #[test]
-    fn decode_psxn_invalid_data_slot_errors_at_correct_field_index() {
-        // data2 (wire field 4) is malformed.
+    fn decode_psxn_unparsable_data_field_is_invalid_for_its_role_only() {
+        // data2 (heave under the default layout) is not a number.
         let bytes = build(b"PSXN,10,tok,1.0,2.0,nan-str,0,0,0");
         let raw = parse_raw(&bytes);
-        match decode_psxn(&raw, &PsxnLayout::default()) {
-            Err(DecodeError::InvalidNumber { field_index: 4 }) => {}
-            other => panic!("expected InvalidNumber field 4, got {other:?}"),
-        }
+        let data = decode_psxn(&raw, &PsxnLayout::default()).expect("parse");
+        assert_eq!(data.heave_m, FieldState::Invalid(Invalid::Unparsable));
+        assert!(data.roll_deg.value().is_some());
+        assert!(data.pitch_deg.value().is_some());
+    }
+
+    #[test]
+    fn decode_psxn_unparsable_direct_roll_is_invalid_even_with_a_sine_data_field() {
+        let layout: PsxnLayout = "rsp".parse().expect("layout parse");
+        let bytes = build(b"PSXN,10,,abc,0.17365,0.0,,,");
+        let raw = parse_raw(&bytes);
+        let data = decode_psxn(&raw, &layout).expect("parse");
+        assert_eq!(data.roll_deg, FieldState::Invalid(Invalid::Unparsable));
     }
 
     // -----------------------------------------------------------------
@@ -619,8 +701,8 @@ mod tests {
         let msg = crate::decode(&raw).expect("dispatcher");
         match msg {
             crate::Nmea0183Message::Psxn(d) => {
-                assert_eq!(d.id, Some(10));
-                assert!((d.roll_deg.unwrap() - 1.0).abs() < 0.01);
+                assert_eq!(d.id, FieldState::Value(10));
+                assert!((d.roll_deg.value().unwrap() - 1.0).abs() < 0.01);
             }
             other => panic!("expected Psxn, got {other:?}"),
         }
@@ -638,7 +720,9 @@ mod tests {
         match msg {
             crate::Nmea0183Message::Psxn(d) => {
                 // raw_radians on → value kept in radians.
-                assert!((d.pitch_deg.unwrap() - core::f32::consts::FRAC_PI_6).abs() < 0.001);
+                assert!(
+                    (d.pitch_deg.value().unwrap() - core::f32::consts::FRAC_PI_6).abs() < 0.001
+                );
             }
             other => panic!("expected Psxn, got {other:?}"),
         }

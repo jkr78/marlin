@@ -87,7 +87,8 @@ fuzz-bootstrap target="envelope":
     @cp -n fuzz/seeds/{{target}}/* fuzz/corpus/{{target}}/ 2>/dev/null || :
 
 # Run a single fuzz target. `target` is one of `envelope`, `ais_armor`,
-# `ais_bit_reader`, `ais_parser`. Duration is in seconds (default 60).
+# `ais_bit_reader`, `ais_parser`, `nmea_0183_decode`. Duration is in
+# seconds (default 60).
 # Bootstraps the corpus from fuzz/seeds/ first so the regression suite
 # is always part of the working set.
 # Usage: `just fuzz envelope 300`, `just fuzz ais_parser`.
@@ -100,6 +101,7 @@ fuzz-smoke-all:
     @just fuzz ais_armor 30
     @just fuzz ais_bit_reader 30
     @just fuzz ais_parser 30
+    @just fuzz nmea_0183_decode 30
 
 # Long-form fuzz run (one CPU-hour per target) — required before a
 # release.
@@ -108,6 +110,7 @@ fuzz-release:
     @just fuzz ais_armor 3600
     @just fuzz ais_bit_reader 3600
     @just fuzz ais_parser 3600
+    @just fuzz nmea_0183_decode 3600
 
 # List the current fuzz corpus size (number of inputs libfuzzer has kept)
 # for the given target.

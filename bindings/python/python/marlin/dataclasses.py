@@ -17,7 +17,8 @@ classes — `dataclasses.asdict()` cannot introspect them. Convert with
 `to_dataclass(msg)` to get a frozen-dataclass equivalent.
 
 Enum-typed fields (GgaFixQuality, NavStatus, EpfdType, etc.) are stored
-as their integer values for JSON-friendly output.
+as their integer values for JSON-friendly output, inside the field-state
+mirror where the binding class carries a `FieldState`.
 
 A dataclass mirror has the same name and the same field names as its
 binding class; `to_dataclass` relies on both to convert without a
@@ -152,40 +153,46 @@ class RawSentence:
 
 # ---------- NMEA dataclass mirrors ----------
 
+# Every message field but `talker` is a `FieldState` mirror. An enum payload
+# is stored as the member's integer value (`int(member)`) for JSON-friendly
+# output, so `fix_quality` is `FieldState[int]`, not
+# `FieldState[GgaFixQuality]`.
+
 
 @dataclass(frozen=True)
 class Gga:
     """Dataclass mirror of marlin.nmea.Gga.
 
-    `fix_quality` is stored as an int (wire value) for JSON compatibility.
+    `fix_quality` carries the enum member's int value for JSON
+    compatibility.
     """
 
     talker: Optional[bytes]
-    utc: Optional[UtcTime]
-    latitude_deg: Optional[float]
-    longitude_deg: Optional[float]
-    fix_quality: int
-    satellites_used: Optional[int]
-    hdop: Optional[float]
-    altitude_m: Optional[float]
-    geoid_separation_m: Optional[float]
-    dgps_age_s: Optional[float]
-    dgps_station_id: Optional[int]
+    utc: FieldState[UtcTime]
+    latitude_deg: FieldState[float]
+    longitude_deg: FieldState[float]
+    fix_quality: FieldState[int]
+    satellites_used: FieldState[int]
+    hdop: FieldState[float]
+    altitude_m: FieldState[float]
+    geoid_separation_m: FieldState[float]
+    dgps_age_s: FieldState[float]
+    dgps_station_id: FieldState[int]
 
 
 @dataclass(frozen=True)
 class Vtg:
     """Dataclass mirror of marlin.nmea.Vtg.
 
-    `mode` is stored as Optional[int] (wire value) for JSON compatibility.
+    `mode` carries the enum member's int value for JSON compatibility.
     """
 
     talker: Optional[bytes]
-    course_true_deg: Optional[float]
-    course_magnetic_deg: Optional[float]
-    speed_knots: Optional[float]
-    speed_kmh: Optional[float]
-    mode: Optional[int]
+    course_true_deg: FieldState[float]
+    course_magnetic_deg: FieldState[float]
+    speed_knots: FieldState[float]
+    speed_kmh: FieldState[float]
+    mode: FieldState[int]
 
 
 @dataclass(frozen=True)
@@ -193,44 +200,45 @@ class Hdt:
     """Dataclass mirror of marlin.nmea.Hdt."""
 
     talker: Optional[bytes]
-    heading_true_deg: Optional[float]
+    heading_true_deg: FieldState[float]
 
 
 @dataclass(frozen=True)
 class Rmc:
     """Dataclass mirror of marlin.nmea.Rmc.
 
-    `status`, `mode`, and `nav_status` are stored as int (wire values) for
-    JSON compatibility. `mode` and `nav_status` are Optional because they
-    only exist on NMEA 2.3+ / 4.10+ sentences respectively.
+    `status`, `mode` and `nav_status` carry the enum member's int value
+    for JSON compatibility. `mode` and `nav_status` are not
+    available on sentences that predate NMEA 2.3 / 4.10 respectively.
     """
 
     talker: Optional[bytes]
-    utc: Optional[UtcTime]
-    status: int
-    latitude_deg: Optional[float]
-    longitude_deg: Optional[float]
-    speed_knots: Optional[float]
-    course_true_deg: Optional[float]
-    date: Optional[UtcDate]
-    magnetic_variation_deg: Optional[float]
-    mode: Optional[int]
-    nav_status: Optional[int]
+    utc: FieldState[UtcTime]
+    status: FieldState[int]
+    latitude_deg: FieldState[float]
+    longitude_deg: FieldState[float]
+    speed_knots: FieldState[float]
+    course_true_deg: FieldState[float]
+    date: FieldState[UtcDate]
+    magnetic_variation_deg: FieldState[float]
+    mode: FieldState[int]
+    nav_status: FieldState[int]
 
 
 @dataclass(frozen=True)
 class Gll:
     """Dataclass mirror of marlin.nmea.Gll.
 
-    `status` is stored as int (wire value) for JSON compatibility.
+    `status` and `mode` carry the enum member's int value for JSON
+    compatibility.
     """
 
     talker: Optional[bytes]
-    latitude_deg: Optional[float]
-    longitude_deg: Optional[float]
-    utc: Optional[UtcTime]
-    status: int
-    mode: Optional[int]
+    latitude_deg: FieldState[float]
+    longitude_deg: FieldState[float]
+    utc: FieldState[UtcTime]
+    status: FieldState[int]
+    mode: FieldState[int]
 
 
 @dataclass(frozen=True)
@@ -238,53 +246,53 @@ class Hdg:
     """Dataclass mirror of marlin.nmea.Hdg."""
 
     talker: Optional[bytes]
-    heading_magnetic_deg: Optional[float]
-    deviation_deg: Optional[float]
-    variation_deg: Optional[float]
+    heading_magnetic_deg: FieldState[float]
+    deviation_deg: FieldState[float]
+    variation_deg: FieldState[float]
 
 
 @dataclass(frozen=True)
 class Ttm:
     """Dataclass mirror of marlin.nmea.Ttm.
 
-    `bearing_reference`, `course_reference`, `units`, `status`, and
-    `acquisition` are stored as Optional[int] (wire values) for JSON
+    `bearing_reference`, `course_reference`, `units`, `status` and
+    `acquisition` carry the enum member's int value for JSON
     compatibility.
     """
 
     talker: Optional[bytes]
-    target_number: Optional[int]
-    distance: Optional[float]
-    bearing_deg: Optional[float]
-    bearing_reference: Optional[int]
-    speed: Optional[float]
-    course_deg: Optional[float]
-    course_reference: Optional[int]
-    cpa: Optional[float]
-    tcpa: Optional[float]
-    units: Optional[int]
-    name: Optional[str]
-    status: Optional[int]
-    reference_target: bool
-    utc_time: Optional[UtcTime]
-    acquisition: Optional[int]
+    target_number: FieldState[int]
+    distance: FieldState[float]
+    bearing_deg: FieldState[float]
+    bearing_reference: FieldState[int]
+    speed: FieldState[float]
+    course_deg: FieldState[float]
+    course_reference: FieldState[int]
+    cpa: FieldState[float]
+    tcpa: FieldState[float]
+    units: FieldState[int]
+    name: FieldState[str]
+    status: FieldState[int]
+    reference_target: FieldState[bool]
+    utc_time: FieldState[UtcTime]
+    acquisition: FieldState[int]
 
 
 @dataclass(frozen=True)
 class Tll:
     """Dataclass mirror of marlin.nmea.Tll.
 
-    `status` is stored as Optional[int] (wire value) for JSON compatibility.
+    `status` carries the enum member's int value for JSON compatibility.
     """
 
     talker: Optional[bytes]
-    target_number: Optional[int]
-    latitude_deg: Optional[float]
-    longitude_deg: Optional[float]
-    name: Optional[str]
-    utc_time: Optional[UtcTime]
-    status: Optional[int]
-    reference_target: bool
+    target_number: FieldState[int]
+    latitude_deg: FieldState[float]
+    longitude_deg: FieldState[float]
+    name: FieldState[str]
+    utc_time: FieldState[UtcTime]
+    status: FieldState[int]
+    reference_target: FieldState[bool]
 
 
 @dataclass(frozen=True)
@@ -299,29 +307,29 @@ class Unknown:
 class Psxn:
     """Dataclass mirror of marlin.nmea.Psxn."""
 
-    id: Optional[int]
-    token: Optional[bytes]
-    roll_deg: Optional[float]
-    pitch_deg: Optional[float]
-    heave_m: Optional[float]
+    id: FieldState[int]
+    token: FieldState[bytes]
+    roll_deg: FieldState[float]
+    pitch_deg: FieldState[float]
+    heave_m: FieldState[float]
 
 
 @dataclass(frozen=True)
 class PrdidPitchRollHeading:
     """Dataclass mirror of marlin.nmea.PrdidPitchRollHeading."""
 
-    pitch_deg: Optional[float]
-    roll_deg: Optional[float]
-    heading_deg: Optional[float]
+    pitch_deg: FieldState[float]
+    roll_deg: FieldState[float]
+    heading_deg: FieldState[float]
 
 
 @dataclass(frozen=True)
 class PrdidRollPitchHeading:
     """Dataclass mirror of marlin.nmea.PrdidRollPitchHeading."""
 
-    roll_deg: Optional[float]
-    pitch_deg: Optional[float]
-    heading_deg: Optional[float]
+    roll_deg: FieldState[float]
+    pitch_deg: FieldState[float]
+    heading_deg: FieldState[float]
 
 
 @dataclass(frozen=True)
