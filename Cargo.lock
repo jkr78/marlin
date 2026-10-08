@@ -33,6 +33,7 @@ version = "0.2.0"
 dependencies = [
  "bytes",
  "libm",
+ "marlin-field",
  "thiserror",
 ]
 

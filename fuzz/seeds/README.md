@@ -19,6 +19,7 @@ state machine without any payload to distract from it.
 | `ais_bit_reader` | 2-byte payloads exercising past-end saturation |
 | `ais_parser` | Truncations of the full envelope→armor→decode pipeline |
 | `nmea_0183_decode` | Well-formed sentences with a not-available, invalid or half-filled paired field (hand-curated, not libfuzzer-minimized) |
+| `klv_decode` | Checksum-valid ST 0601 sets: every typed tag, every signed-tag sentinel, wrong-length and duplicate tags, the minimal set (hand-curated, not libfuzzer-minimized; a blind run rarely produces a valid Tag 1) |
 
 Filenames are SHA1 hashes of the input content. The hashes are stable
 across hosts; renaming would lose the link back to the libfuzzer entry

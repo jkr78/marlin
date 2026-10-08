@@ -51,6 +51,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "klv_encode"
+path = "fuzz_targets/klv_encode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "nmea_0183_decode"
 path = "fuzz_targets/nmea_0183_decode.rs"
 test = false

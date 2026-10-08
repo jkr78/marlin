@@ -15,9 +15,11 @@ track deliverables (not conversational state).
   Pick one convention and apply it everywhere. The operation prefix
   pairs naturally with the `EncodeError` the field-state work adds to
   marlin-klv, whose `Error` is already changing shape in 0.3.0, so that
-  release is the natural moment. Decided 2026-10-08: it rides 0.3.0,
-  settled in its own short design round before the marlin-klv encode
-  work lands. [workspace][0.3.0][ready]
+  release is the natural moment. Decided 2026-10-08: it rides 0.3.0 in
+  its own short design round. The marlin-klv encode work landed first
+  (2026-10-08) with `EncodeError` named under today's operation-prefix
+  convention beside the bare `Error`; the round renames whichever side
+  the convention does not match. [workspace][0.3.0][ready]
 - [ ] Align unit suffixes on numeric field names across the three crates
   AIS mixes `latitude_deg` with `speed_over_ground` and `true_heading`;
   KLV spells the unit out (`_degrees`, `_meters`, `_mps`); 0183 has its
