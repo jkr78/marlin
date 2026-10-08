@@ -20,7 +20,11 @@ DATACLASS_MIRRORS = sorted(
 
 
 def binding_classes() -> list[type]:
-    """Every public class of the binding modules, exceptions left out."""
+    """Every public class of the binding modules, exceptions left out.
+
+    A nested variant class (`FieldState.Value`) counts as a class of its own:
+    it is what a field holds at runtime and what the mirror is named after.
+    """
     classes = []
     for module_name in BINDING_MODULES:
         module = importlib.import_module(module_name)
@@ -28,11 +32,37 @@ def binding_classes() -> list[type]:
             obj = getattr(module, name)
             if isinstance(obj, type) and not issubclass(obj, Exception):
                 classes.append(obj)
+                classes.extend(variant_classes(obj))
     return classes
 
 
+def variant_classes(binding_class: type) -> list[type]:
+    """The nested variant classes of a sum type, in attribute order."""
+    return [
+        obj
+        for obj in vars(binding_class).values()
+        if isinstance(obj, type) and issubclass(obj, binding_class)
+    ]
+
+
+def is_variant_class(binding_class: type) -> bool:
+    """A variant class derives from its sum type; a plain binding class, from `object`."""
+    return any(base is not object for base in binding_class.__bases__)
+
+
 def binding_fields(binding_class: type) -> set[str]:
-    """The read-only data attributes PyO3 exposes, methods left out."""
+    """The read-only data attributes PyO3 exposes, methods left out.
+
+    For a variant class, the data is the variant's own fields plus the
+    `kind` tag; the base class's other getters (`value`, `value_or_bound`)
+    are accessors computed across states, not data a mirror carries.
+    """
+    if is_variant_class(binding_class):
+        return {
+            name
+            for name, obj in vars(binding_class).items()
+            if not name.startswith("_") and isinstance(obj, types.GetSetDescriptorType)
+        } | {"kind"}
     return {
         name
         for name in dir(binding_class)

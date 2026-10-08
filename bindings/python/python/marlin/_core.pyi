@@ -18,6 +18,7 @@ class ReassemblyError(AisError): ...
 class KlvError(MarlinError): ...
 
 envelope: Any
+field: Any
 nmea: Any
 ais: Any
 klv: Any

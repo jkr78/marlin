@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `marlin.field.FieldState`: the decoded-field state, a frozen class with
+  five variant classes `FieldState.Value(value)`,
+  `FieldState.AtLeast(bound)`, `FieldState.NotAvailable()`,
+  `FieldState.SenderError(code)` and `FieldState.Invalid(code)` (`code`
+  is `None` for a field with no wire integer). Read one with
+  `isinstance`, a `match` on the variant class, or the shared `kind`
+  (`"value"`, `"at_least"`, `"not_available"`, `"sender_error"`,
+  `"invalid"`), `value` and `value_or_bound` properties; equal states
+  compare and hash alike. The stub declares `FieldState[T]`, so a later
+  message stub can say `FieldState[float]`. No message class carries a
+  field state yet. Trap: every state is truthy, `NotAvailable()`
+  included, because a falsy not-available state would make `Value(0.0)`
+  indistinguishable from it in `if msg.speed_over_ground:`; test the
+  state, never the object.
+- `marlin.dataclasses` mirrors `Value`, `AtLeast`, `NotAvailable`,
+  `SenderError` and `Invalid` (generic frozen dataclasses with a `kind`
+  literal and slots) and the `FieldState` union alias; `to_dataclass`
+  converts a field state, and `asdict` yields
+  `{"kind": "value", "value": 10.2}`.
+
+### Changed (BREAKING)
+
+- Python floor is 3.10 (`requires-python >= 3.10`, `abi3-py310` wheels):
+  3.9 is past end of life and cannot parse the `match` statement the
+  field-state documentation and tests use.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added

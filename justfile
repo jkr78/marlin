@@ -154,13 +154,12 @@ py-test: py-dev
 
 # stubtest compares the public stubs with the built extension, so run
 # `just py-dev` first. Needs mypy >= 1.19, which the dev extra and CI
-# require (verified with 1.19.1 on Python 3.9, 2.4.0 on 3.12 and 1.20.2 on
-# 3.13). Findings that are not stub bugs live in
-# bindings/python/stubtest-allowlist.txt.
+# require (verified with 2.4.0 on Python 3.10 and 3.14). Findings that are
+# not stub bugs live in bindings/python/stubtest-allowlist.txt.
 py-type-check:
     cd bindings/python && {{py}} -m mypy --strict .
     cd bindings/python && {{py}} -m pyright
-    cd bindings/python && {{py}} -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt --ignore-unused-allowlist
+    cd bindings/python && {{py}} -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt
 
 # Check formatting of the bindings crate Rust. The crate is workspace-
 # excluded, so `just fmt-check` never sees it.

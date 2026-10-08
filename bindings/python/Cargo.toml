@@ -12,11 +12,12 @@ name = "_core"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.27", features = ["extension-module", "abi3-py39"] }
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py310"] }
 marlin-nmea-envelope = { path = "../../crates/marlin-nmea-envelope" }
 marlin-nmea-0183     = { path = "../../crates/marlin-nmea-0183" }
 marlin-ais           = { path = "../../crates/marlin-ais" }
 marlin-klv           = { path = "../../crates/marlin-klv" }
+marlin-field         = { path = "../../crates/marlin-field" }
 
 [lints.rust]
 # PyO3 macros require `unsafe_code`; workspace forbids it — override here.

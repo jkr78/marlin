@@ -27,8 +27,63 @@ export it. `tests/unit/test_dataclass_agreement.py` checks the pairing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, is_dataclass
-from typing import Optional, SupportsInt, Tuple, Union, get_args
+from dataclasses import dataclass, field, fields, is_dataclass
+from typing import Generic, Literal, Optional, SupportsInt, Tuple, TypeVar, Union, get_args
+
+_T = TypeVar("_T")
+
+
+# ---------- field state ----------
+
+# Mirrors of the five `marlin.field.FieldState` variant classes. `kind` is
+# the state tag the binding class reports, kept keyword-only so the
+# generated `__match_args__` is the payload alone, as on the binding class;
+# `asdict` yields `{"kind": "value", "value": 10.2}` for a field.
+
+
+@dataclass(frozen=True, slots=True)
+class Value(Generic[_T]):
+    """Dataclass mirror of marlin.field.FieldState.Value."""
+
+    value: _T
+    kind: Literal["value"] = field(default="value", kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class AtLeast(Generic[_T]):
+    """Dataclass mirror of marlin.field.FieldState.AtLeast."""
+
+    bound: _T
+    kind: Literal["at_least"] = field(default="at_least", kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class NotAvailable(Generic[_T]):
+    """Dataclass mirror of marlin.field.FieldState.NotAvailable."""
+
+    kind: Literal["not_available"] = field(default="not_available", kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class SenderError(Generic[_T]):
+    """Dataclass mirror of marlin.field.FieldState.SenderError."""
+
+    code: int
+    kind: Literal["sender_error"] = field(default="sender_error", kw_only=True)
+
+
+@dataclass(frozen=True, slots=True)
+class Invalid(Generic[_T]):
+    """Dataclass mirror of marlin.field.FieldState.Invalid.
+
+    `code` is None for a field with no wire integer.
+    """
+
+    code: Optional[int]
+    kind: Literal["invalid"] = field(default="invalid", kw_only=True)
+
+
+FieldState = Union[Value[_T], AtLeast[_T], NotAvailable[_T], SenderError[_T], Invalid[_T]]
 
 
 # ---------- shared value types ----------
@@ -505,7 +560,7 @@ NmeaMessage = Union[Gga, Gll, Hdg, Hdt, Rmc, Tll, Ttm, Vtg, Psxn, Prdid, Unknown
 
 # Modules whose classes are binding classes. A value from one of them is
 # either a class with a dataclass mirror of the same name, or an enum.
-_BINDING_MODULES = ("marlin.ais", "marlin.envelope", "marlin.nmea")
+_BINDING_MODULES = ("marlin.ais", "marlin.envelope", "marlin.field", "marlin.nmea")
 
 
 def to_dataclass(msg: object) -> object:
@@ -519,6 +574,7 @@ def to_dataclass(msg: object) -> object:
     - AIS: ``AisMessage`` (the wrapper) or any body variant directly
     - A value type nested in one of those, such as ``UtcTime``,
       ``Dimensions`` or ``Eta``
+    - A field state: any ``marlin.field.FieldState`` variant
 
     Raises ``TypeError`` for anything else, enum members included.
     """
@@ -575,14 +631,18 @@ __all__ = [
     "AidToNavigationReport",
     "AisMessage",
     "AisMessageBody",
+    "AtLeast",
     "Dimensions",
     "Eta",
     "ExtendedPositionReportB",
+    "FieldState",
     "Gga",
     "Gll",
     "Hdg",
     "Hdt",
+    "Invalid",
     "NmeaMessage",
+    "NotAvailable",
     "Other",
     "PositionReportA",
     "PositionReportB",
@@ -594,6 +654,7 @@ __all__ = [
     "RawSentence",
     "Rmc",
     "SarAircraftPositionReport",
+    "SenderError",
     "StaticAndVoyageA",
     "StaticDataB24A",
     "StaticDataB24B",
@@ -602,6 +663,7 @@ __all__ = [
     "Unknown",
     "UtcDate",
     "UtcTime",
+    "Value",
     "Vtg",
     "to_dataclass",
 ]
