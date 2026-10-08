@@ -12,17 +12,32 @@ use marlin_field::{FieldState, Invalid, RawCode};
 
 /// Decode a numeric field through `T`'s [`FromStr`].
 ///
-/// Empty → `NotAvailable`; non-UTF-8 or a parse failure →
-/// `Invalid(Unparsable)` (numeric text has no wire integer to carry);
-/// else `Value`.
+/// Empty → `NotAvailable`; text that is not NMEA numeric text, or a
+/// parse failure → `Invalid(Unparsable)` (numeric text has no wire
+/// integer to carry); else `Value`.
 pub(crate) fn number<T: FromStr>(bytes: &[u8]) -> FieldState<T> {
     if bytes.is_empty() {
         return FieldState::NotAvailable;
     }
-    core::str::from_utf8(bytes)
-        .ok()
+    numeric_text(bytes)
         .and_then(|s| s.parse::<T>().ok())
         .map_or(FieldState::Invalid(Invalid::Unparsable), FieldState::Value)
+}
+
+/// The field as NMEA numeric text: an optional leading sign, then ASCII
+/// digits and decimal points only. `None` for anything else, so the
+/// spellings Rust's [`FromStr`] would accept but the standard does not
+/// (`nan`, `inf`, `1e5`) never become a value.
+fn numeric_text(bytes: &[u8]) -> Option<&str> {
+    let digits = match bytes {
+        [b'+' | b'-', rest @ ..] => rest,
+        _ => bytes,
+    };
+    if digits.iter().all(|b| b.is_ascii_digit() || *b == b'.') {
+        core::str::from_utf8(bytes).ok()
+    } else {
+        None
+    }
 }
 
 /// Decode a one-byte letter code through `from_byte`, which names the
@@ -83,9 +98,7 @@ pub(crate) fn paired<T: Neg<Output = T>>(
         // A half-filled pair, or a letter of two or more bytes.
         _ => return FieldState::Invalid(Invalid::Unparsable),
     };
-    let magnitude = core::str::from_utf8(magnitude_bytes)
-        .ok()
-        .and_then(magnitude_of);
+    let magnitude = numeric_text(magnitude_bytes).and_then(magnitude_of);
     match magnitude {
         Some(m) if negate => FieldState::Value(-m),
         Some(m) => FieldState::Value(m),
@@ -142,7 +155,7 @@ pub(crate) fn reference_target(bytes: &[u8]) -> FieldState<bool> {
 /// `ddmm.mmmm` (or `dddmm.mmmm`) text to unsigned decimal degrees.
 fn degrees_from_dm(s: &str) -> Option<f64> {
     let num: f64 = s.parse().ok()?;
-    if !num.is_finite() || num < 0.0 {
+    if num < 0.0 {
         return None;
     }
     let degrees_int = (num / 100.0).trunc();

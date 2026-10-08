@@ -146,6 +146,13 @@ mod tests {
     }
 
     #[test]
+    fn decode_hdg_non_finite_magnitude_is_invalid() {
+        let hdg = decode(b"HCHDG,98.3,inf,E,nan,W");
+        assert_eq!(hdg.deviation_deg, FieldState::Invalid(Invalid::Unparsable));
+        assert_eq!(hdg.variation_deg, FieldState::Invalid(Invalid::Unparsable));
+    }
+
+    #[test]
     fn decode_hdg_direction_outside_the_pair_is_invalid_with_the_byte() {
         let hdg = decode(b"HCHDG,98.3,1.0,N,7.1,E");
         assert_eq!(

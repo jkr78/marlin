@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     (coordinate beyond ±90°/±180°, UTC hour above 23, day 0) →
     `Invalid(Unparsable)`. 0183 numeric text has no wire integer, so
     no numeric invalid state carries a raw code.
+    Only NMEA numeric text is a number: an optional sign, digits and a
+    decimal point. `nan`, `inf` and exponent spellings, which Rust's
+    float parser accepts and the previous `Option<f32>` fields let
+    through as values, are `Invalid(Unparsable)`.
   - A one-byte letter code (`DataStatus`, `VtgMode`, `RmcNavStatus`,
     `TargetStatus`, `AngleReference`, `DistanceUnits`,
     `AcquisitionType`): empty, or absent from a short sentence →

@@ -55,7 +55,7 @@ mod tests {
     use marlin_field::Invalid;
 
     use super::*;
-    use crate::testing::{build, parse_raw};
+    use crate::testing::{build, parse_raw, unparsable};
 
     #[test]
     fn decode_hdt_basic() {
@@ -83,6 +83,37 @@ mod tests {
             hdt.heading_true_deg,
             FieldState::Invalid(Invalid::Unparsable)
         );
+    }
+
+    #[test]
+    fn decode_hdt_non_finite_or_exponent_text_is_invalid() {
+        // Rust's float parser accepts these; NMEA numeric text does not.
+        for text in [&b"nan"[..], b"inf", b"-inf", b"infinity", b"1e2", b"0x10"] {
+            let mut body = b"HEHDT,".to_vec();
+            body.extend_from_slice(text);
+            body.extend_from_slice(b",T");
+            let bytes = build(&body);
+            let raw = parse_raw(&bytes);
+            let hdt = decode_hdt(&raw).expect("parse");
+            assert_eq!(hdt.heading_true_deg, unparsable(), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn decode_hdt_signed_and_fractional_text_are_values() {
+        for (text, expected) in [(&b"+12.5"[..], 12.5), (b"-0.5", -0.5), (b".5", 0.5)] {
+            let mut body = b"HEHDT,".to_vec();
+            body.extend_from_slice(text);
+            body.extend_from_slice(b",T");
+            let bytes = build(&body);
+            let raw = parse_raw(&bytes);
+            let hdt = decode_hdt(&raw).expect("parse");
+            assert_eq!(
+                hdt.heading_true_deg,
+                FieldState::Value(expected),
+                "{text:?}"
+            );
+        }
     }
 
     #[test]
