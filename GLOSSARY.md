@@ -94,8 +94,7 @@ _Avoid_: error indicator (MISB's wording for one case), flagged, fault
 The field state for a wire value the decoder could not give a meaning: a
 number inside the field's width the spec leaves undefined, or bytes from
 which no such number can be read (unparsable text, a wrong-length tag).
-_Avoid_: rejected, malformed (reserved for sentence framing), unparsable,
-corrupt
+_Avoid_: rejected, malformed (reserved for sentence framing), corrupt
 
 **Over-range**:
 The field state for a sentinel meaning the true value is at or beyond a
