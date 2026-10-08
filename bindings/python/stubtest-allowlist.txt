@@ -6,3 +6,4 @@
 # it as a Union, the runtime object is a Literal, and stubtest reports "is
 # not a Union".
 marlin\.ais\.ClockMode
+marlin\.field\.Kind

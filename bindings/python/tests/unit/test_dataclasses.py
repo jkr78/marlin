@@ -515,3 +515,65 @@ def test_to_dataclass_type_error_on_wrapper_holding_a_non_body_binding_value() -
         to_dataclass(enum_as_body)
     with pytest.raises(TypeError, match="unrecognised AIS body type"):
         to_dataclass(nmea_as_body)
+
+
+# ---------- field state mirrors ----------
+
+
+def test_field_state_mirrors_round_trip() -> None:
+    from marlin.dataclasses import AtLeast, Invalid, NotAvailable, SenderError, Value
+    from marlin.dataclasses import to_dataclass
+    from marlin.field import FieldState
+
+    assert to_dataclass(FieldState.Value(10.2)) == Value(10.2)
+    assert to_dataclass(FieldState.AtLeast(102.2)) == AtLeast(102.2)
+    assert to_dataclass(FieldState.NotAvailable()) == NotAvailable()
+    assert to_dataclass(FieldState.SenderError(-2147483648)) == SenderError(-2147483648)
+    assert to_dataclass(FieldState.Invalid(91)) == Invalid(91)
+    assert to_dataclass(FieldState.Invalid(None)) == Invalid(None)
+
+
+def test_field_state_mirror_asdict_carries_the_kind_tag() -> None:
+    from marlin.dataclasses import AtLeast, Invalid, NotAvailable, SenderError, Value
+
+    assert dataclasses.asdict(Value(10.2)) == {"kind": "value", "value": 10.2}
+    assert dataclasses.asdict(AtLeast(102.2)) == {"kind": "at_least", "bound": 102.2}
+    assert dataclasses.asdict(NotAvailable()) == {"kind": "not_available"}
+    assert dataclasses.asdict(SenderError(-1)) == {"kind": "sender_error", "code": -1}
+    assert dataclasses.asdict(Invalid(None)) == {"kind": "invalid", "code": None}
+    assert json.dumps(dataclasses.asdict(Value(10.2))) == '{"value": 10.2, "kind": "value"}'
+
+
+def test_field_state_mirror_payload_is_converted_like_any_field() -> None:
+    from marlin.ais import NavStatus
+    from marlin.dataclasses import Value, to_dataclass
+    from marlin.field import FieldState
+
+    assert to_dataclass(FieldState.Value(NavStatus.MOORED)) == Value(int(NavStatus.MOORED))
+
+
+def test_field_state_mirrors_match_on_the_payload_alone() -> None:
+    from marlin.dataclasses import AtLeast, Invalid, NotAvailable, SenderError, Value
+
+    assert Value.__match_args__ == ("value",)
+    assert AtLeast.__match_args__ == ("bound",)
+    assert NotAvailable.__match_args__ == ()
+    assert SenderError.__match_args__ == ("code",)
+    assert Invalid.__match_args__ == ("code",)
+
+    match Value(10.2):
+        case Value(payload):
+            assert payload == 10.2
+        case _:
+            raise AssertionError("positional pattern did not match")
+
+
+def test_field_state_mirrors_are_frozen_with_slots() -> None:
+    from marlin.dataclasses import NotAvailable, Value
+
+    state = Value(10.2)
+    with pytest.raises(dataclasses.FrozenInstanceError, match="cannot assign to field 'value'"):
+        state.value = 1.0  # type: ignore[misc]
+    assert not hasattr(state, "__dict__")
+    assert NotAvailable().kind == "not_available"
+    assert hash(Value(10.2)) == hash(Value(10.2))

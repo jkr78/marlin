@@ -5,6 +5,7 @@ Submodules:
     marlin.nmea     — typed NMEA 0183 decoders (GGA, GLL, HDG, HDT, RMC,
                       TLL, TTM, VTG, PSXN, PRDID).
     marlin.ais      — typed AIS decoders + multi-sentence reassembly.
+    marlin.field    — FieldState, the decoded-field state.
 
 Most users can start with:
 
