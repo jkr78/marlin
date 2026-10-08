@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   under a namespace class of the sum type's name
   (`marlin.dataclasses.Timestamp.Second`), with an enum payload as its
   integer value.
+- Type 5 payloads of 420 and 422 bits decode to `StaticAndVoyageA`
+  instead of raising `AisError`: the destination holds the whole
+  characters transmitted and `dte` is `FieldState.NotAvailable()`.
 
 ### Changed (BREAKING)
 
@@ -79,10 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `ship_type` on Types 5, 19 and 24 Part B is `FieldState[int]`:
     `NotAvailable()` for 0, every other code a value.
   - `StaticAndVoyageA.dte` is `FieldState[bool]`: `NotAvailable()` on a
-    420- or 422-bit payload, which now decodes instead of raising
-    `AisError` (the Rust floor dropped from 424 to 420 bits; the
-    destination holds the whole characters transmitted). Types 9 and 19
-    keep `dte: bool`.
+    420- or 422-bit payload (see Added), `Value(...)` from 423 bits.
+    Types 9 and 19 keep `dte: bool`.
   - Message constructors accept `FieldState[T] | T | None` per
     field-state attribute, coerce a bare value to `Value` and `None` to
     `NotAvailable()`, default every such keyword to `NotAvailable()`,

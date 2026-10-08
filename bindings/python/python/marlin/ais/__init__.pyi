@@ -77,7 +77,8 @@ class PositioningStatus:
     """Status of the positioning system when a timestamp field carries a
     status instead of a second, carried by
     `Timestamp.PositioningStatus(status)`. Int values are the 6-bit
-    timestamp wire codes 61, 62 and 63."""
+    timestamp wire codes 61, 62 and 63.
+    """
 
     MANUAL_INPUT: PositioningStatus
     DEAD_RECKONING: PositioningStatus

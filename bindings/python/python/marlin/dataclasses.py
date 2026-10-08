@@ -462,7 +462,7 @@ class PositionReportA:
 class StaticAndVoyageA:
     """Dataclass mirror of marlin.ais.StaticAndVoyageA (Type 5).
 
-    `ais_version` and the `epfd` payload are int (wire values).
+    `ais_version` and the `epfd` payload are int (wire codes).
     `dimensions` and `eta` are always present (non-Optional) per the Rust
     type, each member a `FieldState`.
     """
@@ -487,7 +487,7 @@ class SarAircraftPositionReport:
 
     `altitude_m` and `speed_over_ground` are whole metres / whole knots;
     an over-range code is the `AtLeast` mirror. `altitude_sensor` is int
-    (wire value: GNSS = 0, BAROMETRIC = 1).
+    (wire code: GNSS = 0, BAROMETRIC = 1).
     """
 
     mmsi: int
@@ -531,7 +531,7 @@ class PositionReportB:
 class ExtendedPositionReportB:
     """Dataclass mirror of marlin.ais.ExtendedPositionReportB (Type 19).
 
-    The `epfd` payload is int (wire value). `dimensions` is always present.
+    The `epfd` payload is int (wire code). `dimensions` is always present.
     """
 
     mmsi: int
@@ -555,7 +555,7 @@ class ExtendedPositionReportB:
 class AidToNavigationReport:
     """Dataclass mirror of marlin.ais.AidToNavigationReport (Type 21).
 
-    `aton_type` and the `epfd` payload are int (wire values). `name` is
+    `aton_type` and the `epfd` payload are int (wire codes). `name` is
     the joined and trimmed 20 + up to 14 character name; `dimensions` is
     always present (all not available for virtual AtoN and reference
     points).
@@ -591,7 +591,7 @@ class StaticDataB24B:
 
     `extent` is the `Type24BExtent` variant mirror: dimensions, or the
     mother ship's MMSI for an auxiliary craft (MMSI `98MIDxxxx`). The
-    `epfd` payload is int (wire value).
+    `epfd` payload is int (wire code).
     """
 
     mmsi: int
