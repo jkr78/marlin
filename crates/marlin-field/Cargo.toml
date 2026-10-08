@@ -1,0 +1,21 @@
+[package]
+name = "marlin-field"
+description = "Decoded-field state type shared by the marlin decoders: value, not available, sender error, invalid, over-range bound."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["no-std", "maritime", "parser"]
+categories = ["no-std", "data-structures"]
+
+[dependencies]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

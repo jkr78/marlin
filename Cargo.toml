@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/marlin-field",
     "crates/marlin-nmea-envelope",
     "crates/marlin-nmea-0183",
     "crates/marlin-ais",

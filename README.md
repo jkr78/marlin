@@ -11,6 +11,7 @@ unit-test byte slices.
 
 | Crate | Purpose | Status |
 | --- | --- | --- |
+| [`marlin-field`](./crates/marlin-field) | `FieldState<T>`: the decoded-field state type shared by the decoders | feature-complete |
 | [`marlin-nmea-envelope`](./crates/marlin-nmea-envelope) | NMEA 0183 framing, checksum, TAG block recognition | feature-complete |
 | [`marlin-nmea-0183`](./crates/marlin-nmea-0183) | Typed NMEA sentence decoders (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID) | feature-complete |
 | [`marlin-ais`](./crates/marlin-ais) | Typed AIS message decoders + multi-sentence reassembly | feature-complete |
@@ -18,8 +19,10 @@ unit-test byte slices.
 
 `marlin-nmea-0183` and `marlin-ais` are siblings; both depend on
 `marlin-nmea-envelope` but not on each other. `marlin-klv` is a
-standalone leaf with no dependency on `marlin-nmea-envelope` — KLV is
-not NMEA-framed.
+standalone crate with no dependency on `marlin-nmea-envelope` — KLV is
+not NMEA-framed. `marlin-field` is the leaf under all three decoders,
+which re-export its `FieldState<T>` from 0.3.0; `marlin-nmea-envelope`
+does not depend on it.
 
 ## Supported messages
 
