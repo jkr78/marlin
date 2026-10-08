@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- Python floor is 3.10 (`requires-python >= 3.10`, `abi3-py310` wheels):
+  3.9 is past end of life and cannot parse the `match` statement the
+  field-state documentation and tests use.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added

@@ -21,7 +21,7 @@ plain `marlin`.
 
 ```bash
 # From PyPI — wheels for Linux x86_64 / aarch64, macOS universal2,
-# Windows x86_64. abi3 wheel covers Python 3.9 through 3.13+.
+# Windows x86_64. abi3 wheel covers Python 3.10 through 3.14+.
 pip install marlin-py
 
 # Local development — build the extension in-place
@@ -193,7 +193,7 @@ The Python bindings wrap four Rust crates:
 
 ## MSRV / Python version
 
-Rust 1.82. Python 3.9+.
+Rust 1.82. Python 3.10+.
 
 ## License
 

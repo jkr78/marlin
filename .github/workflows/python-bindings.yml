@@ -49,13 +49,18 @@ jobs:
           if-no-files-found: error
 
   test:
-    name: Tests + lint + mypy + pyright
+    name: Tests + lint + mypy + pyright (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the latest release.
+        python-version: ["3.10", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -108,7 +113,7 @@ jobs:
       # @final, positional-only. Same command as `just py-type-check`.
       - name: Run stubtest
         working-directory: bindings/python
-        run: python -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt --ignore-unused-allowlist
+        run: python -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt
 
   sdist:
     name: Source distribution
