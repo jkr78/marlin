@@ -1,5 +1,7 @@
 # Sentinels: not available is `None`, over-range stays a value
 
+_Superseded by [ADR-0008](0008-decoded-fields-carry-a-field-state.md) from 0.3.0._
+
 AIS fields reserve codes for "not available" (SOG 1023, ROT −128, altitude 4095,
 position 181°/91°) and for "this value or more" (SOG 1022 = 102.2 kn on vessels and
 1022 kn on SAR aircraft, altitude 4094 m, dimensions 511 m / 63 m). We map only the
