@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-08
+
+No behavioral changes. Lockstep version bump with the workspace release that
+removes the per-crate `Parser` enums and adds the AIS Type 9 and Type 21
+decoders.
+
 ## [0.1.4] - 2026-07-07
 
 No behavioral changes. Lockstep version bump with the workspace release that
