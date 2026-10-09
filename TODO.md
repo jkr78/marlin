@@ -8,6 +8,12 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Run every fuzz target in the fuzz-release recipe
+  `just fuzz-release` runs the envelope and the three AIS targets only;
+  `klv_decode`, `klv_encode` and `nmea_0183_decode` (added for 0.3.0) are
+  missing, and the release checklist says to run that recipe before any
+  tag push. Add the three at the same one-hour budget and run the full
+  set once in the 0.3.0 release prep. [ci][0.3.0][ready]
 - [ ] Pick one policy for an unknown error variant in the Python bindings
   The Rust error enums are `#[non_exhaustive]`, so every binding
   converter has a fallback arm. `EnvelopeError` and `KlvError` map it to
