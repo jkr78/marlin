@@ -158,6 +158,12 @@ fuzz-clean:
 release:
     cargo build --workspace --release
 
+# Gate for the `release: prepare vX.Y.Z` commit: every version field agrees
+# with the workspace version and every CHANGELOG carries a dated section for
+# it with nothing left under [Unreleased]. The full order is docs/release.md.
+release-check:
+    python3 scripts/check_release.py
+
 # --- Python bindings ---
 #
 # Every recipe runs its tools from one virtualenv, so nothing has to be
