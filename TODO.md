@@ -51,8 +51,9 @@ track deliverables (not conversational state).
   0.3.0 already changes every field's type for the field-state work and
   is the natural moment. Decided 2026-10-08: an optional passenger, not
   a gate. It needs its own design round and lands in 0.3.0 only if ready
-  before release prep starts; otherwise the next breaking minor.
-  [workspace][0.3.0][draft]
+  before release prep starts; otherwise the next breaking minor. Missed
+  0.3.0: the design round had not started when release prep began on
+  2026-10-09, so it waits for the next breaking minor. [workspace][draft]
 - [ ] Decide what a duplicated tag in one ST 0601 local set decodes to
   `marlin_klv::decode` lets a later occurrence of a typed tag silently
   overwrite an earlier one, so a set with two Tag 13 items yields the
@@ -65,7 +66,9 @@ track deliverables (not conversational state).
   occurrence never overwrites the state an earlier occurrence gave the
   field, so re-encoding a decoded set re-decodes equal. Still open: two
   readable occurrences, where the later one wins with no trace of the
-  first. [marlin-klv][draft]
+  first. Missed 0.3.0: still open when release prep began on 2026-10-09;
+  the remaining half, if it changes the decode, waits for the next
+  breaking minor. [marlin-klv][draft]
 - [ ] Expose the nmea-0183 field helpers for downstream proprietary decoders
   The crate docs promise an extension story: a downstream crate builds
   its own enum and delegates to the public per-sentence decoders. A
@@ -98,7 +101,9 @@ track deliverables (not conversational state).
   finishes before release prep starts. May not be needed: the doc comment
   says most callers use their own lookup, and nexus re-derives only code
   0, which the not-available state now covers. Re-check that before
-  building. [marlin-ais][draft]
+  building. Missed 0.3.0: the design round had not started when release
+  prep began on 2026-10-09, so it waits for the next breaking minor.
+  [marlin-ais][draft]
 - [ ] Compile-test the crate README examples
   No crate README is doctested: none is embedded with `include_str!`, so
   a README example can drift from the API without CI noticing. The
