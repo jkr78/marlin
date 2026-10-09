@@ -218,3 +218,17 @@ py-golden-regenerate: py-dev
 
 # Everything the Python bindings CI job checks. Run `just py-setup` once first.
 py-ci: py-fmt-check py-lint py-dev py-test py-type-check
+
+# The CI matrix: `py-ci` on the floor and the latest interpreter, each in its
+# own venv under .venv-<version>, created on first run. Release-day step;
+# doubles the gate's time, so not part of `py-ci`.
+py_matrix := "3.10 3.14"
+
+py-ci-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for v in {{py_matrix}}; do
+        venv="{{justfile_directory()}}/.venv-$v"
+        test -x "$venv/bin/python" || "python$v" -m venv "$venv"
+        just py_venv="$venv" py-setup py-ci
+    done

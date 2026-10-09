@@ -14,8 +14,10 @@ part that matters; each step's command is in the justfile.
    leaving `[Unreleased]` empty, with a "lockstep bump, no behavioral
    change" entry for a crate without changes. `cargo update -w` refreshes
    the lockfile. `just release-check` confirms the fields agree.
-3. **Gate.** `just ci` and `just py-ci` green. `just ci` starts by
-   confirming the local stable rustc is the one CI runs.
+3. **Gate.** `just ci` and `just py-ci-all` green: the Rust gate starts by
+   confirming the local stable rustc is the one CI runs, and the Python
+   gate runs on the floor and the latest interpreter, as the CI matrix
+   does.
 4. **Push main and wait for green.** Both workflows must pass on the
    commit before it is tagged: the tag's own workflow publishes marlin-py
    and needs the test jobs green.
