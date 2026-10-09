@@ -112,9 +112,11 @@ def test_wrong_payload_type_raises_type_error_as_is() -> None:
 
 
 def test_out_of_range_int_raises_overflow_error_as_is() -> None:
-    with pytest.raises(OverflowError, match="out of range integral type conversion attempted"):
+    # The type is the contract; the message is Rust's TryFromIntError
+    # text, which changed wording in rustc 1.99.
+    with pytest.raises(OverflowError):
         Gga(talker=b"GP", satellites_used=300)
-    with pytest.raises(OverflowError, match="out of range integral type conversion attempted"):
+    with pytest.raises(OverflowError):
         Gga(talker=b"GP", satellites_used=FieldState.Value(-1))
 
 
