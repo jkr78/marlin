@@ -8,6 +8,16 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Pick one policy for an unknown error variant in the Python bindings
+  The Rust error enums are `#[non_exhaustive]`, so every binding
+  converter has a fallback arm. `EnvelopeError` and `KlvError` map it to
+  `variant = "other"`; `KlvEncodeError` raises the unsupported-variant
+  `ValueError` the enum conversions use, because its `variant` is a
+  `Literal` with no room for `"other"`. May not need fixing: the crates
+  and the bindings release in lock step, so neither arm is reachable
+  from a published pair. Decide between one `"other"` everywhere (and
+  widen the Literal) or one raise everywhere (and drop `"other"` from
+  the two stubs). [py][draft]
 - [ ] Give every crate error type a crate or operation prefix
   The workspace names its error enums three ways: crate prefix
   (`AisError`, `Nmea0183Error`), operation prefix (`DecodeError` in
@@ -38,7 +48,11 @@ track deliverables (not conversational state).
   decode loop is rewritten for 0.3.0 anyway. Re-check the standard
   before choosing between last-wins, first-wins and the invalid field
   state. Decided 2026-10-08: an optional passenger for 0.3.0, not a gate.
-  [marlin-klv][draft]
+  Half settled 2026-10-08 with the field-state decode loop: a wrong-length
+  occurrence never overwrites the state an earlier occurrence gave the
+  field, so re-encoding a decoded set re-decodes equal. Still open: two
+  readable occurrences, where the later one wins with no trace of the
+  first. [marlin-klv][draft]
 - [ ] Expose the nmea-0183 field helpers for downstream proprietary decoders
   The crate docs promise an extension story: a downstream crate builds
   its own enum and delegates to the public per-sentence decoders. A
@@ -134,7 +148,10 @@ track deliverables (not conversational state).
   classes ADR-0003 flattens (`PositionReportA`, `StaticDataB24B`). May not be
   worth doing: the compiler already catches a field missing from the struct
   literal or the `From` impl, so this saves typing, not drift. Revisit when a
-  batch of new message types arrives. Split from the card below. [py][draft]
+  batch of new message types arrives. Split from the card below. The KLV
+  side repeats the twenty scaled tags in the `St0601` binding macro, the
+  `marlin.klv` stub and the `klv_encode` fuzz generator; a test keeps the
+  binding's property set in step with the codec's tag registry. [py][draft]
 - [ ] Give the parser iterator classes one name in stubs and runtime
   The public stubs declare `_AisIterator`, `_NmeaIterator`, and
   `_EnvelopeIterator` as what `__iter__` returns. At runtime the classes are
