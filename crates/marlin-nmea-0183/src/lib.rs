@@ -22,8 +22,9 @@
 //! - **`$__TLL`** — [`TllData`] — radar/ARPA target position
 //! - **`$__TTM`** — [`TtmData`] — radar/ARPA tracked target
 //! - **`$__VTG`** — [`VtgData`] — course & speed over ground
-//! - **`$PSXN`** — [`PsxnData`] — Kongsberg-family proprietary motion; slot
-//!   meanings are install-configurable via [`PsxnLayout`] / [`DecodeOptions`]
+//! - **`$PSXN`** — [`PsxnData`] — Kongsberg-family proprietary motion; the
+//!   data fields' meanings are install-configurable via [`PsxnLayout`] /
+//!   [`DecodeOptions`]
 //! - **`$PRDID`** — [`PrdidData`] — proprietary attitude with multiple
 //!   vendor dialects; default refuses to guess (emits
 //!   [`PrdidData::Raw`]). Select a dialect via

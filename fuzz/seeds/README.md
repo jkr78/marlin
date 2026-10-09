@@ -6,11 +6,15 @@ regression corpus.
 
 ## What lives here
 
-Five inputs per target, picked as the smallest libfuzzer-minimized
-items in the working corpus at the time of curation. Smallest tends to
-correlate with "fundamental edge case" — single-byte sentence-start
-markers, two-byte truncations, control characters that exercise the
-state machine without any payload to distract from it.
+A handful of inputs per target. For the libfuzzer-found targets they
+are the smallest minimized items in the working corpus at the time of
+curation: smallest tends to correlate with "fundamental edge case",
+single-byte sentence-start markers, two-byte truncations, control
+characters that exercise the state machine without any payload to
+distract from it. `nmea_0183_decode` and `klv_decode` hold hand-curated
+inputs instead, because a blind run rarely produces a well-formed
+sentence or a checksum-valid set, and without one the round-trip
+assertions never run.
 
 | Target | Examples |
 | --- | --- |

@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+Migration guide: [`docs/migration-0.3.md`](../../docs/migration-0.3.md).
+
 - Every scaled tag is a `FieldState<f64>` field in engineering units,
   named as the former accessor (`sensor_latitude_degrees`,
   `slant_range_meters`, `platform_true_airspeed_mps`), and `version` is a

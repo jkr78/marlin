@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+Migration guide: [`docs/migration-0.3.md`](../../docs/migration-0.3.md).
+
 - `Error` is renamed `EnvelopeError`. Every public error type in the
   workspace now carries its crate's prefix (ADR-0010); the variants are
   unchanged, and `marlin_ais::AisError::Envelope` and

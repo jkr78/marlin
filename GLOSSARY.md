@@ -105,7 +105,9 @@ _Avoid_: saturated (past-end bit reads), floor (minimum payload length),
 clamped, capped
 
 **Raw code**:
-The undecoded wire integer a sentinel state retains.
+The undecoded wire integer the sender-error and invalid states retain: an
+AIS bit field's integer, a KLV count, a 0183 letter's byte value or the GGA
+quality digit.
 _Avoid_: wire value, magic number, raw (alone, in prose; fine as an
 accessor name)
 

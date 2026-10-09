@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+Migration guide: [`docs/migration-0.3.md`](../../docs/migration-0.3.md).
+
 - Every field the wire can put in a non-value state is a `FieldState<T>`
   instead of an `Option<T>`, a bare `u8` or a bare enum: a not-available
   code is `NotAvailable`, an over-range code is `AtLeast(bound)` with

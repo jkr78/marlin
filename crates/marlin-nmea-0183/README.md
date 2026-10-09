@@ -15,7 +15,7 @@ Typed decoders for NMEA 0183 sentences. Built on top of
 | `$__TLL` | ✅ done | Target Latitude/Longitude (radar/ARPA); name, UTC time, status and reference flag are optional trailing fields |
 | `$__TTM` | ✅ done | Tracked Target Message (radar/ARPA); the NMEA 3.0 UTC time and acquisition type fields are optional |
 | `$__VTG` | ✅ done | Course Over Ground / Ground Speed (NMEA 2.3+ mode) |
-| `$PSXN` | ✅ done | Proprietary motion sentence; 6 data slots whose meaning is install-configured via [`PsxnLayout`]. Default `rphx` (roll, pitch, heave, ignored ×3). Supports TSS sine-encoded variants. |
+| `$PSXN` | ✅ done | Proprietary motion sentence; 6 data fields whose meaning is install-configured via [`PsxnLayout`]. Default `rphx` (roll, pitch, heave, ignored ×3). Supports TSS sine-encoded variants. |
 | `$PRDID` | ✅ done | Proprietary attitude; two dialects (`PitchRollHeading`, `RollPitchHeading`). Default dialect is `Unknown` → preserves raw fields. Select via [`DecodeOptions::with_prdid_dialect`]. |
 
 (`__` is the 2-byte talker ID — `GP`, `IN`, `GN`, etc. The decoder
@@ -62,9 +62,12 @@ let mut parser = Nmea0183Parser::with_options(source, options);
 
 ## What this crate adds over the envelope
 
-- **Typed structs** (`GgaData`, `VtgData`, …) with decoded numeric
-  fields, enum values for fix quality / mode indicators, and
-  `Option<T>` for fields that may be empty ("no data available").
+- **Typed structs** (`GgaData`, `VtgData`, …) whose fields are
+  `FieldState<T>`: an empty field is `NotAvailable`, text the decoder
+  cannot read is `Invalid`, and `value()` reads a field as an
+  `Option<T>`. A field's value never fails the sentence; the only
+  `Nmea0183DecodeError` is `NotEnoughFields`, a sentence below its
+  decoder's floor.
 - **Coordinate conversion**: NMEA's `ddmm.mmmm` format → signed decimal
   degrees, with hemisphere characters folded in.
 - **Strict dispatch**: unknown sentence types return

@@ -9,10 +9,11 @@ multi-sentence reassembly, and MISB ST 0601 (KLV) encode/decode.
 Wraps four Rust crates: `marlin-nmea-envelope` (framing + checksum),
 `marlin-nmea-0183` (GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID
 typed decoders), `marlin-ais` (Types 1/2/3/5/9/18/19/21/24A/24B +
-reassembly), and `marlin-klv` (MISB ST 0601 UAS Datalink Local Set encode/decode).
-`py.typed` marker and `.pyi` stubs ship with the package; mypy
-`--strict` is clean across the entire `python/marlin/`, `tests/`, and
-`examples/` tree.
+reassembly), and `marlin-klv` (MISB ST 0601 UAS Datalink Local Set
+encode/decode). `marlin.field` carries `FieldState`, the decoded-field
+state every decoded field reads (`marlin-field`). `py.typed` marker and
+`.pyi` stubs ship with the package; mypy `--strict` is clean across the
+entire `python/marlin/`, `tests/`, and `examples/` tree.
 
 ## Install
 
@@ -53,8 +54,8 @@ from marlin.nmea import Nmea0183Parser, decode_gga, DecodeOptions, PrdidDialect
 
 # Single-sentence convenience.
 raw = parse(b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47")  # raises EnvelopeError on framing/checksum failure
-gga = decode_gga(raw)                # raises DecodeError if not GGA or fields are malformed
-print(gga.latitude_deg, gga.longitude_deg, gga.fix_quality)
+gga = decode_gga(raw)                # raises DecodeError if not GGA or too few fields
+print(gga.latitude_deg.value, gga.longitude_deg.value, gga.fix_quality.value)
 
 # Streaming parser — same feed/iterate API as the envelope layer.
 parser = Nmea0183Parser.streaming()
@@ -62,6 +63,11 @@ parser.feed(b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\
 for msg in parser:
     print(type(msg).__name__, msg)
 ```
+
+Every decoded field of a message is a `marlin.field.FieldState`: `.value`
+is `None` unless the field holds a value, and a `match` on the variant
+class tells not available from invalid (see `GUIDE.md` §3). A field state
+is always truthy, so test `.value`, never the object.
 
 `DecodeOptions` configures dialect-sensitive sentences:
 
@@ -84,7 +90,7 @@ parser = AisParser.streaming()
 parser.feed(b"!AIVDM,1,1,,A,13aGmP0P00PD;88MD5MTDww@2<0L,0*23\r\n")
 for msg in parser:
     if isinstance(msg.body, PositionReportA):
-        print(msg.body.mmsi, msg.body.latitude_deg, msg.body.longitude_deg)
+        print(msg.body.mmsi, msg.body.latitude_deg.value, msg.body.longitude_deg.value)
 ```
 
 Multi-sentence reassembly is automatic — feed fragments in order and the
@@ -96,17 +102,20 @@ parser yields a complete `AisMessage` only when the last fragment arrives.
 from marlin.klv import St0601, decode, encode
 
 s = St0601(timestamp_us=1_700_000_000_000_000)
-s.sensor_latitude_degrees = 60.1768      # engineering-unit property
+s.sensor_latitude_degrees = 60.1768      # a bare number is FieldState.Value
 s.platform_heading_degrees = 159.97
-wire = encode(s)                          # bytes
+wire = encode(s)                          # bytes; KlvEncodeError if out of range
 got = decode(wire)
-print(got.sensor_latitude_degrees, got.timestamp_us)
+print(got.sensor_latitude_degrees.value, got.timestamp_us)
 ```
 
-`St0601` fields are properties, not setter methods: assign
-`s.sensor_latitude_degrees = ...`, don't call
-`s.set_sensor_latitude_degrees(...)`. `decode` raises `KlvError` on a
-malformed local set (bad key, truncated bytes, checksum mismatch).
+`St0601` fields are properties in engineering units, not setter methods:
+assign `s.sensor_latitude_degrees = ...` (a number, `None` for not
+available, or a `FieldState`). `decode` raises `KlvError` for a
+structural reason only (bad key, truncated bytes, checksum missing or
+mismatched, Tag 2 absent or the wrong length); a field's value never
+fails the set. `encode` raises `KlvEncodeError` for a value outside its
+tag's range or a field state the wire cannot carry.
 `precision_timestamp(data)` reads Tag 2 alone, without verifying the
 checksum, for callers that only need a cheap timestamp peek.
 
@@ -154,12 +163,17 @@ Calling `tick()` on a parser that wasn't built with `clock="manual"` raises
 Every exception is a `MarlinError` subclass (importable from `marlin`):
 
 - `EnvelopeError` — framing or checksum failure
-- `DecodeError` — field-level decode failure in a typed NMEA sentence
+- `DecodeError` — a typed NMEA sentence with fewer fields than its
+  decoder's floor; a bad field is a field state, never an error
 - `AisError` — AIS armor or bit-level decode failure
 - `ReassemblyError` — fragment reassembly violation (out-of-order or
   timeout eviction)
-- `KlvError` — malformed KLV input (bad local-set key, truncated bytes,
-  checksum mismatch)
+- `KlvError` — a KLV decode failed for a structural reason (bad
+  local-set key, truncated bytes, checksum missing or mismatched, Tag 2
+  absent or the wrong length); `variant` names the reason
+- `KlvEncodeError` (a `KlvError`) — a KLV encode failed: a value outside
+  its tag's range or NaN, or a field state the wire cannot carry;
+  carries `variant`, `tag` and `kind`
 
 Property tests (via Hypothesis) verify panic-freedom on arbitrary byte
 inputs — no input can cause the binding to crash the interpreter.

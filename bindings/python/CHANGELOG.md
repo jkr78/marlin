@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+Migration guide: [`docs/migration-0.3.md`](../../docs/migration-0.3.md).
+
 - `marlin.klv.St0601` requires `timestamp_us` (`St0601()` is a
   `TypeError`), and every scaled-tag property (`sensor_latitude_degrees`,
   `slant_range_meters`, ...) and `version` read a `marlin.field.FieldState`
