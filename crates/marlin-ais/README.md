@@ -20,10 +20,14 @@ Every other message type decodes to `AisMessageBody::Other`, which
 keeps the message type and the raw bit buffer so you can run your own
 decoder with `BitReader`.
 
-Field layouts follow ITU-R M.1371-5 Annex 8. A field whose wire code
-means "not available" decodes to `None`. A code that means "this value
-or higher" stays a value. The codes are public constants in
-`marlin_ais::sentinel`.
+Field layouts follow ITU-R M.1371-5 Annex 8. Every field the wire can
+put in a non-value state is a `FieldState<T>`: a not-available code is
+`NotAvailable`, an over-range code is `AtLeast(bound)` with the bound
+in engineering units (102.2 kn, 4094 m), and a code the standard leaves
+undefined is `Invalid` with the raw code. `value()` reads a field as an
+`Option<T>`. A field's value never fails the message; a decode fails
+only for framing, the wrapper, the armor, a payload below the type's
+floor or reassembly.
 
 `AisFragmentParser` takes bytes and yields `AisMessage` values. It
 reassembles multi-sentence messages keyed on `(channel,
@@ -42,7 +46,9 @@ while let Some(result) = parser.next_message() {
     match result {
         Ok(msg) => {
             if let AisMessageBody::Type1(report) = msg.body {
-                println!("{} at {:?}, {:?}", report.mmsi, report.latitude_deg, report.longitude_deg);
+                let lat = report.latitude_deg.value();
+                let lon = report.longitude_deg.value();
+                println!("{} at {lat:?}, {lon:?}", report.mmsi);
             }
         }
         Err(err) => eprintln!("skipped: {err}"),

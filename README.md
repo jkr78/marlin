@@ -24,6 +24,13 @@ not NMEA-framed. `marlin-field` is the leaf under all three decoders,
 which re-export its `FieldState<T>` from 0.3.0; `marlin-nmea-envelope`
 does not depend on it.
 
+Every decoded field the wire can put in a non-value state is a
+`FieldState<T>`: a value, an over-range bound, not available, a sender
+error or invalid, with the raw code kept inside the two error states.
+`value()` reads it as an `Option<T>`. A field's value never fails a
+message; a decode fails for a structural reason only. Porting from
+0.2.0: [`docs/migration-0.3.md`](./docs/migration-0.3.md).
+
 ## Supported messages
 
 ### NMEA 0183 (non-AIS)
@@ -97,16 +104,22 @@ Sans-I/O encoder and decoder for the UAS Datalink Local Set
 
 Framing tags: Tag 2 (precision timestamp, mandatory), Tag 65 (LS
 version), Tag 1 (16-bit BCC checksum, mandatory, last). Unknown tags
-round-trip verbatim; a known tag with the wrong wire length falls back
-to the same unknown-tag path instead of erroring.
+round-trip verbatim; a known tag with the wrong wire length is `Invalid`
+on its field and keeps its bytes on the same unknown-tag path instead
+of failing the set. Every scaled tag is a `FieldState<f64>` in
+engineering units, with the ST 0601 sentinel on a signed tag read as a
+sender error carrying the raw code.
 
 `marlin-klv` is the suite's first **encoder** — every other crate here
-is decode-only. It's also a standalone leaf: no dependency on
-`marlin-nmea-envelope`, since KLV is not NMEA-framed.
+is decode-only, and `encode` is fallible: a value outside its tag's
+range is an error, not pulled into range. Its only sibling dependency is
+`marlin-field`; KLV is not NMEA-framed, so it does not sit on
+`marlin-nmea-envelope`.
 
 ## Python bindings
 
-`marlin-py` ships a Rust-backed Python interface to all four crates,
+`marlin-py` ships a Rust-backed Python interface to the four decoder
+crates, with `marlin.field.FieldState` carrying every decoded field,
 plus async iterator helpers and frozen dataclass mirrors for
 serialization. See [`bindings/python/`](./bindings/python) for install
 steps, the usage guide ([`GUIDE.md`](./bindings/python/GUIDE.md)), and
