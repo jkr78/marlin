@@ -41,7 +41,7 @@ track deliverables (not conversational state).
   `Nmea0183DecodeError`; `AisError` and `Nmea0183Error` unchanged;
   `PsxnLayoutParseError` became `ParsePsxnLayoutError` to match its two
   `ParseUtc*Error` siblings. Python exception names unchanged.
-  docs/architecture.md still carries the old names for the doc sweep.
+  docs/architecture.md carried the old names until the 0.3.0 doc sweep.
   [workspace][0.3.0]
 - [ ] Align unit suffixes on numeric field names across the three crates
   AIS mixes `latitude_deg` with `speed_over_ground` and `true_heading`;
@@ -158,7 +158,8 @@ track deliverables (not conversational state).
   crate's clippy lints, same behaviour on Python 3.9 and 3.13. Defaults must be
   captured as `$($default:tt)::+`, not `$default:expr`, or the Python text
   signature shows `...`; a default like `-1` needs another form. Untried on the
-  classes ADR-0003 flattens (`PositionReportA`, `StaticDataB24B`). May not be
+  classes that carry a sum type (`PositionReportA`, `StaticDataB24B`;
+  ADR-0009). May not be
   worth doing: the compiler already catches a field missing from the struct
   literal or the `From` impl, so this saves typing, not drift. Revisit when a
   batch of new message types arrives. Split from the card below. The KLV
@@ -244,12 +245,16 @@ track deliverables (not conversational state).
   clean and the fallbacks are unreachable, so re-check whether the ceremony
   still bothers anyone before doing the work.
 - [x] Add a three-way sentinel reading across all AIS types **DONE 2026-10-08**
-  Landed as the field state (ADR-0008): every AIS field the wire can put in a
-  non-value state is a `FieldState<T>` with the raw code inside the invalid
-  state, the timestamp is `FieldState<Timestamp>` with codes 61–63 as
-  `PositioningStatus`, and the two 0183 status-field smells closed with the
-  0183 migration (an empty status byte is not available; GGA quality of two or
-  more bytes is invalid, never a sentence failure).
+  Landed as the field state (ADR-0008) in 0.3.0, across all three decoder
+  crates: every field the wire can put in a non-value state is a
+  `FieldState<T>` in marlin-ais, marlin-nmea-0183 and marlin-klv, with the
+  raw code inside the invalid and sender-error states; the AIS timestamp is
+  `FieldState<Timestamp>` with codes 61–63 as `PositioningStatus`; the two
+  0183 status-field smells closed with the 0183 migration (an empty status
+  byte is not available; GGA quality of two or more bytes is invalid, never
+  a sentence failure); KLV reads the ST 0601 sentinel as a sender error.
+  Nothing deferred: the typed `ShipType` and the readable duplicate KLV tag
+  were never part of this card and keep their own.
   value / not available / invalid on every numeric field, with a typed timestamp
   (codes 60–63) folded in. Requested by nexus; deferred from the Type 9/21 feature
   because it changes every field type (breaking) and revises the sentinel policy,
