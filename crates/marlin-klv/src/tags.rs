@@ -1,16 +1,20 @@
 //! Table-driven scaled-tag machinery. Each `scaled_tags!` entry expands to the encode
-//! arm, the decode dispatch arm, and the getter/setter accessor pair for one tag.
+//! arm and the decode dispatch arm for one tag, and to its [`TAGS`] row.
 //! Adding a future ST 0601 tag = one struct field in `st0601.rs` + one entry here
 //! (+ verify its formula against the standard — do NOT pattern-match new tags).
 
-use crate::st0601::St0601;
-
 use alloc::vec::Vec;
+
+use marlin_field::{FieldState, Invalid, Kind, RawCode};
+
+use crate::ber::push_item;
+use crate::error::EncodeError;
+use crate::st0601::St0601;
 
 /// Metadata for one ST 0601 tag this crate decodes into a typed field: its wire
 /// number, the [`St0601`] field base name (e.g. `"sensor_latitude"`, the
-/// accessor name minus the `_degrees` / `raw_` affixes), and its engineering
-/// unit. Sourced from the codec's own tag table, so it cannot drift from what
+/// field name minus its unit suffix), and its engineering unit. Sourced from
+/// the codec's own tag table, so it cannot drift from what
 /// [`decode`](crate::decode) actually does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TagInfo {
@@ -27,14 +31,14 @@ macro_rules! scaled_tags {
     ($({
         tag: $tag:literal,
         field: $field:ident,
-        wire_len: $len:literal,
+        name: $name:literal,
+        wire: $wire:ty,
         reader: $reader:path,
-        getter: $getter:ident,
-        setter: $setter:ident,
-        to_units: $to_units:expr,
-        from_units: $from_units:expr,
-        unit: $unit:literal,
-        doc: $doc:literal
+        sentinel: $sentinel:expr,
+        decode: $decode:expr,
+        encode: $encode:expr,
+        range: ($lo:literal, $hi:literal),
+        unit: $unit:literal
     }),+ $(,)?) => {
         /// Every tag this crate decodes into a typed field, in ascending tag order.
         /// The scaled entries are generated from the table below (drift-free); the two
@@ -44,217 +48,220 @@ macro_rules! scaled_tags {
         pub const TAGS: &[TagInfo] = &[
             TagInfo { number: 2, name: "timestamp", unit: Some("microseconds") },
             $(
-                TagInfo { number: $tag, name: stringify!($field), unit: Some($unit) },
+                TagInfo { number: $tag, name: $name, unit: Some($unit) },
             )+
             TagInfo { number: 65, name: "version", unit: None },
         ];
 
-        /// Append every present scaled tag to `items`, in table (ascending tag) order.
-        pub(crate) fn encode_scaled(set: &St0601, items: &mut Vec<u8>) {
+        /// The `(base name, field name)` pairs of the table, for the test that keeps
+        /// the two in step.
+        #[cfg(test)]
+        const FIELD_NAMES: &[(&str, &str)] = &[
+            $( ($name, stringify!($field)), )+
+        ];
+
+        /// Append every scaled tag the set can carry on the wire to `items`, in table
+        /// (ascending tag) order: a value as its range-checked count, a sender error
+        /// as the tag's own sentinel; a not-available or unparsable field emits
+        /// nothing. Any other state is an [`EncodeError`].
+        pub(crate) fn encode_scaled(set: &St0601, items: &mut Vec<u8>) -> Result<(), EncodeError> {
             $(
-                if let Some(raw) = set.$field {
-                    items.push($tag);
-                    crate::ber::ber_encode_len($len, items);
-                    items.extend_from_slice(&raw.to_be_bytes());
+                let sentinel: Option<$wire> = $sentinel;
+                match set.$field {
+                    FieldState::Value(v) => {
+                        if !crate::scale::in_range(v, $lo, $hi) {
+                            return Err(EncodeError::OutOfRange { tag: $tag });
+                        }
+                        let raw: $wire = ($encode)(v);
+                        push_item($tag, &raw.to_be_bytes(), items);
+                    }
+                    FieldState::NotAvailable | FieldState::Invalid(Invalid::Unparsable) => {}
+                    FieldState::SenderError(RawCode(code)) => match sentinel {
+                        Some(own) if i64::from(own) == code => {
+                            push_item($tag, &own.to_be_bytes(), items);
+                        }
+                        _ => {
+                            return Err(EncodeError::Unencodable {
+                                tag: $tag,
+                                kind: Kind::SenderError(RawCode(code)),
+                            });
+                        }
+                    },
+                    other @ (FieldState::AtLeast(_) | FieldState::Invalid(Invalid::Undefined(_))) => {
+                        return Err(EncodeError::Unencodable { tag: $tag, kind: other.kind() });
+                    }
                 }
             )+
+            Ok(())
         }
 
-        /// Try to decode `tag` as a scaled tag; `true` = consumed. A known tag with the
-        /// wrong wire length is NOT consumed (tolerant decode: falls back to `unknown`).
+        /// Try to decode `tag` as a scaled tag; `true` = the tag is a scaled tag. With
+        /// the right wire length the field takes the tag's partition of the count;
+        /// with the wrong length the bytes are kept in `unknown` and the field is
+        /// `Invalid(Unparsable)` unless an earlier occurrence of the tag already gave it
+        /// a state, so re-encode stays lossless and re-decodes to the same set.
         pub(crate) fn decode_scaled(tag: u8, value: &[u8], set: &mut St0601) -> bool {
             match tag {
                 $(
-                    $tag => match $reader(value) {
-                        Some(raw) => {
-                            set.$field = Some(raw);
-                            true
+                    $tag => {
+                        match $reader(value) {
+                            Some(raw) => set.$field = ($decode)(raw),
+                            None => {
+                                set.unknown.push(($tag, value.to_vec()));
+                                if set.$field == FieldState::NotAvailable {
+                                    set.$field = FieldState::Invalid(Invalid::Unparsable);
+                                }
+                            }
                         }
-                        None => false,
-                    },
+                        true
+                    }
                 )+
                 _ => false,
             }
-        }
-
-        impl St0601 {
-            $(
-                #[doc = concat!("Engineering value of ST 0601 Tag ", stringify!($tag), ": ", $doc, ".")]
-                #[doc = ""]
-                #[doc = "`None` when the tag is absent; signed tags (i16/i32) also return `None` when the wire value is the reserved error indicator."]
-                pub fn $getter(&self) -> Option<f64> {
-                    self.$field.and_then(|raw| ($to_units)(raw))
-                }
-
-                #[doc = concat!("Set ST 0601 Tag ", stringify!($tag), " from ", $doc, ", clamped to the valid range (NaN clamps to the range minimum).")]
-                pub fn $setter(&mut self, value: f64) {
-                    self.$field = Some(($from_units)(value));
-                }
-            )+
         }
     };
 }
 
 scaled_tags! {
     {
-        tag: 5, field: platform_heading, wire_len: 2, reader: crate::ber::read_u16,
-        getter: platform_heading_degrees, setter: set_platform_heading_degrees,
-        to_units: |c: u16| Some(crate::scale::u16_to_units(c, 360.0)),
-        from_units: |v: f64| crate::scale::units_to_u16(v, 360.0),
-        unit: "degrees",
-        doc: "platform heading in degrees (0..360)"
+        tag: 5, field: platform_heading_degrees, name: "platform_heading",
+        wire: u16, reader: crate::ber::read_u16, sentinel: None,
+        decode: |c: u16| FieldState::Value(crate::scale::u16_to_units(c, 360.0)),
+        encode: |v: f64| crate::scale::units_to_u16(v, 360.0),
+        range: (0.0, 360.0), unit: "degrees"
     },
     {
-        tag: 6, field: platform_pitch, wire_len: 2, reader: crate::ber::read_i16,
-        getter: platform_pitch_degrees, setter: set_platform_pitch_degrees,
-        to_units: |c: i16| crate::scale::i16_to_units(c, 20.0),
-        from_units: |v: f64| crate::scale::units_to_i16(v, 20.0),
-        unit: "degrees",
-        doc: "platform pitch in degrees (-20..20)"
+        tag: 6, field: platform_pitch_degrees, name: "platform_pitch",
+        wire: i16, reader: crate::ber::read_i16, sentinel: Some(i16::MIN),
+        decode: |c: i16| crate::scale::i16_field(c, 20.0),
+        encode: |v: f64| crate::scale::units_to_i16(v, 20.0),
+        range: (-20.0, 20.0), unit: "degrees"
     },
     {
-        tag: 7, field: platform_roll, wire_len: 2, reader: crate::ber::read_i16,
-        getter: platform_roll_degrees, setter: set_platform_roll_degrees,
-        to_units: |c: i16| crate::scale::i16_to_units(c, 50.0),
-        from_units: |v: f64| crate::scale::units_to_i16(v, 50.0),
-        unit: "degrees",
-        doc: "platform roll in degrees (-50..50)"
+        tag: 7, field: platform_roll_degrees, name: "platform_roll",
+        wire: i16, reader: crate::ber::read_i16, sentinel: Some(i16::MIN),
+        decode: |c: i16| crate::scale::i16_field(c, 50.0),
+        encode: |v: f64| crate::scale::units_to_i16(v, 50.0),
+        range: (-50.0, 50.0), unit: "degrees"
     },
     {
-        tag: 8, field: platform_true_airspeed, wire_len: 1, reader: crate::ber::read_u8,
-        getter: platform_true_airspeed_mps, setter: set_platform_true_airspeed_mps,
-        to_units: |c: u8| Some(f64::from(c)),
-        from_units: |v: f64| crate::scale::units_to_u8(v),
-        unit: "mps",
-        doc: "platform true airspeed in m/s (0..255)"
+        tag: 8, field: platform_true_airspeed_mps, name: "platform_true_airspeed",
+        wire: u8, reader: crate::ber::read_u8, sentinel: None,
+        decode: |c: u8| FieldState::Value(f64::from(c)),
+        encode: |v: f64| crate::scale::units_to_u8(v),
+        range: (0.0, 255.0), unit: "mps"
     },
     {
-        tag: 13, field: sensor_latitude, wire_len: 4, reader: crate::ber::read_i32,
-        getter: sensor_latitude_degrees, setter: set_sensor_latitude_degrees,
-        to_units: |c: i32| crate::scale::i32_to_units(c, 90.0),
-        from_units: |v: f64| crate::scale::units_to_i32(v, 90.0),
-        unit: "degrees",
-        doc: "sensor latitude in degrees WGS84 (-90..90)"
+        tag: 13, field: sensor_latitude_degrees, name: "sensor_latitude",
+        wire: i32, reader: crate::ber::read_i32, sentinel: Some(i32::MIN),
+        decode: |c: i32| crate::scale::i32_field(c, 90.0),
+        encode: |v: f64| crate::scale::units_to_i32(v, 90.0),
+        range: (-90.0, 90.0), unit: "degrees"
     },
     {
-        tag: 14, field: sensor_longitude, wire_len: 4, reader: crate::ber::read_i32,
-        getter: sensor_longitude_degrees, setter: set_sensor_longitude_degrees,
-        to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
-        from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
-        unit: "degrees",
-        doc: "sensor longitude in degrees WGS84 (-180..180)"
+        tag: 14, field: sensor_longitude_degrees, name: "sensor_longitude",
+        wire: i32, reader: crate::ber::read_i32, sentinel: Some(i32::MIN),
+        decode: |c: i32| crate::scale::i32_field(c, 180.0),
+        encode: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        range: (-180.0, 180.0), unit: "degrees"
     },
     {
-        tag: 15, field: sensor_true_altitude, wire_len: 2, reader: crate::ber::read_u16,
-        getter: sensor_true_altitude_meters, setter: set_sensor_true_altitude_meters,
-        to_units: |c: u16| Some(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
-        from_units: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
-        unit: "meters",
-        doc: "sensor true altitude in meters MSL (-900..19000)"
+        tag: 15, field: sensor_true_altitude_meters, name: "sensor_true_altitude",
+        wire: u16, reader: crate::ber::read_u16, sentinel: None,
+        decode: |c: u16| FieldState::Value(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
+        encode: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
+        range: (-900.0, 19000.0), unit: "meters"
     },
     {
-        tag: 16, field: sensor_horizontal_fov, wire_len: 2, reader: crate::ber::read_u16,
-        getter: sensor_horizontal_fov_degrees, setter: set_sensor_horizontal_fov_degrees,
-        to_units: |c: u16| Some(crate::scale::u16_to_units(c, 180.0)),
-        from_units: |v: f64| crate::scale::units_to_u16(v, 180.0),
-        unit: "degrees",
-        doc: "sensor horizontal field of view in degrees (0..180)"
+        tag: 16, field: sensor_horizontal_fov_degrees, name: "sensor_horizontal_fov",
+        wire: u16, reader: crate::ber::read_u16, sentinel: None,
+        decode: |c: u16| FieldState::Value(crate::scale::u16_to_units(c, 180.0)),
+        encode: |v: f64| crate::scale::units_to_u16(v, 180.0),
+        range: (0.0, 180.0), unit: "degrees"
     },
     {
-        tag: 17, field: sensor_vertical_fov, wire_len: 2, reader: crate::ber::read_u16,
-        getter: sensor_vertical_fov_degrees, setter: set_sensor_vertical_fov_degrees,
-        to_units: |c: u16| Some(crate::scale::u16_to_units(c, 180.0)),
-        from_units: |v: f64| crate::scale::units_to_u16(v, 180.0),
-        unit: "degrees",
-        doc: "sensor vertical field of view in degrees (0..180)"
+        tag: 17, field: sensor_vertical_fov_degrees, name: "sensor_vertical_fov",
+        wire: u16, reader: crate::ber::read_u16, sentinel: None,
+        decode: |c: u16| FieldState::Value(crate::scale::u16_to_units(c, 180.0)),
+        encode: |v: f64| crate::scale::units_to_u16(v, 180.0),
+        range: (0.0, 180.0), unit: "degrees"
     },
     {
-        tag: 18, field: sensor_relative_azimuth, wire_len: 4, reader: crate::ber::read_u32,
-        getter: sensor_relative_azimuth_degrees, setter: set_sensor_relative_azimuth_degrees,
-        to_units: |c: u32| Some(crate::scale::u32_to_units(c, 360.0)),
-        from_units: |v: f64| crate::scale::units_to_u32(v, 360.0),
-        unit: "degrees",
-        doc: "sensor relative azimuth in degrees (0..360)"
+        tag: 18, field: sensor_relative_azimuth_degrees, name: "sensor_relative_azimuth",
+        wire: u32, reader: crate::ber::read_u32, sentinel: None,
+        decode: |c: u32| FieldState::Value(crate::scale::u32_to_units(c, 360.0)),
+        encode: |v: f64| crate::scale::units_to_u32(v, 360.0),
+        range: (0.0, 360.0), unit: "degrees"
     },
     {
-        tag: 19, field: sensor_relative_elevation, wire_len: 4, reader: crate::ber::read_i32,
-        getter: sensor_relative_elevation_degrees, setter: set_sensor_relative_elevation_degrees,
-        to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
-        from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
-        unit: "degrees",
-        doc: "sensor relative elevation in degrees (-180..180, negative = below horizon)"
+        tag: 19, field: sensor_relative_elevation_degrees, name: "sensor_relative_elevation",
+        wire: i32, reader: crate::ber::read_i32, sentinel: Some(i32::MIN),
+        decode: |c: i32| crate::scale::i32_field(c, 180.0),
+        encode: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        range: (-180.0, 180.0), unit: "degrees"
     },
     {
-        tag: 20, field: sensor_relative_roll, wire_len: 4, reader: crate::ber::read_u32,
-        getter: sensor_relative_roll_degrees, setter: set_sensor_relative_roll_degrees,
-        to_units: |c: u32| Some(crate::scale::u32_to_units(c, 360.0)),
-        from_units: |v: f64| crate::scale::units_to_u32(v, 360.0),
-        unit: "degrees",
-        doc: "sensor relative roll in degrees (0..360, clockwise from behind camera)"
+        tag: 20, field: sensor_relative_roll_degrees, name: "sensor_relative_roll",
+        wire: u32, reader: crate::ber::read_u32, sentinel: None,
+        decode: |c: u32| FieldState::Value(crate::scale::u32_to_units(c, 360.0)),
+        encode: |v: f64| crate::scale::units_to_u32(v, 360.0),
+        range: (0.0, 360.0), unit: "degrees"
     },
     {
-        tag: 21, field: slant_range, wire_len: 4, reader: crate::ber::read_u32,
-        getter: slant_range_meters, setter: set_slant_range_meters,
-        to_units: |c: u32| Some(crate::scale::u32_to_units(c, 5_000_000.0)),
-        from_units: |v: f64| crate::scale::units_to_u32(v, 5_000_000.0),
-        unit: "meters",
-        doc: "slant range in meters (0..5000000)"
+        tag: 21, field: slant_range_meters, name: "slant_range",
+        wire: u32, reader: crate::ber::read_u32, sentinel: None,
+        decode: |c: u32| FieldState::Value(crate::scale::u32_to_units(c, 5_000_000.0)),
+        encode: |v: f64| crate::scale::units_to_u32(v, 5_000_000.0),
+        range: (0.0, 5_000_000.0), unit: "meters"
     },
     {
-        tag: 22, field: target_width, wire_len: 2, reader: crate::ber::read_u16,
-        getter: target_width_meters, setter: set_target_width_meters,
-        to_units: |c: u16| Some(crate::scale::u16_to_units(c, 10_000.0)),
-        from_units: |v: f64| crate::scale::units_to_u16(v, 10_000.0),
-        unit: "meters",
-        doc: "target width in meters (0..10000)"
+        tag: 22, field: target_width_meters, name: "target_width",
+        wire: u16, reader: crate::ber::read_u16, sentinel: None,
+        decode: |c: u16| FieldState::Value(crate::scale::u16_to_units(c, 10_000.0)),
+        encode: |v: f64| crate::scale::units_to_u16(v, 10_000.0),
+        range: (0.0, 10_000.0), unit: "meters"
     },
     {
-        tag: 23, field: frame_center_latitude, wire_len: 4, reader: crate::ber::read_i32,
-        getter: frame_center_latitude_degrees, setter: set_frame_center_latitude_degrees,
-        to_units: |c: i32| crate::scale::i32_to_units(c, 90.0),
-        from_units: |v: f64| crate::scale::units_to_i32(v, 90.0),
-        unit: "degrees",
-        doc: "frame center latitude in degrees WGS84 (-90..90)"
+        tag: 23, field: frame_center_latitude_degrees, name: "frame_center_latitude",
+        wire: i32, reader: crate::ber::read_i32, sentinel: Some(i32::MIN),
+        decode: |c: i32| crate::scale::i32_field(c, 90.0),
+        encode: |v: f64| crate::scale::units_to_i32(v, 90.0),
+        range: (-90.0, 90.0), unit: "degrees"
     },
     {
-        tag: 24, field: frame_center_longitude, wire_len: 4, reader: crate::ber::read_i32,
-        getter: frame_center_longitude_degrees, setter: set_frame_center_longitude_degrees,
-        to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
-        from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
-        unit: "degrees",
-        doc: "frame center longitude in degrees WGS84 (-180..180)"
+        tag: 24, field: frame_center_longitude_degrees, name: "frame_center_longitude",
+        wire: i32, reader: crate::ber::read_i32, sentinel: Some(i32::MIN),
+        decode: |c: i32| crate::scale::i32_field(c, 180.0),
+        encode: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        range: (-180.0, 180.0), unit: "degrees"
     },
     {
-        tag: 25, field: frame_center_elevation, wire_len: 2, reader: crate::ber::read_u16,
-        getter: frame_center_elevation_meters, setter: set_frame_center_elevation_meters,
-        to_units: |c: u16| Some(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
-        from_units: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
-        unit: "meters",
-        doc: "frame center elevation in meters MSL (-900..19000)"
+        tag: 25, field: frame_center_elevation_meters, name: "frame_center_elevation",
+        wire: u16, reader: crate::ber::read_u16, sentinel: None,
+        decode: |c: u16| FieldState::Value(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
+        encode: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
+        range: (-900.0, 19000.0), unit: "meters"
     },
     {
-        tag: 40, field: target_location_latitude, wire_len: 4, reader: crate::ber::read_i32,
-        getter: target_location_latitude_degrees, setter: set_target_location_latitude_degrees,
-        to_units: |c: i32| crate::scale::i32_to_units(c, 90.0),
-        from_units: |v: f64| crate::scale::units_to_i32(v, 90.0),
-        unit: "degrees",
-        doc: "target location latitude in degrees WGS84 (-90..90)"
+        tag: 40, field: target_location_latitude_degrees, name: "target_location_latitude",
+        wire: i32, reader: crate::ber::read_i32, sentinel: Some(i32::MIN),
+        decode: |c: i32| crate::scale::i32_field(c, 90.0),
+        encode: |v: f64| crate::scale::units_to_i32(v, 90.0),
+        range: (-90.0, 90.0), unit: "degrees"
     },
     {
-        tag: 41, field: target_location_longitude, wire_len: 4, reader: crate::ber::read_i32,
-        getter: target_location_longitude_degrees, setter: set_target_location_longitude_degrees,
-        to_units: |c: i32| crate::scale::i32_to_units(c, 180.0),
-        from_units: |v: f64| crate::scale::units_to_i32(v, 180.0),
-        unit: "degrees",
-        doc: "target location longitude in degrees WGS84 (-180..180)"
+        tag: 41, field: target_location_longitude_degrees, name: "target_location_longitude",
+        wire: i32, reader: crate::ber::read_i32, sentinel: Some(i32::MIN),
+        decode: |c: i32| crate::scale::i32_field(c, 180.0),
+        encode: |v: f64| crate::scale::units_to_i32(v, 180.0),
+        range: (-180.0, 180.0), unit: "degrees"
     },
     {
-        tag: 42, field: target_location_elevation, wire_len: 2, reader: crate::ber::read_u16,
-        getter: target_location_elevation_meters, setter: set_target_location_elevation_meters,
-        to_units: |c: u16| Some(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
-        from_units: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
-        unit: "meters",
-        doc: "target location elevation in meters MSL (-900..19000)"
+        tag: 42, field: target_location_elevation_meters, name: "target_location_elevation",
+        wire: u16, reader: crate::ber::read_u16, sentinel: None,
+        decode: |c: u16| FieldState::Value(crate::scale::u16_offset_to_units(c, 19900.0, -900.0)),
+        encode: |v: f64| crate::scale::units_to_u16_offset(v, 19900.0, -900.0),
+        range: (-900.0, 19000.0), unit: "meters"
     },
 }
 
@@ -289,271 +296,371 @@ pub fn tag_name(number: u8) -> Option<&'static str> {
     clippy::panic,
     clippy::indexing_slicing
 )]
-mod tests {
+mod decode_tests {
     use alloc::{vec, vec::Vec};
 
-    use crate::st0601::St0601;
+    use marlin_field::{FieldState, Invalid, RawCode};
+
+    use crate::st0601::{decode, encode, St0601};
+    use crate::testing::KlvBuilder;
+
+    #[test]
+    fn i16_sentinel_is_a_sender_error() {
+        // Tag 7 platform roll, wire bytes 0x80 0x00 = i16::MIN = the ST 0601 sentinel.
+        let packet = KlvBuilder::new().timestamp(1).tag(7, &[0x80, 0x00]).build();
+        let set = decode(&packet).expect("decode");
+        assert_eq!(
+            set.platform_roll_degrees,
+            FieldState::SenderError(RawCode(-32768))
+        );
+    }
+
+    #[test]
+    fn i32_sentinel_is_a_sender_error() {
+        // Tag 13 sensor latitude, wire bytes 0x80 00 00 00 = i32::MIN.
+        let packet = KlvBuilder::new()
+            .timestamp(1)
+            .tag(13, &[0x80, 0x00, 0x00, 0x00])
+            .build();
+        let set = decode(&packet).expect("decode");
+        assert_eq!(
+            set.sensor_latitude_degrees,
+            FieldState::SenderError(RawCode(-2_147_483_648))
+        );
+    }
+
+    #[test]
+    fn omitted_tags_are_not_available_in_every_width() {
+        let packet = KlvBuilder::new().timestamp(1).build();
+        let set = decode(&packet).expect("decode");
+        assert_eq!(
+            set.platform_true_airspeed_mps,
+            FieldState::NotAvailable,
+            "u8"
+        );
+        assert_eq!(
+            set.platform_heading_degrees,
+            FieldState::NotAvailable,
+            "u16"
+        );
+        assert_eq!(set.platform_pitch_degrees, FieldState::NotAvailable, "i16");
+        assert_eq!(
+            set.sensor_relative_azimuth_degrees,
+            FieldState::NotAvailable,
+            "u32"
+        );
+        assert_eq!(set.sensor_latitude_degrees, FieldState::NotAvailable, "i32");
+        assert_eq!(
+            set.sensor_true_altitude_meters,
+            FieldState::NotAvailable,
+            "u16 offset"
+        );
+        assert_eq!(set.version, FieldState::NotAvailable, "Tag 65");
+        assert_eq!(set, St0601::new(1));
+    }
+
+    #[test]
+    fn wrong_length_known_tag_is_unparsable_and_keeps_its_bytes() {
+        // Tag 13 is a 4-byte tag; 3 bytes cannot be read as an i32.
+        let packet = KlvBuilder::new()
+            .timestamp(1)
+            .tag(13, &[0x01, 0x02, 0x03])
+            .build();
+        let set = decode(&packet).expect("decode");
+        assert_eq!(
+            set.sensor_latitude_degrees,
+            FieldState::Invalid(Invalid::Unparsable)
+        );
+        assert_eq!(set.unknown, vec![(13, vec![0x01, 0x02, 0x03])]);
+
+        let mut re_encoded = Vec::new();
+        encode(&set, &mut re_encoded).expect("re-encode");
+        assert_eq!(re_encoded, packet, "the kept bytes re-encode verbatim");
+    }
+
+    #[test]
+    fn wrong_length_duplicate_after_a_readable_one_keeps_the_value() {
+        let packet = KlvBuilder::new()
+            .timestamp(1)
+            .tag(13, &[0x40, 0x00, 0x00, 0x00])
+            .tag(13, &[0x01, 0x02, 0x03])
+            .build();
+        let set = decode(&packet).expect("decode");
+        assert!(matches!(set.sensor_latitude_degrees, FieldState::Value(_)));
+        assert_eq!(set.unknown, vec![(13, vec![0x01, 0x02, 0x03])]);
+
+        let mut re_encoded = Vec::new();
+        encode(&set, &mut re_encoded).expect("re-encode");
+        assert_eq!(re_encoded, packet, "typed then kept bytes is framing order");
+        assert_eq!(decode(&re_encoded).expect("re-decode"), set);
+    }
+
+    #[test]
+    fn readable_duplicate_after_a_wrong_length_one_takes_the_field() {
+        let packet = KlvBuilder::new()
+            .timestamp(1)
+            .tag(13, &[0x01, 0x02, 0x03])
+            .tag(13, &[0x40, 0x00, 0x00, 0x00])
+            .build();
+        let set = decode(&packet).expect("decode");
+        assert!(matches!(set.sensor_latitude_degrees, FieldState::Value(_)));
+        assert_eq!(set.unknown, vec![(13, vec![0x01, 0x02, 0x03])]);
+
+        // Not framing order, so not byte-exact; the re-encoded set re-decodes equal.
+        let mut re_encoded = Vec::new();
+        encode(&set, &mut re_encoded).expect("re-encode");
+        assert_eq!(decode(&re_encoded).expect("re-decode"), set);
+    }
+
+    #[test]
+    fn heading_kat_from_vector_1() {
+        // 0x71c2 = 29122 → 159.97436484321355° (klvdata expected value)
+        let packet = KlvBuilder::new().timestamp(1).tag(5, &[0x71, 0xC2]).build();
+        let set = decode(&packet).expect("decode");
+        let deg = set.platform_heading_degrees.value().expect("heading");
+        assert!((deg - 159.974_364_843_213_55).abs() < 1e-9, "got {deg}");
+    }
+
+    #[test]
+    fn signed_extremes_decode_to_half_span() {
+        let packet = KlvBuilder::new()
+            .timestamp(1)
+            .tag(7, &[0x7F, 0xFF]) // 32767
+            .tag(13, &[0x80, 0x00, 0x00, 0x01]) // -2147483647
+            .build();
+        let set = decode(&packet).expect("decode");
+        assert_eq!(set.platform_roll_degrees, FieldState::Value(50.0));
+        assert_eq!(set.sensor_latitude_degrees, FieldState::Value(-90.0));
+    }
+
+    #[test]
+    fn altitude_offset_decodes_from_range_minimum() {
+        let packet = KlvBuilder::new()
+            .timestamp(1)
+            .tag(15, &[0x00, 0x00])
+            .tag(25, &[0xFF, 0xFF])
+            .build();
+        let set = decode(&packet).expect("decode");
+        assert_eq!(set.sensor_true_altitude_meters, FieldState::Value(-900.0));
+        assert_eq!(
+            set.frame_center_elevation_meters,
+            FieldState::Value(19000.0)
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod encode_tests {
+    use alloc::{vec, vec::Vec};
+
+    use marlin_field::{FieldState, Invalid, Kind, RawCode};
+
+    use crate::error::EncodeError;
+    use crate::st0601::{decode, encode, St0601};
 
     fn round_trip(set: &St0601) -> St0601 {
         let mut buf = Vec::new();
-        crate::st0601::encode(set, &mut buf).expect("encode");
-        crate::st0601::decode(&buf).expect("decode own output")
+        encode(set, &mut buf).expect("encode");
+        decode(&buf).expect("decode own output")
+    }
+
+    fn encode_err(set: &St0601) -> EncodeError {
+        let mut buf = Vec::new();
+        encode(set, &mut buf).expect_err("encode must fail")
     }
 
     #[test]
-    fn attitude_round_trips_at_extremes() {
-        for deg in [-50.0, -12.34, 0.0, 12.34, 50.0] {
-            let mut set = St0601 {
-                timestamp_us: 1,
-                ..Default::default()
-            };
-            set.set_platform_roll_degrees(deg);
-            let back = round_trip(&set)
-                .platform_roll_degrees()
-                .expect("roll present");
-            let lsb = 50.0 / 32767.0;
-            assert!(
-                (back - deg).abs() <= lsb,
-                "roll {deg} -> {back} (lsb {lsb})"
-            );
+    fn values_round_trip_within_one_lsb_in_every_width() {
+        let mut set = St0601::new(1);
+        set.platform_true_airspeed_mps = FieldState::Value(77.0);
+        set.platform_heading_degrees = FieldState::Value(159.97);
+        set.platform_roll_degrees = FieldState::Value(-12.34);
+        set.sensor_relative_azimuth_degrees = FieldState::Value(359.999);
+        set.sensor_latitude_degrees = FieldState::Value(60.1768);
+        set.sensor_true_altitude_meters = FieldState::Value(5000.5);
+        let back = round_trip(&set);
+        let within = |state: FieldState<f64>, want: f64, lsb: f64| {
+            let got = state.value().expect("value");
+            assert!((got - want).abs() <= lsb, "{want} -> {got} (lsb {lsb})");
+        };
+        within(back.platform_true_airspeed_mps, 77.0, 0.0);
+        within(back.platform_heading_degrees, 159.97, 360.0 / 65535.0);
+        within(back.platform_roll_degrees, -12.34, 50.0 / 32767.0);
+        within(
+            back.sensor_relative_azimuth_degrees,
+            359.999,
+            360.0 / 4_294_967_295.0,
+        );
+        within(
+            back.sensor_latitude_degrees,
+            60.1768,
+            90.0 / 2_147_483_647.0,
+        );
+        within(back.sensor_true_altitude_meters, 5000.5, 19900.0 / 65535.0);
+    }
+
+    #[test]
+    fn range_ends_encode_and_decode_exactly() {
+        let mut set = St0601::new(1);
+        set.platform_heading_degrees = FieldState::Value(360.0);
+        set.platform_roll_degrees = FieldState::Value(-50.0);
+        set.sensor_latitude_degrees = FieldState::Value(90.0);
+        set.sensor_true_altitude_meters = FieldState::Value(-900.0);
+        set.slant_range_meters = FieldState::Value(5_000_000.0);
+        assert_eq!(round_trip(&set), set);
+    }
+
+    #[test]
+    fn own_sentinel_round_trips_as_a_sender_error() {
+        let mut set = St0601::new(1);
+        set.platform_pitch_degrees = FieldState::SenderError(RawCode(i16::MIN.into()));
+        set.frame_center_longitude_degrees = FieldState::SenderError(RawCode(i32::MIN.into()));
+        assert_eq!(round_trip(&set), set);
+    }
+
+    #[test]
+    fn u16_value_outside_range_is_rejected() {
+        for v in [-0.001, 360.001, f64::NAN] {
+            let mut set = St0601::new(1);
+            set.platform_heading_degrees = FieldState::Value(v);
+            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 5 }, "{v}");
         }
     }
 
     #[test]
-    fn roll_sentinel_yields_none_but_preserves_raw() {
-        // wire bytes 0x80 0x00 = i16::MIN = ST 0601 error indicator
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.platform_roll = Some(i16::MIN);
-        let back = round_trip(&set);
+    fn i16_value_outside_range_is_rejected() {
+        for v in [-50.001, 50.001, f64::NAN] {
+            let mut set = St0601::new(1);
+            set.platform_roll_degrees = FieldState::Value(v);
+            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 7 }, "{v}");
+        }
+    }
+
+    #[test]
+    fn u8_value_outside_range_is_rejected() {
+        for v in [-1.0, 255.5, f64::NAN] {
+            let mut set = St0601::new(1);
+            set.platform_true_airspeed_mps = FieldState::Value(v);
+            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 8 }, "{v}");
+        }
+    }
+
+    #[test]
+    fn i32_value_outside_range_is_rejected() {
+        for v in [-90.0001, 90.0001, f64::NAN] {
+            let mut set = St0601::new(1);
+            set.sensor_latitude_degrees = FieldState::Value(v);
+            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 13 }, "{v}");
+        }
+    }
+
+    #[test]
+    fn u32_value_outside_range_is_rejected() {
+        for v in [-0.001, 5_000_000.001, f64::NAN] {
+            let mut set = St0601::new(1);
+            set.slant_range_meters = FieldState::Value(v);
+            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 21 }, "{v}");
+        }
+    }
+
+    #[test]
+    fn offset_value_outside_range_is_rejected() {
+        for v in [-900.001, 19000.001, f64::NAN] {
+            let mut set = St0601::new(1);
+            set.target_location_elevation_meters = FieldState::Value(v);
+            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 42 }, "{v}");
+        }
+    }
+
+    #[test]
+    fn over_range_bound_is_unencodable() {
+        let mut set = St0601::new(1);
+        set.sensor_latitude_degrees = FieldState::AtLeast(90.0);
         assert_eq!(
-            back.platform_roll,
-            Some(i16::MIN),
-            "raw sentinel round-trips"
-        );
-        assert_eq!(
-            back.platform_roll_degrees(),
-            None,
-            "accessor hides the sentinel"
+            encode_err(&set),
+            EncodeError::Unencodable {
+                tag: 13,
+                kind: Kind::AtLeast
+            }
         );
     }
 
     #[test]
-    fn setters_clamp_out_of_range() {
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.set_platform_roll_degrees(-360.0);
-        assert_eq!(set.platform_roll, Some(-32767), "clamped, never -32768");
-        set.set_platform_true_airspeed_mps(9999.0);
-        assert_eq!(set.platform_true_airspeed, Some(255));
-        set.set_platform_true_airspeed_mps(-5.0);
-        assert_eq!(set.platform_true_airspeed, Some(0));
+    fn undefined_raw_code_is_unencodable() {
+        let mut set = St0601::new(1);
+        set.sensor_latitude_degrees = FieldState::Invalid(Invalid::Undefined(RawCode(7)));
+        assert_eq!(
+            encode_err(&set),
+            EncodeError::Unencodable {
+                tag: 13,
+                kind: Kind::Invalid(Invalid::Undefined(RawCode(7)))
+            }
+        );
     }
 
     #[test]
-    fn wrong_length_typed_tag_falls_back_to_unknown() {
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        // tag 7 with 3 bytes (wrong; expects 2) must NOT be consumed as typed
+    fn foreign_sender_error_code_is_unencodable() {
+        // i16::MIN is Tag 6's sentinel, not Tag 13's.
+        let mut set = St0601::new(1);
+        set.sensor_latitude_degrees = FieldState::SenderError(RawCode(i16::MIN.into()));
+        assert_eq!(
+            encode_err(&set),
+            EncodeError::Unencodable {
+                tag: 13,
+                kind: Kind::SenderError(RawCode(-32768))
+            }
+        );
+    }
+
+    #[test]
+    fn sender_error_on_an_unsigned_tag_is_unencodable() {
+        let mut set = St0601::new(1);
+        set.platform_heading_degrees = FieldState::SenderError(RawCode(0x8000));
+        assert_eq!(
+            encode_err(&set),
+            EncodeError::Unencodable {
+                tag: 5,
+                kind: Kind::SenderError(RawCode(0x8000))
+            }
+        );
+    }
+
+    #[test]
+    fn unparsable_field_emits_nothing_and_unknown_carries_the_bytes() {
+        let mut set = St0601::new(1);
+        set.platform_roll_degrees = FieldState::Invalid(Invalid::Unparsable);
         set.unknown.push((7, vec![0x01, 0x02, 0x03]));
         let back = round_trip(&set);
-        assert_eq!(back.platform_roll, None);
-        assert_eq!(back.unknown, vec![(7, vec![0x01, 0x02, 0x03])]);
+        assert_eq!(back, set);
     }
 
     #[test]
-    fn sensor_latitude_sentinel_and_extremes() {
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.sensor_latitude = Some(i32::MIN);
-        let back = round_trip(&set);
-        assert_eq!(back.sensor_latitude, Some(i32::MIN));
-        assert_eq!(back.sensor_latitude_degrees(), None);
+    fn unparsable_field_with_no_kept_bytes_re_decodes_as_not_available() {
+        let mut set = St0601::new(1);
+        set.platform_roll_degrees = FieldState::Invalid(Invalid::Unparsable);
+        assert_eq!(
+            round_trip(&set).platform_roll_degrees,
+            FieldState::NotAvailable
+        );
+    }
 
-        for deg in [-90.0, -33.3, 0.0, 33.3, 90.0] {
-            let mut set = St0601 {
-                timestamp_us: 1,
-                ..Default::default()
-            };
-            set.set_sensor_latitude_degrees(deg);
-            let back = round_trip(&set)
-                .sensor_latitude_degrees()
-                .expect("lat present");
-            let lsb = 90.0 / 2_147_483_647.0;
-            assert!((back - deg).abs() <= lsb, "lat {deg} -> {back}");
+    #[test]
+    fn table_names_are_the_field_names_without_the_unit_suffix() {
+        for (name, field) in super::FIELD_NAMES {
+            let suffix = field
+                .strip_prefix(name)
+                .expect("name is a prefix of the field");
+            assert!(
+                ["_degrees", "_meters", "_mps"].contains(&suffix),
+                "{field}: suffix {suffix:?}"
+            );
         }
-    }
-
-    #[test]
-    fn altitude_round_trips_across_offset_range() {
-        for m in [-900.0, 0.0, 5000.5, 19000.0] {
-            let mut set = St0601 {
-                timestamp_us: 1,
-                ..Default::default()
-            };
-            set.set_sensor_true_altitude_meters(m);
-            let back = round_trip(&set)
-                .sensor_true_altitude_meters()
-                .expect("alt present");
-            let lsb = 19900.0 / 65535.0;
-            assert!((back - m).abs() <= lsb, "alt {m} -> {back} (lsb {lsb})");
-        }
-
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.set_sensor_true_altitude_meters(-99999.0);
-        assert_eq!(
-            set.sensor_true_altitude,
-            Some(0),
-            "clamped below range minimum"
-        );
-    }
-
-    #[test]
-    fn relative_elevation_sentinel_and_round_trip() {
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.sensor_relative_elevation = Some(i32::MIN);
-        let back = round_trip(&set);
-        assert_eq!(
-            back.sensor_relative_elevation,
-            Some(i32::MIN),
-            "raw sentinel round-trips"
-        );
-        assert_eq!(
-            back.sensor_relative_elevation_degrees(),
-            None,
-            "accessor hides sentinel"
-        );
-
-        for deg in [-180.0, -45.5, 0.0, 45.5, 180.0] {
-            let mut set = St0601 {
-                timestamp_us: 1,
-                ..Default::default()
-            };
-            set.set_sensor_relative_elevation_degrees(deg);
-            let back = round_trip(&set)
-                .sensor_relative_elevation_degrees()
-                .expect("el present");
-            let lsb = 180.0 / 2_147_483_647.0;
-            assert!((back - deg).abs() <= lsb, "el {deg} -> {back}");
-        }
-    }
-
-    #[test]
-    fn pointing_unsigned_tags_round_trip_and_clamp() {
-        // 16/17 (u16, span 180), 18/20 (u32, span 360)
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.set_sensor_horizontal_fov_degrees(144.5);
-        set.set_sensor_vertical_fov_degrees(0.0);
-        set.set_sensor_relative_azimuth_degrees(359.999);
-        set.set_sensor_relative_roll_degrees(180.0);
-        let back = round_trip(&set);
-        let lsb_u16 = 180.0 / 65535.0;
-        let lsb_u32 = 360.0 / 4_294_967_295.0;
-        assert!((back.sensor_horizontal_fov_degrees().expect("16") - 144.5).abs() <= lsb_u16);
-        assert!((back.sensor_vertical_fov_degrees().expect("17") - 0.0).abs() <= lsb_u16);
-        assert!((back.sensor_relative_azimuth_degrees().expect("18") - 359.999).abs() <= lsb_u32);
-        assert!((back.sensor_relative_roll_degrees().expect("20") - 180.0).abs() <= lsb_u32);
-
-        // clamp beyond range
-        let mut wild = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        wild.set_sensor_horizontal_fov_degrees(999.0);
-        wild.set_sensor_relative_azimuth_degrees(-5.0);
-        assert_eq!(wild.sensor_horizontal_fov, Some(65535));
-        assert_eq!(wild.sensor_relative_azimuth, Some(0));
-    }
-
-    #[test]
-    fn target_location_round_trips_and_honors_sentinel() {
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.set_target_location_latitude_degrees(-45.5);
-        set.set_target_location_longitude_degrees(120.25);
-        set.set_target_location_elevation_meters(1234.5);
-        let back = round_trip(&set);
-        let lat = back.target_location_latitude_degrees().expect("tag 40");
-        let lon = back.target_location_longitude_degrees().expect("tag 41");
-        let elev = back.target_location_elevation_meters().expect("tag 42");
-        assert!((lat - -45.5).abs() <= 90.0 / 2_147_483_647.0);
-        assert!((lon - 120.25).abs() <= 180.0 / 2_147_483_647.0);
-        assert!((elev - 1234.5).abs() <= 19900.0 / 65535.0);
-
-        let mut bad = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        bad.target_location_latitude = Some(i32::MIN);
-        assert_eq!(round_trip(&bad).target_location_latitude_degrees(), None);
-    }
-
-    #[test]
-    fn frame_center_sentinels_yield_none() {
-        // 23/24 are the only remaining i32 tags whose sentinel is otherwise untested
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.frame_center_latitude = Some(i32::MIN);
-        set.frame_center_longitude = Some(i32::MIN);
-        let back = round_trip(&set);
-        assert_eq!(back.frame_center_latitude_degrees(), None);
-        assert_eq!(back.frame_center_longitude_degrees(), None);
-        assert_eq!(
-            back.frame_center_latitude,
-            Some(i32::MIN),
-            "raw sentinel round-trips"
-        );
-    }
-
-    #[test]
-    fn geometry_tags_round_trip_and_clamp() {
-        // 21 (u32, span 5e6 m), 22 (u16, span 1e4 m), 25 (u16 offset -900..19000 m)
-        let mut set = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        set.set_slant_range_meters(2_500_000.0);
-        set.set_target_width_meters(722.82);
-        set.set_frame_center_elevation_meters(-900.0);
-        let back = round_trip(&set);
-        let lsb_range = 5_000_000.0 / 4_294_967_295.0;
-        let lsb_width = 10_000.0 / 65535.0;
-        let lsb_elev = 19900.0 / 65535.0;
-        assert!((back.slant_range_meters().expect("21") - 2_500_000.0).abs() <= lsb_range);
-        assert!((back.target_width_meters().expect("22") - 722.82).abs() <= lsb_width);
-        assert!((back.frame_center_elevation_meters().expect("25") - -900.0).abs() <= lsb_elev);
-
-        let mut wild = St0601 {
-            timestamp_us: 1,
-            ..Default::default()
-        };
-        wild.set_slant_range_meters(9e9);
-        wild.set_target_width_meters(-1.0);
-        wild.set_frame_center_elevation_meters(99999.0);
-        assert_eq!(wild.slant_range, Some(u32::MAX));
-        assert_eq!(wild.target_width, Some(0));
-        assert_eq!(wild.frame_center_elevation, Some(65535));
     }
 }
 
@@ -610,8 +717,8 @@ mod registry_tests {
     }
 
     #[test]
-    fn sample_scaled_tag_is_named_from_the_field() {
-        // Field base name, not the accessor: `sensor_latitude`, not `sensor_latitude_degrees`.
+    fn sample_scaled_tag_is_named_from_the_field_base_name() {
+        // Base name, not the field: `sensor_latitude`, not `sensor_latitude_degrees`.
         assert_eq!(tag_number("sensor_latitude"), Some(13));
         assert_eq!(tag_name(13), Some("sensor_latitude"));
     }
@@ -622,7 +729,7 @@ mod registry_tests {
         assert_eq!(
             tag_number("sensor_latitude_degrees"),
             None,
-            "accessor, not field"
+            "field, not base name"
         );
         assert_eq!(tag_name(1), None, "checksum tag is not a field");
         assert_eq!(tag_name(99), None);

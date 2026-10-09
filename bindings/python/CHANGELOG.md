@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `marlin.klv.KlvEncodeError(KlvError)`, raised by `marlin.klv.encode` for
+  a set the wire cannot carry, with `variant` (`"unencodable"` for a
+  field state the tag cannot carry, `"out_of_range"` for a value outside
+  the tag's range or NaN), `tag` (the ST 0601 tag number) and `kind` (the
+  state's `FieldState.kind` for `"unencodable"`, `None` otherwise).
+- `marlin.klv.KlvError.variant`: the decode failure as a snake-case tag
+  (`"truncated"`, `"length_overflow"`, `"bad_checksum"`,
+  `"missing_checksum"`, `"bad_timestamp"`, `"bad_key"`), the way
+  `EnvelopeError.variant` names its reason.
 - `marlin.field.FieldState`: the decoded-field state, a frozen class with
   five variant classes `FieldState.Value(value)`,
   `FieldState.AtLeast(bound)`, `FieldState.NotAvailable()`,
@@ -48,6 +57,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+- `marlin.klv.St0601` requires `timestamp_us` (`St0601()` is a
+  `TypeError`), and every scaled-tag property (`sensor_latitude_degrees`,
+  `slant_range_meters`, ...) and `version` read a `marlin.field.FieldState`
+  instead of an `Optional` number: an omitted tag is
+  `FieldState.NotAvailable()`, the ST 0601 sentinel on a signed tag is
+  `FieldState.SenderError(code)` with the raw code (where the
+  property used to read `None`), and a known tag with the wrong wire
+  length is `FieldState.Invalid(None)` with its bytes kept in `unknown`
+  (where only `unknown` used to carry it). A setter takes a `FieldState`,
+  a bare number (`FieldState.Value`) or `None` (`FieldState.NotAvailable()`)
+  and no longer clamps. The twenty `raw_*` properties are gone: the wire
+  count survives only inside `FieldState.SenderError`, and a caller that
+  wants counts calls `encode`. `repr(St0601(...))` prints the version in
+  its variant form (`version=FieldState.Value(11)`, where it printed
+  `version=11` or `version=None`).
+- `marlin.klv.encode` raises `KlvEncodeError` for a value outside its
+  tag's range or NaN (`"out_of_range"`), where it used to clamp (NaN to
+  the range minimum), and for `FieldState.AtLeast`, `FieldState.Invalid`
+  with a code, or a `FieldState.SenderError` whose code is not the tag's
+  own sentinel (`"unencodable"`).
+- `marlin.klv.decode` raises `KlvError` with `variant` `"bad_timestamp"`
+  when Tag 2 is absent (the set used to decode with `timestamp_us` 0) or
+  not 8 bytes, and `"missing_checksum"` when Tag 1 is absent or not 2
+  bytes; `precision_timestamp` raises `"bad_timestamp"` for a
+  wrong-length Tag 2. `"truncated"` now means only that the input ends
+  early.
 - Every `marlin.ais` message attribute the wire can leave without a value
   is a `marlin.field.FieldState` instead of an `Optional` value, a bare
   `int` or a bare enum: a not-available code is `FieldState.NotAvailable()`,

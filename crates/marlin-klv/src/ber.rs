@@ -24,6 +24,13 @@ pub(crate) fn ber_encode_len(len: usize, out: &mut Vec<u8>) {
     out.extend_from_slice(significant);
 }
 
+/// Append one `(tag, value)` item: the tag byte, the BER length, the value bytes.
+pub(crate) fn push_item(tag: u8, value: &[u8], out: &mut Vec<u8>) {
+    out.push(tag);
+    ber_encode_len(value.len(), out);
+    out.extend_from_slice(value);
+}
+
 /// Decode a BER length at `offset`. Returns `(length, next_offset)`.
 pub(crate) fn ber_decode_len(input: &[u8], offset: usize) -> Result<(usize, usize), Error> {
     let first = *input.get(offset).ok_or(Error::Truncated {
@@ -56,28 +63,8 @@ pub(crate) fn read_bytes(input: &[u8], start: usize, len: usize) -> Result<&[u8]
     })
 }
 
-pub(crate) fn be_u16(bytes: &[u8]) -> Result<u16, Error> {
-    match bytes {
-        [hi, lo] => Ok(u16::from_be_bytes([*hi, *lo])),
-        _ => Err(Error::Truncated {
-            offset: 0,
-            needed: 2,
-            available: bytes.len(),
-        }),
-    }
-}
-
-pub(crate) fn be_u64(bytes: &[u8]) -> Result<u64, Error> {
-    let array: [u8; 8] = bytes.try_into().map_err(|_| Error::Truncated {
-        offset: 0,
-        needed: 8,
-        available: bytes.len(),
-    })?;
-    Ok(u64::from_be_bytes(array))
-}
-
-/// Fixed-width big-endian readers for typed tag values. `None` on length mismatch
-/// (callers fall back to the unknown-tag list — tolerant decode).
+/// Fixed-width big-endian readers for typed tag values. `None` when the value is not the
+/// field's width; the caller decides what a wrong-length item means for its tag.
 pub(crate) fn read_u8(v: &[u8]) -> Option<u8> {
     match v {
         [b] => Some(*b),
@@ -99,6 +86,10 @@ pub(crate) fn read_u32(v: &[u8]) -> Option<u32> {
 
 pub(crate) fn read_i32(v: &[u8]) -> Option<i32> {
     v.try_into().ok().map(i32::from_be_bytes)
+}
+
+pub(crate) fn read_u64(v: &[u8]) -> Option<u64> {
+    v.try_into().ok().map(u64::from_be_bytes)
 }
 
 #[cfg(test)]

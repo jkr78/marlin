@@ -15,7 +15,12 @@ class EnvelopeError(MarlinError):
 class DecodeError(MarlinError): ...
 class AisError(MarlinError): ...
 class ReassemblyError(AisError): ...
-class KlvError(MarlinError): ...
+class KlvError(MarlinError):
+    variant: str
+
+class KlvEncodeError(KlvError):
+    tag: int
+    kind: str | None
 
 envelope: Any
 field: Any

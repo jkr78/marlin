@@ -12,6 +12,7 @@ keywords = ["klv", "misb", "st0601", "uas", "metadata"]
 categories = ["parser-implementations", "encoding"]
 
 [dependencies]
+marlin-field = { path = "../marlin-field", version = "0.2.0" }
 thiserror = { workspace = true }
 # Pure-Rust round-half-away-from-zero for no_std builds; used by scale.rs.
 libm = "0.2"
