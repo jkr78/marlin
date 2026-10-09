@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Re-exports of `marlin_field::{FieldState, Invalid, Kind, RawCode}` at
   the crate root; the crate depends on `marlin-field` from 0.3.0.
 - `KlvDecodeError::MissingChecksum` and `KlvDecodeError::BadTimestamp`,
-  the two structural
-  failures a set can have besides framing and a checksum mismatch.
+  the two structural failures a set can have besides framing and a
+  checksum mismatch.
 
 ### Changed (BREAKING)
 
