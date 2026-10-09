@@ -22,6 +22,9 @@ repository = "https://github.com/jkr78/marlin"
 readme = "README.md"
 
 [workspace.dependencies]
+# Intra-workspace crates: one place holds the published version a release bumps.
+marlin-field = { path = "crates/marlin-field", version = "0.3.0" }
+marlin-nmea-envelope = { path = "crates/marlin-nmea-envelope", version = "0.3.0" }
 nom = { version = "8", default-features = false, features = ["alloc"] }
 bytes = "1"
 thiserror = "2"
