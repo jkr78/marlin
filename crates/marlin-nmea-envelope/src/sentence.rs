@@ -36,10 +36,10 @@ use alloc::vec::Vec;
 /// - `checksum_ok` is `true` iff the XOR of all bytes strictly between the
 ///   start delimiter and `*` equals the value expressed by the two hex
 ///   digits after `*`. A sentence whose checksum failed is returned as an
-///   [`Error::ChecksumMismatch`](crate::Error::ChecksumMismatch), not as a
-///   `RawSentence` with `checksum_ok = false` — the field exists only for
-///   future relaxation (e.g. a "lax" mode that accepts bad checksums with a
-///   warning).
+///   [`EnvelopeError::ChecksumMismatch`](crate::EnvelopeError::ChecksumMismatch),
+///   not as a `RawSentence` with `checksum_ok = false` — the field exists
+///   only for future relaxation (e.g. a "lax" mode that accepts bad
+///   checksums with a warning).
 /// - `tag_block` is `Some(bytes)` if the sentence was preceded by a NMEA
 ///   4.10 TAG block `\<bytes>*hh\`, with `bytes` being the raw content
 ///   **excluding** the surrounding backslashes and checksum. The TAG block's

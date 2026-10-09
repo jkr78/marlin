@@ -11,7 +11,7 @@ use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::{code, number, optional};
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 /// Decoded fields of a `$__VTG` sentence.
 ///
@@ -105,13 +105,13 @@ const VTG_MIN_FIELDS: usize = 8;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 8
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if the payload has fewer than 8
 ///   fields.
 #[allow(clippy::indexing_slicing)] // field count validated above
-pub fn decode_vtg(raw: &RawSentence<'_>) -> Result<VtgData, DecodeError> {
+pub fn decode_vtg(raw: &RawSentence<'_>) -> Result<VtgData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < VTG_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: VTG_MIN_FIELDS,
             got: f.len(),
         });
@@ -269,7 +269,7 @@ mod tests {
         let bytes = build(b"GPVTG,054.7,T,034.4"); // only 3 fields
         let raw = parse_raw(&bytes);
         match decode_vtg(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 8,
                 got: 3,
             }) => {}

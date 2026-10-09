@@ -1,8 +1,9 @@
 //! Error type for the envelope parser.
 //!
-//! All parsing failures surface as [`Error`]. The enum is `#[non_exhaustive]`
-//! so additional variants can be added in future versions without a breaking
-//! change; downstream consumers must include a wildcard arm.
+//! All parsing failures surface as [`EnvelopeError`]. The enum is
+//! `#[non_exhaustive]` so additional variants can be added in future
+//! versions without a breaking change; downstream consumers must include a
+//! wildcard arm.
 
 /// All errors returned by the envelope parser.
 ///
@@ -10,7 +11,7 @@
 /// produces a variant of this enum instead.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum EnvelopeError {
     /// A sentence did not begin with `$` or `!`.
     ///
     /// In `Streaming` mode this usually indicates junk bytes that have been

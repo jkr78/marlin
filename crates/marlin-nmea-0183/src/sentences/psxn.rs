@@ -47,7 +47,7 @@ use marlin_field::{FieldState, Invalid};
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::number;
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 // ---------------------------------------------------------------------------
 // Output struct
@@ -160,7 +160,7 @@ impl Default for PsxnLayout {
 /// Error from parsing a legacy PSXN layout string like `"rphx1"`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
-pub enum PsxnLayoutParseError {
+pub enum ParsePsxnLayoutError {
     /// Unrecognised character in the layout string. Valid characters
     /// are `r`, `p`, `h`, `s`, `q`, `x`, `1` (case-insensitive).
     #[error("unknown PSXN layout character '{0}'")]
@@ -171,7 +171,7 @@ pub enum PsxnLayoutParseError {
 }
 
 impl FromStr for PsxnLayout {
-    type Err = PsxnLayoutParseError;
+    type Err = ParsePsxnLayoutError;
 
     /// Parse a legacy layout string.
     ///
@@ -201,7 +201,7 @@ impl FromStr for PsxnLayout {
                 continue;
             }
             if idx >= 6 {
-                return Err(PsxnLayoutParseError::TooManySlots);
+                return Err(ParsePsxnLayoutError::TooManySlots);
             }
             let slot = match ch {
                 'r' | 'R' => PsxnSlot::Roll,
@@ -210,7 +210,7 @@ impl FromStr for PsxnLayout {
                 's' | 'S' => PsxnSlot::RollSineEncoded,
                 'q' | 'Q' => PsxnSlot::PitchSineEncoded,
                 'x' | 'X' => PsxnSlot::Ignored,
-                other => return Err(PsxnLayoutParseError::UnknownChar(other)),
+                other => return Err(ParsePsxnLayoutError::UnknownChar(other)),
             };
             slots[idx] = slot;
             idx = idx.saturating_add(1);
@@ -239,14 +239,17 @@ const COS_PITCH_MIN: f32 = 1e-6;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if fewer than 8 fields are
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if fewer than 8 fields are
 ///   present (the wire format always has `id, token, data0..data5`).
 ///   A data field that is not a number is invalid, not an error.
 #[allow(clippy::indexing_slicing)] // field count validated above
-pub fn decode_psxn(raw: &RawSentence<'_>, layout: &PsxnLayout) -> Result<PsxnData, DecodeError> {
+pub fn decode_psxn(
+    raw: &RawSentence<'_>,
+    layout: &PsxnLayout,
+) -> Result<PsxnData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < PSXN_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: PSXN_MIN_FIELDS,
             got: f.len(),
         });
@@ -598,7 +601,7 @@ mod tests {
         let bytes = build(b"PSXN,10,tok,1.0,2.0"); // 5 fields, need 8
         let raw = parse_raw(&bytes);
         match decode_psxn(&raw, &PsxnLayout::default()) {
-            Err(DecodeError::NotEnoughFields { expected: 8, got }) => {
+            Err(Nmea0183DecodeError::NotEnoughFields { expected: 8, got }) => {
                 assert!(got < 8);
             }
             other => panic!("expected NotEnoughFields, got {other:?}"),
@@ -677,7 +680,7 @@ mod tests {
     #[test]
     fn layout_from_str_rejects_unknown_char() {
         match "rpz".parse::<PsxnLayout>() {
-            Err(PsxnLayoutParseError::UnknownChar('z')) => {}
+            Err(ParsePsxnLayoutError::UnknownChar('z')) => {}
             other => panic!("expected UnknownChar('z'), got {other:?}"),
         }
     }
@@ -685,7 +688,7 @@ mod tests {
     #[test]
     fn layout_from_str_rejects_too_many_slots() {
         match "rphxrph".parse::<PsxnLayout>() {
-            Err(PsxnLayoutParseError::TooManySlots) => {}
+            Err(ParsePsxnLayoutError::TooManySlots) => {}
             other => panic!("expected TooManySlots, got {other:?}"),
         }
     }

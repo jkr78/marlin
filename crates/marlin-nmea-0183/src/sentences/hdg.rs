@@ -10,7 +10,7 @@ use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::{number, signed_ew};
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 /// Decoded fields of a `$__HDG` sentence.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,12 +38,12 @@ const HDG_MIN_FIELDS: usize = 5;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if fewer than 5 fields.
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if fewer than 5 fields.
 #[allow(clippy::indexing_slicing)] // field count validated above
-pub fn decode_hdg(raw: &RawSentence<'_>) -> Result<HdgData, DecodeError> {
+pub fn decode_hdg(raw: &RawSentence<'_>) -> Result<HdgData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < HDG_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: HDG_MIN_FIELDS,
             got: f.len(),
         });
@@ -172,7 +172,7 @@ mod tests {
         let bytes = build(b"HCHDG,98.3,1.0");
         let raw = parse_raw(&bytes);
         match decode_hdg(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 5,
                 got: 2,
             }) => {}

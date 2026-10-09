@@ -17,9 +17,9 @@
 #[non_exhaustive]
 pub enum AisError {
     /// Envelope-level failure (framing, checksum, TAG block, buffer
-    /// overflow) forwarded from [`marlin_nmea_envelope::Error`].
+    /// overflow) forwarded from [`marlin_nmea_envelope::EnvelopeError`].
     #[error("envelope error: {0}")]
-    Envelope(#[from] marlin_nmea_envelope::Error),
+    Envelope(#[from] marlin_nmea_envelope::EnvelopeError),
 
     /// The sentence is not an AIS encapsulation sentence — its start
     /// delimiter is not `!` or its sentence type is not `VDM`/`VDO`.

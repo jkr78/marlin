@@ -4,7 +4,7 @@ use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::number;
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 /// Decoded fields of a `$__HDT` sentence.
 ///
@@ -27,12 +27,12 @@ const HDT_MIN_FIELDS: usize = 2;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if fewer than 2 fields.
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if fewer than 2 fields.
 #[allow(clippy::indexing_slicing)] // field count validated above
-pub fn decode_hdt(raw: &RawSentence<'_>) -> Result<HdtData, DecodeError> {
+pub fn decode_hdt(raw: &RawSentence<'_>) -> Result<HdtData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < HDT_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: HDT_MIN_FIELDS,
             got: f.len(),
         });
@@ -132,7 +132,7 @@ mod tests {
         let bytes = build(b"GPHDT,123.4");
         let raw = parse_raw(&bytes);
         match decode_hdt(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 2,
                 got: 1,
             }) => {}

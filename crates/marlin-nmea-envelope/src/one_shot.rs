@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{parser, Error, RawSentence, SentenceSource};
+use crate::{parser, EnvelopeError, RawSentence, SentenceSource};
 
 /// One-sentence-per-datagram NMEA envelope parser.
 ///
@@ -69,7 +69,7 @@ impl SentenceSource for OneShot {
         self.buf.extend_from_slice(bytes);
     }
 
-    fn next_sentence(&mut self) -> Option<Result<Self::Item<'_>, Error>> {
+    fn next_sentence(&mut self) -> Option<Result<Self::Item<'_>, EnvelopeError>> {
         if self.yielded {
             // Already answered for the current buffer; waiting for the next
             // feed to reset. Returning `None` here (rather than re-parsing)
@@ -81,11 +81,11 @@ impl SentenceSource for OneShot {
             BufferStatus::Empty | BufferStatus::Partial => None,
             BufferStatus::NoStart => {
                 self.yielded = true;
-                Some(Err(Error::MissingStartDelimiter))
+                Some(Err(EnvelopeError::MissingStartDelimiter))
             }
             BufferStatus::MalformedTag => {
                 self.yielded = true;
-                Some(Err(Error::MalformedTagBlock))
+                Some(Err(EnvelopeError::MalformedTagBlock))
             }
             BufferStatus::Complete { body_end } => {
                 self.yielded = true;
@@ -293,7 +293,7 @@ mod tests {
         let mut parser = OneShot::new();
         parser.feed(&bytes);
         match parser.next_sentence().unwrap() {
-            Err(Error::ChecksumMismatch { expected, found }) => {
+            Err(EnvelopeError::ChecksumMismatch { expected, found }) => {
                 assert_ne!(expected, found);
             }
             other => panic!("expected ChecksumMismatch, got {other:?}"),
@@ -311,7 +311,7 @@ mod tests {
         // "complete", so 'ZZ' triggers a completeness positive -> hand off
         // to parse_sentence, which rejects the non-hex digits.
         match parser.next_sentence().unwrap() {
-            Err(Error::InvalidChecksumDigits) => {}
+            Err(EnvelopeError::InvalidChecksumDigits) => {}
             other => panic!("expected InvalidChecksumDigits, got {other:?}"),
         }
     }
@@ -337,7 +337,7 @@ mod tests {
         let mut parser = OneShot::new();
         parser.feed(b"garbage bytes that do not start with $ or !");
         match parser.next_sentence().unwrap() {
-            Err(Error::MissingStartDelimiter) => {}
+            Err(EnvelopeError::MissingStartDelimiter) => {}
             other => panic!("expected MissingStartDelimiter, got {other:?}"),
         }
     }
@@ -504,7 +504,7 @@ mod tests {
         bytes.extend_from_slice(b"not-a-sentence");
         parser.feed(&bytes);
         match parser.next_sentence().unwrap() {
-            Err(Error::MalformedTagBlock) => {}
+            Err(EnvelopeError::MalformedTagBlock) => {}
             other => panic!("expected MalformedTagBlock, got {other:?}"),
         }
     }
@@ -520,7 +520,7 @@ mod tests {
         let mut parser = OneShot::new();
         parser.feed(&build_with_wrong_checksum(b"GPGGA,1,2,3"));
         match parser.next_sentence().unwrap() {
-            Err(Error::ChecksumMismatch { .. }) => {}
+            Err(EnvelopeError::ChecksumMismatch { .. }) => {}
             other => panic!("expected ChecksumMismatch first, got {other:?}"),
         }
 

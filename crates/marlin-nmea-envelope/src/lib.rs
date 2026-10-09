@@ -114,7 +114,7 @@ mod streaming;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use error::Error;
+pub use error::EnvelopeError;
 pub use one_shot::OneShot;
 pub use sentence::RawSentence;
 pub use source::SentenceSource;
@@ -139,8 +139,8 @@ pub use streaming::{Streaming, DEFAULT_MAX_BUFFER_SIZE};
 ///
 /// Any envelope-level failure — missing start delimiter, missing `*`,
 /// bad hex digits, checksum mismatch, malformed TAG block — surfaces
-/// as [`Error`].
-pub fn parse(bytes: &[u8]) -> Result<RawSentence<'_>, Error> {
+/// as [`EnvelopeError`].
+pub fn parse(bytes: &[u8]) -> Result<RawSentence<'_>, EnvelopeError> {
     let stripped = parser::strip_terminator(bytes);
     parser::parse_sentence(stripped)
 }
@@ -216,7 +216,7 @@ impl Parser {
 
     /// Pull the next complete sentence out of the active source. See
     /// [`SentenceSource::next_sentence`] for the per-mode semantics.
-    pub fn next_sentence(&mut self) -> Option<Result<RawSentence<'_>, Error>> {
+    pub fn next_sentence(&mut self) -> Option<Result<RawSentence<'_>, EnvelopeError>> {
         match self {
             Self::OneShot(p) => p.next_sentence(),
             Self::Streaming(p) => p.next_sentence(),
@@ -246,7 +246,7 @@ impl SentenceSource for Parser {
         Parser::feed(self, bytes);
     }
 
-    fn next_sentence(&mut self) -> Option<Result<RawSentence<'_>, Error>> {
+    fn next_sentence(&mut self) -> Option<Result<RawSentence<'_>, EnvelopeError>> {
         Parser::next_sentence(self)
     }
 }
@@ -296,7 +296,7 @@ mod parser_enum_tests {
         let mut parser = Parser::streaming_with_capacity(64);
         parser.feed(&[b'?'; 200]);
         match parser.next_sentence().unwrap() {
-            Err(crate::Error::BufferOverflow) => {}
+            Err(crate::EnvelopeError::BufferOverflow) => {}
             other => panic!("expected BufferOverflow, got {other:?}"),
         }
     }

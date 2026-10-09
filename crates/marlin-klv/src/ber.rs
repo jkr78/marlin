@@ -2,7 +2,7 @@ use core::mem::size_of;
 
 use alloc::vec::Vec;
 
-use crate::error::Error;
+use crate::error::KlvDecodeError;
 
 /// Encode a BER length: short form (`len < 128`) is one byte; long form is `0x80 | n`
 /// followed by `n` big-endian length bytes (minimal, no leading zeros).
@@ -32,8 +32,11 @@ pub(crate) fn push_item(tag: u8, value: &[u8], out: &mut Vec<u8>) {
 }
 
 /// Decode a BER length at `offset`. Returns `(length, next_offset)`.
-pub(crate) fn ber_decode_len(input: &[u8], offset: usize) -> Result<(usize, usize), Error> {
-    let first = *input.get(offset).ok_or(Error::Truncated {
+pub(crate) fn ber_decode_len(
+    input: &[u8],
+    offset: usize,
+) -> Result<(usize, usize), KlvDecodeError> {
+    let first = *input.get(offset).ok_or(KlvDecodeError::Truncated {
         offset,
         needed: 1,
         available: input.len().saturating_sub(offset),
@@ -43,7 +46,7 @@ pub(crate) fn ber_decode_len(input: &[u8], offset: usize) -> Result<(usize, usiz
     }
     let n = (first & 0x7F) as usize;
     if n == 0 || n > size_of::<usize>() {
-        return Err(Error::LengthOverflow);
+        return Err(KlvDecodeError::LengthOverflow);
     }
     let bytes = read_bytes(input, offset + 1, n)?;
     let mut value: usize = 0;
@@ -54,9 +57,11 @@ pub(crate) fn ber_decode_len(input: &[u8], offset: usize) -> Result<(usize, usiz
 }
 
 /// Borrow `input[start..start + len]` or report exactly how many bytes were missing.
-pub(crate) fn read_bytes(input: &[u8], start: usize, len: usize) -> Result<&[u8], Error> {
-    let end = start.checked_add(len).ok_or(Error::LengthOverflow)?;
-    input.get(start..end).ok_or(Error::Truncated {
+pub(crate) fn read_bytes(input: &[u8], start: usize, len: usize) -> Result<&[u8], KlvDecodeError> {
+    let end = start
+        .checked_add(len)
+        .ok_or(KlvDecodeError::LengthOverflow)?;
+    input.get(start..end).ok_or(KlvDecodeError::Truncated {
         offset: start,
         needed: len,
         available: input.len().saturating_sub(start),
@@ -160,7 +165,7 @@ mod ber_tests {
         let err = ber_decode_len(&[], 0).expect_err("no length byte present");
         assert_eq!(
             err,
-            Error::Truncated {
+            KlvDecodeError::Truncated {
                 offset: 0,
                 needed: 1,
                 available: 0
@@ -172,7 +177,10 @@ mod ber_tests {
     fn decode_long_form_missing_length_bytes_is_truncated() {
         // 0x82 promises two length bytes but only one follows.
         let err = ber_decode_len(&[0x82, 0x01], 0).expect_err("missing one length byte");
-        assert!(matches!(err, Error::Truncated { .. }), "got {err:?}");
+        assert!(
+            matches!(err, KlvDecodeError::Truncated { .. }),
+            "got {err:?}"
+        );
     }
 
     #[test]
@@ -180,13 +188,13 @@ mod ber_tests {
         // 0x89 => 9 length bytes, more than a usize can hold.
         let err = ber_decode_len(&[0x89, 0, 0, 0, 0, 0, 0, 0, 0, 0], 0)
             .expect_err("9 length bytes overflow usize");
-        assert_eq!(err, Error::LengthOverflow);
+        assert_eq!(err, KlvDecodeError::LengthOverflow);
     }
 
     #[test]
     fn decode_indefinite_length_is_rejected() {
         // 0x80 = indefinite form, illegal in KLV.
         let err = ber_decode_len(&[0x80], 0).expect_err("indefinite length illegal");
-        assert_eq!(err, Error::LengthOverflow);
+        assert_eq!(err, KlvDecodeError::LengthOverflow);
     }
 }

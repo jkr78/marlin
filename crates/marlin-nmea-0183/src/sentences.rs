@@ -2,12 +2,12 @@
 //!
 //! Each decoder is a plain public function taking a
 //! [`RawSentence`](marlin_nmea_envelope::RawSentence) and returning a
-//! typed struct or a [`DecodeError`](crate::DecodeError). The decoders
-//! **do not** check `sentence_type` themselves — the caller asserts the
-//! type and this module decodes the fields. Every decoded field that the
-//! wire can leave empty or fill with text the decoder cannot read is a
-//! [`FieldState`](crate::FieldState); only a sentence below its field
-//! floor is an error.
+//! typed struct or a [`Nmea0183DecodeError`](crate::Nmea0183DecodeError).
+//! The decoders **do not** check `sentence_type` themselves — the caller
+//! asserts the type and this module decodes the fields. Every decoded
+//! field that the wire can leave empty or fill with text the decoder
+//! cannot read is a [`FieldState`](crate::FieldState); only a sentence
+//! below its field floor is an error.
 
 mod gga;
 mod gll;
@@ -30,7 +30,7 @@ pub use prdid::{
     decode_prdid, decode_prdid_pitch_roll_heading, decode_prdid_roll_pitch_heading, PrdidData,
     PrdidDialect, PrdidPitchRollHeading, PrdidRollPitchHeading,
 };
-pub use psxn::{decode_psxn, PsxnData, PsxnLayout, PsxnLayoutParseError, PsxnSlot};
+pub use psxn::{decode_psxn, ParsePsxnLayoutError, PsxnData, PsxnLayout, PsxnSlot};
 pub use rmc::{decode_rmc, RmcData, RmcNavStatus};
 pub use status::{DataStatus, TargetStatus};
 pub use tll::{decode_tll, TllData};

@@ -78,7 +78,7 @@
 //! decoder cannot read, is a [`FieldState`]: an empty field is
 //! [`FieldState::NotAvailable`], unreadable text is
 //! [`FieldState::Invalid`], and a field's value never fails the
-//! sentence. The only [`DecodeError`] is a sentence below its field
+//! sentence. The only [`Nmea0183DecodeError`] is a sentence below its field
 //! floor. The type comes from the `marlin-field` crate and is re-exported
 //! here with [`Invalid`], [`Kind`] and [`RawCode`].
 
@@ -95,17 +95,16 @@ mod util;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use error::DecodeError;
+pub use error::Nmea0183DecodeError;
 pub use message::Nmea0183Message;
 pub use parser::{Nmea0183Error, Nmea0183Parser};
 pub use sentences::{
     decode_gga, decode_gll, decode_hdg, decode_hdt, decode_prdid, decode_prdid_pitch_roll_heading,
     decode_prdid_roll_pitch_heading, decode_psxn, decode_rmc, decode_tll, decode_ttm, decode_vtg,
     AcquisitionType, AngleReference, DataStatus, DistanceUnits, GgaData, GgaFixQuality, GllData,
-    HdgData, HdtData, ParseUtcDateError, ParseUtcTimeError, PrdidData, PrdidDialect,
-    PrdidPitchRollHeading, PrdidRollPitchHeading, PsxnData, PsxnLayout, PsxnLayoutParseError,
-    PsxnSlot, RmcData, RmcNavStatus, TargetStatus, TllData, TtmData, UtcDate, UtcTime, VtgData,
-    VtgMode,
+    HdgData, HdtData, ParsePsxnLayoutError, ParseUtcDateError, ParseUtcTimeError, PrdidData,
+    PrdidDialect, PrdidPitchRollHeading, PrdidRollPitchHeading, PsxnData, PsxnLayout, PsxnSlot,
+    RmcData, RmcNavStatus, TargetStatus, TllData, TtmData, UtcDate, UtcTime, VtgData, VtgMode,
 };
 
 // The field-state type every decoded field carries, re-exported so a
@@ -138,11 +137,11 @@ use marlin_nmea_envelope::RawSentence as Raw;
 ///
 /// # Errors
 ///
-/// Returns [`DecodeError::NotEnoughFields`] when a sentence of a
+/// Returns [`Nmea0183DecodeError::NotEnoughFields`] when a sentence of a
 /// **recognized** type has fewer fields than the decoder's floor. A
 /// field's value never fails the sentence: it decodes to a
 /// [`FieldState`]. Unknown types are **not** errors — see above.
-pub fn decode<'a>(raw: &Raw<'a>) -> Result<Nmea0183Message<'a>, DecodeError> {
+pub fn decode<'a>(raw: &Raw<'a>) -> Result<Nmea0183Message<'a>, Nmea0183DecodeError> {
     decode_with(raw, &DecodeOptions::default())
 }
 
@@ -154,13 +153,13 @@ pub fn decode<'a>(raw: &Raw<'a>) -> Result<Nmea0183Message<'a>, DecodeError> {
 ///
 /// # Errors
 ///
-/// Returns [`DecodeError::NotEnoughFields`] from the per-sentence
+/// Returns [`Nmea0183DecodeError::NotEnoughFields`] from the per-sentence
 /// decoder, the only decode error. Unknown sentence types are **not**
 /// errors — they return [`Nmea0183Message::Unknown`] wrapping the input.
 pub fn decode_with<'a>(
     raw: &Raw<'a>,
     options: &DecodeOptions,
-) -> Result<Nmea0183Message<'a>, DecodeError> {
+) -> Result<Nmea0183Message<'a>, Nmea0183DecodeError> {
     match raw.sentence_type {
         "GGA" => Ok(Nmea0183Message::Gga(decode_gga(raw)?)),
         "GLL" => Ok(Nmea0183Message::Gll(decode_gll(raw)?)),

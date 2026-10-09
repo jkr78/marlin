@@ -21,7 +21,7 @@ use nom::{
     IResult, Parser,
 };
 
-use crate::{Error, RawSentence};
+use crate::{EnvelopeError, RawSentence};
 
 /// Parse one complete framed sentence.
 ///
@@ -34,23 +34,24 @@ use crate::{Error, RawSentence};
 ///
 /// Bytes beyond the second checksum digit are tolerated but ignored; the
 /// returned [`RawSentence::raw`] is the exact byte range that was consumed.
-pub(crate) fn parse_sentence(input: &[u8]) -> Result<RawSentence<'_>, Error> {
+pub(crate) fn parse_sentence(input: &[u8]) -> Result<RawSentence<'_>, EnvelopeError> {
     let (tag_block, remainder) = extract_tag_block(input)?;
 
     let (after_start, start_delimiter) =
-        start_delim(remainder).map_err(|_| Error::MissingStartDelimiter)?;
+        start_delim(remainder).map_err(|_| EnvelopeError::MissingStartDelimiter)?;
 
     let (after_body, body) =
-        body_up_to_star(after_start).map_err(|_| Error::MissingChecksumDelimiter)?;
+        body_up_to_star(after_start).map_err(|_| EnvelopeError::MissingChecksumDelimiter)?;
 
     // `body_up_to_star` already confirmed the next byte is `*`, so any
     // failure here is a hex-digit problem (wrong characters or too few).
-    let (_rest, hex) = star_then_hex(after_body).map_err(|_| Error::InvalidChecksumDigits)?;
+    let (_rest, hex) =
+        star_then_hex(after_body).map_err(|_| EnvelopeError::InvalidChecksumDigits)?;
 
     let expected = decode_hex_byte(hex);
     let found = body.iter().fold(0u8, |acc, &b| acc ^ b);
     if expected != found {
-        return Err(Error::ChecksumMismatch { expected, found });
+        return Err(EnvelopeError::ChecksumMismatch { expected, found });
     }
 
     let BodyParts {
@@ -84,8 +85,8 @@ pub(crate) fn parse_sentence(input: &[u8]) -> Result<RawSentence<'_>, Error> {
 /// rejected — the content is preserved and the mismatch is surfaced only
 /// as a `tracing::debug!` event when the `tracing` feature is enabled.
 /// Only structurally malformed TAG blocks (unterminated, missing `*`, or
-/// non-hex checksum digits) produce [`Error::MalformedTagBlock`].
-fn extract_tag_block(input: &[u8]) -> Result<(Option<&[u8]>, &[u8]), Error> {
+/// non-hex checksum digits) produce [`EnvelopeError::MalformedTagBlock`].
+fn extract_tag_block(input: &[u8]) -> Result<(Option<&[u8]>, &[u8]), EnvelopeError> {
     if input.first() != Some(&b'\\') {
         return Ok((None, input));
     }
@@ -94,18 +95,18 @@ fn extract_tag_block(input: &[u8]) -> Result<(Option<&[u8]>, &[u8]), Error> {
     let close_off = after_open
         .iter()
         .position(|&b| b == b'\\')
-        .ok_or(Error::MalformedTagBlock)?;
+        .ok_or(EnvelopeError::MalformedTagBlock)?;
     let tag_content = after_open.get(..close_off).unwrap_or(&[]);
 
     let star_off = tag_content
         .iter()
         .position(|&b| b == b'*')
-        .ok_or(Error::MalformedTagBlock)?;
+        .ok_or(EnvelopeError::MalformedTagBlock)?;
     let tag_body = tag_content.get(..star_off).unwrap_or(&[]);
     let tag_hex = tag_content.get(star_off.saturating_add(1)..).unwrap_or(&[]);
 
     if tag_hex.len() != 2 || !tag_hex.iter().all(u8::is_ascii_hexdigit) {
-        return Err(Error::MalformedTagBlock);
+        return Err(EnvelopeError::MalformedTagBlock);
     }
 
     // Verify the TAG block's own checksum. Per ADR-0006 a mismatch
@@ -198,7 +199,7 @@ struct BodyParts<'a> {
 /// Encapsulation sentences (`!…`) are always standard, never proprietary.
 ///
 /// Empty fields between commas are preserved as empty slices.
-fn split_body(body: &[u8], start_delimiter: u8) -> Result<BodyParts<'_>, Error> {
+fn split_body(body: &[u8], start_delimiter: u8) -> Result<BodyParts<'_>, EnvelopeError> {
     // Locate the end of the address (first comma, or end of body).
     let comma_pos = body.iter().position(|&b| b == b',');
     let address_end = comma_pos.unwrap_or(body.len());
@@ -213,7 +214,7 @@ fn split_body(body: &[u8], start_delimiter: u8) -> Result<BodyParts<'_>, Error> 
     let (talker, type_bytes) = if is_proprietary {
         (None, address)
     } else {
-        let slice = address.get(..2).ok_or(Error::TalkerTooShort)?;
+        let slice = address.get(..2).ok_or(EnvelopeError::TalkerTooShort)?;
         let mut arr = [0u8; 2];
         arr.copy_from_slice(slice);
         let type_bytes = address.get(2..).unwrap_or(&[]);
@@ -221,7 +222,7 @@ fn split_body(body: &[u8], start_delimiter: u8) -> Result<BodyParts<'_>, Error> 
     };
 
     let sentence_type =
-        core::str::from_utf8(type_bytes).map_err(|_| Error::InvalidUtf8InSentenceType)?;
+        core::str::from_utf8(type_bytes).map_err(|_| EnvelopeError::InvalidUtf8InSentenceType)?;
 
     let fields: Vec<&[u8]> = if comma_pos.is_some() {
         let fields_bytes = body.get(address_end.saturating_add(1)..).unwrap_or(&[]);

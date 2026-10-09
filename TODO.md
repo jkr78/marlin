@@ -18,7 +18,7 @@ track deliverables (not conversational state).
   from a published pair. Decide between one `"other"` everywhere (and
   widen the Literal) or one raise everywhere (and drop `"other"` from
   the two stubs). [py][draft]
-- [ ] Give every crate error type a crate or operation prefix
+- [x] Give every crate error type a crate or operation prefix **DONE 2026-10-09**
   The workspace names its error enums three ways: crate prefix
   (`AisError`, `Nmea0183Error`), operation prefix (`DecodeError` in
   marlin-nmea-0183) and bare `Error` (marlin-klv, marlin-nmea-envelope).
@@ -29,7 +29,14 @@ track deliverables (not conversational state).
   its own short design round. The marlin-klv encode work landed first
   (2026-10-08) with `EncodeError` named under today's operation-prefix
   convention beside the bare `Error`; the round renames whichever side
-  the convention does not match. [workspace][0.3.0][ready]
+  the convention does not match. Landed 2026-10-09 as the crate prefix,
+  with an operation word where a crate has two (ADR-0010):
+  `EnvelopeError`, `KlvDecodeError`, `KlvEncodeError` and
+  `Nmea0183DecodeError`; `AisError` and `Nmea0183Error` unchanged;
+  `PsxnLayoutParseError` became `ParsePsxnLayoutError` to match its two
+  `ParseUtc*Error` siblings. Python exception names unchanged. README and
+  docs/architecture.md still carry the old names for the doc sweep.
+  [workspace][0.3.0]
 - [ ] Align unit suffixes on numeric field names across the three crates
   AIS mixes `latitude_deg` with `speed_over_ground` and `true_heading`;
   KLV spells the unit out (`_degrees`, `_meters`, `_mps`); 0183 has its

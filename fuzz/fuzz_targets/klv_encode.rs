@@ -5,7 +5,7 @@
 //! the crate does not type, and encodes it.
 //!
 //! Contract: **no panic on any input.** A set the wire cannot carry surfaces
-//! as `marlin_klv::EncodeError::*` — acceptable. And whenever `encode(&set)`
+//! as `marlin_klv::KlvEncodeError::*` — acceptable. And whenever `encode(&set)`
 //! is `Ok(b)`, `decode(&b)` is `Ok` and `encode(&decode(&b)) == b` byte for
 //! byte: the encoder's output is a fixed point. (`decode(&encode(&set)) ==
 //! set` cannot hold for a generated set: a value quantises to its wire count,

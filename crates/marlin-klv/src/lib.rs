@@ -2,8 +2,8 @@
 //!
 //! Sans-I/O: bytes in via [`decode`], a typed [`St0601`] out; a typed [`St0601`]
 //! in via [`encode`], framed KLV bytes out. No clock, no sockets, no panics —
-//! `decode` returns `Result<_, Error>` on malformed input and `encode` returns
-//! `Result<_, EncodeError>` on a set the wire cannot carry.
+//! `decode` returns `Result<_, KlvDecodeError>` on malformed input and `encode`
+//! returns `Result<_, KlvEncodeError>` on a set the wire cannot carry.
 //!
 //! Wire format: 16-byte UAS LS Universal Label key, BER lengths (short + long form),
 //! big-endian values, framed with Tag 2 (precision timestamp, first) and Tag 1
@@ -53,7 +53,7 @@ mod tags;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use error::{EncodeError, Error};
+pub use error::{KlvDecodeError, KlvEncodeError};
 pub use marlin_field::{FieldState, Invalid, Kind, RawCode};
 #[cfg(feature = "bytes")]
 pub use st0601::encode_to_bytes;

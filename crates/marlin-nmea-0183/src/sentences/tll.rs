@@ -12,7 +12,7 @@ use marlin_nmea_envelope::RawSentence;
 use crate::sentences::status::TargetStatus;
 use crate::sentences::utc_time::UtcTime;
 use crate::util::{code, latitude, longitude, number, optional, reference_target, text};
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 /// Decoded fields of a `$__TLL` sentence.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,12 +48,12 @@ const TLL_MIN_FIELDS: usize = 5;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if fewer than 5 fields.
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if fewer than 5 fields.
 #[allow(clippy::indexing_slicing)] // indices 0..5 validated; 5..9 via get
-pub fn decode_tll(raw: &RawSentence<'_>) -> Result<TllData, DecodeError> {
+pub fn decode_tll(raw: &RawSentence<'_>) -> Result<TllData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < TLL_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: TLL_MIN_FIELDS,
             got: f.len(),
         });
@@ -163,7 +163,7 @@ mod tests {
         let bytes = build(b"RATLL,2,5000.00,N");
         let raw = parse_raw(&bytes);
         match decode_tll(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 5,
                 got: 3,
             }) => {}

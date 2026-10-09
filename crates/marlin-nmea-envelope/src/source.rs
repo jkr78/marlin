@@ -1,6 +1,6 @@
 //! The unified sentence-source trait.
 
-use crate::Error;
+use crate::EnvelopeError;
 
 /// Push-bytes-in, pull-sentences-out abstraction over an NMEA envelope parser.
 ///
@@ -85,5 +85,5 @@ pub trait SentenceSource {
     /// The returned item borrows from the parser's internal buffer, so
     /// `next_sentence` takes `&mut self` and the item's lifetime is tied to
     /// that borrow. Only one item can be held at a time per parser.
-    fn next_sentence(&mut self) -> Option<Result<Self::Item<'_>, Error>>;
+    fn next_sentence(&mut self) -> Option<Result<Self::Item<'_>, EnvelopeError>>;
 }

@@ -44,7 +44,7 @@ use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::number;
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 // ---------------------------------------------------------------------------
 // Dialect-specific structs (one per field ordering)
@@ -140,7 +140,7 @@ const PRDID_MIN_FIELDS: usize = 3;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if a typed dialect was selected
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if a typed dialect was selected
 ///   and the sentence has fewer than 3 fields.
 ///
 /// Never errors for [`PrdidDialect::Unknown`] — preserves whatever
@@ -148,7 +148,7 @@ const PRDID_MIN_FIELDS: usize = 3;
 pub fn decode_prdid(
     raw: &RawSentence<'_>,
     dialect: PrdidDialect,
-) -> Result<PrdidData, DecodeError> {
+) -> Result<PrdidData, Nmea0183DecodeError> {
     match dialect {
         PrdidDialect::Unknown => Ok(PrdidData::Raw {
             fields: raw.fields.iter().map(|f| f.to_vec()).collect(),
@@ -170,15 +170,15 @@ pub fn decode_prdid(
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if the sentence has fewer than
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if the sentence has fewer than
 ///   3 fields. A field that is not a number is invalid, not an error.
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_prdid_pitch_roll_heading(
     raw: &RawSentence<'_>,
-) -> Result<PrdidPitchRollHeading, DecodeError> {
+) -> Result<PrdidPitchRollHeading, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < PRDID_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: PRDID_MIN_FIELDS,
             got: f.len(),
         });
@@ -199,10 +199,10 @@ pub fn decode_prdid_pitch_roll_heading(
 #[allow(clippy::indexing_slicing)] // field count validated above
 pub fn decode_prdid_roll_pitch_heading(
     raw: &RawSentence<'_>,
-) -> Result<PrdidRollPitchHeading, DecodeError> {
+) -> Result<PrdidRollPitchHeading, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < PRDID_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: PRDID_MIN_FIELDS,
             got: f.len(),
         });
@@ -384,7 +384,7 @@ mod tests {
         let bytes = build(b"PRDID,1.0,2.0"); // only 2 fields
         let raw = parse_raw(&bytes);
         match decode_prdid(&raw, PrdidDialect::PitchRollHeading) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 3,
                 got: 2,
             }) => {}
