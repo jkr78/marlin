@@ -162,6 +162,101 @@ feature-gated.
 `bytes::Bytes`, for callers that hand ownership downstream instead of
 taking a `Vec<u8>`.
 
+## marlin-nmea-0183
+
+`#![no_std]` + `alloc` crate of typed decoders for standard and
+proprietary NMEA 0183 sentences. It sits on `marlin-nmea-envelope`,
+which frames the sentence, checks the checksum and splits the fields;
+it does not depend on `marlin-ais`.
+
+```text
+bytes → marlin-nmea-envelope → RawSentence → decode → Nmea0183Message
+```
+
+### Modules
+
+- `sentences` — one module per sentence type, each with a public
+  `decode_*` function and a field-count floor (`GGA_MIN_FIELDS` and so
+  on), plus `status` (the `A`/`V` data status shared by RMC and GLL)
+  and `utc_time` (`UtcTime`, `UtcDate` and their `FromStr` impls). A
+  decoder does not check `sentence_type`; the dispatcher does.
+- `message` — `Nmea0183Message`, the typed enum `decode` returns.
+  Unknown sentence types are `Unknown(RawSentence)`, never an error.
+- `parser` — `Nmea0183Parser<P>` runs the envelope and the dispatcher
+  in one `feed` / `next_message` loop over any `SentenceSource`. For a
+  source mode chosen at runtime it wraps the envelope's `Parser` enum,
+  which the crate re-exports (ADR-0005). `with_options` takes the
+  `DecodeOptions`.
+- `util` — the crate-private producers every decoder reads a field
+  through: `number`, `code`, `text`, `paired` (with the `latitude`,
+  `longitude` and `signed_ew` wrappers), `reference_target` and
+  `optional` for a trailing field a short sentence may omit. Each maps
+  one wire field, or one paired field, to a `FieldState`.
+- `error` — `Nmea0183DecodeError` (`non_exhaustive`), with
+  `NotEnoughFields` as its only variant, and `Nmea0183Error`, the
+  parser's umbrella over it and the envelope's `EnvelopeError`.
+
+### Field state
+
+Every decoded field but `talker` is a `FieldState<T>` (ADR-0008). An
+empty field is `NotAvailable`; no 0183 field is mandatory, so a sentence
+with every field empty is well formed. The producer rules:
+
+- A number (`number` text, `UtcTime`, `UtcDate`): non-UTF-8, a parse
+  failure or a range failure is `Invalid(Unparsable)`. Only NMEA numeric
+  text is a number (an optional sign, digits, a decimal point); `nan`,
+  `inf` and exponent spellings are `Invalid(Unparsable)`. 0183 numeric
+  text has no wire integer, so no numeric invalid state carries a raw
+  code.
+- A one-byte letter code (`DataStatus`, `VtgMode`, `RmcNavStatus`,
+  `TargetStatus`, `AngleReference`, `DistanceUnits`, `AcquisitionType`):
+  an unnamed byte is `Invalid(Undefined(RawCode(byte)))`, two or more
+  bytes `Invalid(Unparsable)`. Lowercase letters are accepted. The
+  enums have no catch-all member.
+- The GGA fix quality is a digit code: an undefined digit is
+  `Invalid(Undefined(RawCode(digit)))`, the digit and not the ASCII
+  byte. `NoFix` is a value the sender reported.
+- A paired field (latitude with `N`/`S`, longitude with `E`/`W`, the
+  HDG and RMC `E`/`W` magnitudes) takes one state: both halves empty is
+  `NotAvailable`, exactly one empty is `Invalid(Unparsable)`, a letter
+  outside the pair is `Invalid(Undefined(RawCode(byte)))`.
+- TTM and TLL `name`: non-UTF-8 is `Invalid(Unparsable)`.
+- TTM and TLL `reference_target` is `FieldState<bool>`: empty or absent
+  is `Value(false)`, the standard's encoding of "not the reference
+  target", never `NotAvailable`.
+
+A status field (`DataStatus::Void`, a GGA quality of `NoFix`) qualifies
+the sentence and changes nothing on the fields beside it. `AtLeast` and
+`SenderError` are unreachable in 0183.
+
+A field's value never fails the sentence. `decode` fails only for a
+sentence with fewer fields than its decoder's floor; more fields than
+the newest known version are ignored. `decode` on a known sentence type
+with enough fields never returns `Err`, which the `nmea_0183_decode`
+fuzz target asserts.
+
+### Proprietary sentences
+
+Both proprietary decoders are strict by default: the bytes alone do not
+say how to read them, so the crate refuses to guess.
+
+- **PSXN** (Kongsberg-family motion) carries six data fields whose
+  meaning is install-configured. `DecodeOptions::psxn_layout` holds a
+  `PsxnLayout` (default `rphx`: roll, pitch, heave, the rest ignored;
+  parsed from the legacy layout string through `FromStr`). `PsxnData`
+  has the same shape under every layout: `id`, `token` (opaque bytes)
+  and `heave_m` take their data field's state; `roll_deg` and
+  `pitch_deg` are derived, a direct angle winning over a sine-encoded
+  one, and are `FieldState<f32>` too so the crate has one convention: a
+  role no data field carries is `NotAvailable`, a sine argument outside
+  ±1 or gimbal lock is `Invalid(Unparsable)`, and a sine-encoded roll
+  whose pitch source is not a value takes the pitch's state.
+- **PRDID** (motion, several vendors with incompatible field orders)
+  decodes to `PrdidData::Raw` with the fields as bytes under the default
+  `PrdidDialect::Unknown`; `DecodeOptions::with_prdid_dialect` selects
+  `PitchRollHeading` or `RollPitchHeading`, each with its own typed
+  struct and public decoder.
+
 ## marlin-ais
 
 `#![no_std]` + `alloc` crate that decodes AIS messages carried in
