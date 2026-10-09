@@ -387,15 +387,17 @@ track deliverables (not conversational state).
 
 ## Crate status at a glance
 
-| Crate | State | Tests |
-| --- | --- | --- |
-| `marlin-nmea-envelope` | ✅ **Feature-complete** | 52 unit · 9 golden · 4 doctest |
-| `marlin-nmea-0183`     | ✅ **Feature-complete** — GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID | 122 unit · 4 doctest |
-| `marlin-ais`           | ✅ **Feature-complete for 0.2.0** — Types 1/2/3, 5, 9, 18, 19, 21, 24A/24B, reassembly keyed on `(channel, sequential_id)` with clock-based timeout, `AisFragmentParser` wrapper, fuzz coverage | 188 unit · 1 doctest |
-| `marlin-klv`           | ✅ **Feature-complete for v0.1** | 48 unit · 1 doctest |
-| `marlin-py` (Python bindings) | ✅ **Feature-complete for 0.2.0** | 206 pytest |
+State per crate; test counts live in `just ci` and `just py-ci` output,
+not here, so they cannot go stale.
 
-**Rust workspace total: 429 tests pass, `just ci` clean. Python bindings: 206 pytest pass, mypy --strict clean (35 source files). Counted 2026-10-03 from `just ci` output, default features.**
+| Crate | State |
+| --- | --- |
+| `marlin-field`         | ✅ **Feature-complete** — `FieldState<T>` with the five states, `Kind`, `RawCode`, `Invalid`; `no_std` without `alloc`; first released in 0.3.0 |
+| `marlin-nmea-envelope` | ✅ **Feature-complete** — framing, checksum, `Parser` as the one runtime source mode (ADR-0005) |
+| `marlin-nmea-0183`     | ✅ **Feature-complete** — GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN, PRDID; every optional field a `FieldState` since 0.3.0 |
+| `marlin-ais`           | ✅ **Feature-complete** — Types 1/2/3, 5, 9, 18, 19, 21, 24A/24B, reassembly keyed on `(channel, sequential_id)` with clock-based timeout, `AisFragmentParser` wrapper, fuzz coverage; every optional field a `FieldState` since 0.3.0 |
+| `marlin-klv`           | ✅ **Feature-complete** — ST 0601 decode and fallible encode, scaled tags as `FieldState<f64>` in engineering units since 0.3.0 |
+| `marlin-py` (Python bindings) | ✅ **Feature-complete** — mirrors the four decoders and `marlin.field.FieldState`, dataclass mirrors, stubs checked by mypy, pyright and stubtest |
 
 ---
 
