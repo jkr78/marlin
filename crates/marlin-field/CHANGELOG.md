@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-09
+
 ### Added
 
 - Initial release of `marlin-field`: the decoded-field state type shared
