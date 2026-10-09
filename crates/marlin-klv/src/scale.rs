@@ -1,5 +1,6 @@
 //! MISB ST 0601 legacy linear scaling (NOT ST 1201 IMAPB — those are newer tags,
-//! out of scope; any tag beyond the current table must be re-researched, not pattern-matched).
+//! out of scope; any tag beyond the current table must be re-researched, not
+//! pattern-matched).
 //!
 //! Decode half: each signed width partitions its wire count into the ST 0601 sentinel
 //! (`i16::MIN` = 0x8000, `i32::MIN` = 0x80000000), a sender error carrying the raw

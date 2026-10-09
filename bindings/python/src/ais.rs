@@ -2297,8 +2297,9 @@ impl PyAisParser {
 
     /// Manual-clock tick — advance the reassembler's clock to `now_ms`.
     ///
-    /// Partials last touched more than `timeout_ms` ago are evicted here; each eviction
-    /// surfaces as a `ReassemblyError` from a later `next_message()` call.
+    /// Partials last touched more than `timeout_ms` ago are evicted here; each
+    /// eviction surfaces as a `ReassemblyError` from a later
+    /// `next_message()` call.
     ///
     /// Only valid when the parser was built with `clock="manual"`.
     /// Raises `ValueError` otherwise.

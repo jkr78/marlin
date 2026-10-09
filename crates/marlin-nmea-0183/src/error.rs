@@ -4,7 +4,8 @@
 ///
 /// A decode fails only for a structural reason: the sentence has fewer
 /// fields than the decoder's floor. A field's value never fails the
-/// sentence; an empty field decodes to [`FieldState::NotAvailable`](crate::FieldState::NotAvailable)
+/// sentence; an empty field decodes to
+/// [`FieldState::NotAvailable`](crate::FieldState::NotAvailable)
 /// and a field the decoder cannot give a meaning decodes to
 /// [`FieldState::Invalid`](crate::FieldState::Invalid). No 0183 field is
 /// mandatory, so a sentence with every field empty is well formed, and

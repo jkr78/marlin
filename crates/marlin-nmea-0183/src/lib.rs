@@ -122,7 +122,8 @@ use marlin_nmea_envelope::RawSentence as Raw;
 /// Decode a [`RawSentence`] into a typed [`Nmea0183Message`] using the
 /// default [`DecodeOptions`].
 ///
-/// Dispatch is on [`sentence_type`](marlin_nmea_envelope::RawSentence::sentence_type)
+/// Dispatch is on
+/// [`sentence_type`](marlin_nmea_envelope::RawSentence::sentence_type)
 /// alone — the talker ID is preserved on each typed struct but not used
 /// for routing. `$GPGGA`, `$INGGA`, `$GNGGA` all land in
 /// [`Nmea0183Message::Gga`] with distinct `talker` values.
