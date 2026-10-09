@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (BREAKING)
 
+Migration guide: [`docs/migration-0.3.md`](../../docs/migration-0.3.md).
+
 - Every field the wire can leave empty, or fill with text the decoder
   cannot read, is a `FieldState<T>` instead of `Option<T>`: an empty
   field is `NotAvailable` and unreadable text is `Invalid`, so one bad
@@ -64,9 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     angles are `FieldState<f32>`.
 
   Exceptions and renames that come with the rule:
-  - `Other(u8)` is removed from the seven letter-code enums; an
-    unnamed byte is the invalid field state with the byte as its raw
-    code. The enums stay `#[non_exhaustive]`.
+  - `Other(u8)` is removed from the seven letter-code enums and from
+    `GgaFixQuality`; an unnamed byte or digit is the invalid field state
+    with the byte or digit as its raw code. The enums stay
+    `#[non_exhaustive]`.
   - `GgaFixQuality::Invalid` is renamed `NoFix`: the sender's own "no
     fix" is a value, and "invalid" now always means the decoder could
     not give the field a meaning.
