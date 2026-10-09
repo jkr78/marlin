@@ -22,7 +22,8 @@
 //! # Policy
 //!
 //! The default [`PrdidDialect::Unknown`] **refuses to guess**. The
-//! top-level [`crate::decode`] emits `Nmea0183Message::Prdid(PrdidData::Raw { fields })`
+//! top-level [`crate::decode`] emits
+//! `Nmea0183Message::Prdid(PrdidData::Raw { fields })`
 //! for PRDID sentences until the caller configures a dialect via
 //! [`crate::DecodeOptions::with_prdid_dialect`]. This protects against
 //! silent field-order bugs when hardware is unknown or heterogeneous.

@@ -35,7 +35,8 @@ pub enum EnvelopeError {
     #[error("checksum digits after '*' are not valid hexadecimal")]
     InvalidChecksumDigits,
 
-    /// The computed XOR checksum did not match the one declared in the sentence.
+    /// The computed XOR checksum did not match the one declared in the
+    /// sentence.
     ///
     /// The sentence is otherwise structurally well-formed. `expected` is the
     /// checksum declared after `*` in the sentence; `found` is the checksum

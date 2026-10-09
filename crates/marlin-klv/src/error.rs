@@ -28,7 +28,8 @@ pub enum KlvDecodeError {
     /// platform, or uses the illegal indefinite-length form (`0x80`).
     #[error("BER length too large for this platform")]
     LengthOverflow,
-    /// The embedded Tag 1 checksum does not match the BCC computed over the decoded bytes.
+    /// The embedded Tag 1 checksum does not match the BCC computed over the
+    /// decoded bytes.
     #[error("checksum mismatch: computed {computed:#06x}, embedded {embedded:#06x}")]
     BadChecksum {
         /// Checksum computed over the input bytes.

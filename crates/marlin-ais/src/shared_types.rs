@@ -13,21 +13,25 @@ use crate::BitReader;
 /// so a client never compares against these. The decoders and their
 /// tests spell the codes by name.
 pub(crate) mod sentinel {
-    /// Longitude "not available": 181° in 1/10 000 minute (28-bit two's complement).
+    /// Longitude "not available": 181° in 1/10 000 minute (28-bit two's
+    /// complement).
     pub const LON_NOT_AVAILABLE: i64 = 181 * 600_000;
-    /// Latitude "not available": 91° in 1/10 000 minute (27-bit two's complement).
+    /// Latitude "not available": 91° in 1/10 000 minute (27-bit two's
+    /// complement).
     pub const LAT_NOT_AVAILABLE: i64 = 91 * 600_000;
     /// Course over ground "not available", in 0.1°.
     pub const COG_NOT_AVAILABLE: u16 = 3600;
     /// True heading "not available", in whole degrees.
     pub const HEADING_NOT_AVAILABLE: u16 = 511;
-    /// Vessel speed over ground "not available", in 0.1 kn (Types 1/2/3, 18, 19).
+    /// Vessel speed over ground "not available", in 0.1 kn (Types 1/2/3, 18,
+    /// 19).
     pub const SOG_NOT_AVAILABLE: u16 = 1023;
     /// Vessel speed over ground "102.2 kn or higher", in 0.1 kn.
     pub const SOG_OVER_RANGE: u16 = 1022;
     /// Rate of turn "not available" (8-bit two's complement).
     pub const ROT_NOT_AVAILABLE: i8 = -128;
-    /// Rate of turn "turning right at more than 5° per 30 s, no turn indicator".
+    /// Rate of turn "turning right at more than 5° per 30 s, no turn
+    /// indicator".
     pub const ROT_NO_INDICATOR_RIGHT: i8 = 127;
     /// Rate of turn "turning left at more than 5° per 30 s, no turn indicator".
     pub const ROT_NO_INDICATOR_LEFT: i8 = -127;

@@ -97,7 +97,8 @@ impl<P> AisFragmentParser<P> {
     /// Only meaningful with an
     /// [`AisReassembler::with_timeout_ms`](crate::AisReassembler::with_timeout_ms)
     /// reassembler. `now_ms` is a monotonic millisecond timestamp
-    /// chosen by the caller (e.g. `Instant::now().duration_since(epoch).as_millis()`
+    /// chosen by the caller (e.g.
+    /// `Instant::now().duration_since(epoch).as_millis()`
     /// in std, or a platform tick counter in embedded); the crate never
     /// reads a clock itself (ADR-0004).
     pub fn tick(&mut self, now_ms: u64) {

@@ -16,8 +16,8 @@ use crate::field::{field_arg, from_py, repr_state, to_py, PyFieldState};
 /// (`sensor_latitude_degrees`, `slant_range_meters`, ...): an omitted tag reads
 /// `FieldState.NotAvailable()`, the ST 0601 sentinel on a signed tag
 /// `FieldState.SenderError(code)`, a known tag with the wrong wire length
-/// `FieldState.Invalid(None)` with its bytes kept in `unknown`. A setter takes a
-/// `FieldState`, a bare number (which becomes `FieldState.Value`) or `None`
+/// `FieldState.Invalid(None)` with its bytes kept in `unknown`. A setter takes
+/// a `FieldState`, a bare number (which becomes `FieldState.Value`) or `None`
 /// (`FieldState.NotAvailable()`); nothing is clamped, `encode` rejects a value
 /// outside the tag's range.
 #[pyclass(name = "St0601", module = "marlin.klv")]
@@ -40,7 +40,8 @@ macro_rules! st0601_methods {
                 Ok(Self { inner })
             }
 
-            /// Tag 2: precision timestamp, microseconds since the UNIX epoch (UTC).
+            /// Tag 2: precision timestamp, microseconds since the UNIX epoch
+            /// (UTC).
             /// Mandatory: always encoded, always present in a decoded set.
             #[getter]
             fn timestamp_us(&self) -> u64 {
@@ -75,9 +76,9 @@ macro_rules! st0601_methods {
                 }
             )+
 
-            /// Tags the codec does not type, as `(tag, bytes)` in wire order, plus
-            /// the bytes of any known tag that arrived with the wrong wire length.
-            /// Read-only.
+            /// Tags the codec does not type, as `(tag, bytes)` in wire order,
+            /// plus the bytes of any known tag that arrived with the wrong wire
+            /// length. Read-only.
             #[getter]
             fn unknown(&self, py: Python<'_>) -> Vec<(u8, Py<PyAny>)> {
                 self.inner

@@ -46,7 +46,8 @@
 //! assert!(sentence.checksum_ok);
 //! ```
 //!
-//! **Streaming / TCP-style — multiple sentences per feed, terminators consumed:**
+//! **Streaming / TCP-style — multiple sentences per feed, terminators
+//! consumed:**
 //!
 //! ```
 //! use marlin_nmea_envelope::{Streaming, SentenceSource};

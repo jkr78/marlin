@@ -505,8 +505,8 @@ mod tests {
 
     /// Regression: real-world Type 24 Part A sentences are 27 chars × 6
     /// bits = 162 gross bits, minus 2 fill bits = **160 bits exact**.
-    /// That matches ITU-R M.1371-5 Annex 8 §3.22, Table 78 (40-bit header + 120-bit
-    /// name). v0.1.0 enforced 168 as the floor for both parts and
+    /// That matches ITU-R M.1371-5 Annex 8 §3.22, Table 78 (40-bit header +
+    /// 120-bit name). v0.1.0 enforced 168 as the floor for both parts and
     /// rejected every Part A frame with `PayloadTooShort`. Reported by
     /// a Python-bindings consumer with a batch of 160 sentences.
     #[test]
