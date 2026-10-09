@@ -38,8 +38,8 @@ lint:
 fmt-check:
     cargo fmt --all --check
 
-# Format in place.
-fmt:
+# Format in place, the bindings crate included.
+fmt: py-fmt
     cargo fmt --all
 
 # Build rustdoc with warnings promoted to errors. Matches CI.
@@ -175,6 +175,10 @@ py-type-check:
     cd bindings/python && {{py}} -m mypy --strict .
     cd bindings/python && {{py}} -m pyright
     cd bindings/python && {{py}} -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt
+
+# Format the bindings crate Rust in place; `just fmt` calls this.
+py-fmt:
+    cd bindings/python && cargo fmt
 
 # Check formatting of the bindings crate Rust. The crate is workspace-
 # excluded, so `just fmt-check` never sees it.
