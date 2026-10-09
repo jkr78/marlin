@@ -78,8 +78,12 @@ jobs:
       # extension, which a later step does in release mode.
       - name: Install test deps
         run: |
+          pip install 'tomli; python_version < "3.11"'
           python - > "$RUNNER_TEMP/dev-requirements.txt" <<'EOF'
-          import tomllib
+          try:
+              import tomllib
+          except ModuleNotFoundError:  # the 3.10 floor: tomllib is 3.11+
+              import tomli as tomllib
 
           with open("bindings/python/pyproject.toml", "rb") as f:
               extras = tomllib.load(f)["project"]["optional-dependencies"]
