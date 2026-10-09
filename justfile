@@ -52,11 +52,21 @@ doc-open:
 
 # Run everything CI runs, in order. Use before pushing. Includes the
 # workspace-excluded fuzz crate's fmt + clippy (stable — see below).
-ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint todo-check
+ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint todo-check doc-width-check commit-check
 
 # Check the mechanical TODO.md card rules (title length, DONE format).
 todo-check:
     python3 scripts/check_todo.py TODO.md
+
+# Rustdoc comment lines within the crate's prose width; rustfmt leaves
+# comments alone.
+doc-width-check:
+    python3 scripts/check_doc_width.py
+
+# Commit subjects on this branch: `[scope] lowercase subject`. Skipped when
+# `main` is not a local ref.
+commit-check:
+    python3 scripts/check_commits.py main..HEAD
 
 # ---------------------------------------------------------------------------
 # Fuzzing (requires nightly + cargo-fuzz)

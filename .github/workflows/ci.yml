@@ -54,6 +54,9 @@ jobs:
       - name: TODO.md card format
         run: just todo-check
 
+      - name: doc comment width
+        run: just doc-width-check
+
   msrv:
     name: MSRV (1.82)
     runs-on: ubuntu-latest
