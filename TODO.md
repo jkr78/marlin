@@ -8,6 +8,15 @@ track deliverables (not conversational state).
 
 ## New tasks
 
+- [ ] Track the bindings lockfile so wheels resolve like a local build
+  `bindings/python/Cargo.lock` is untracked (only the workspace lockfile
+  is), so every CI wheel build resolves PyO3 and the rest fresh, and a
+  CI-only failure invites "a dependency moved" as the first hypothesis
+  (it cost a build during the 0.3.0 release; the cause was rustc). A
+  published extension is an application for lockfile purposes, so
+  tracking it is the default. May not be needed: every wheel so far has
+  built and tested identically to the local build, and the untracked
+  lockfile is a stated policy that would change. [py][draft]
 - [x] Run every fuzz target in the fuzz-release recipe **DONE 2026-10-09**
   `just fuzz-release` ran the envelope, the three AIS targets and
   `nmea_0183_decode`; `klv_decode` and `klv_encode` (added for 0.3.0)
