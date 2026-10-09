@@ -65,59 +65,17 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Create venv at repo root
-        run: |
-          # Repo root, not bindings/python — avoids mypy walking into
-          # .venv/ when running `mypy --strict .` from bindings/python.
-          python -m venv .venv
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
-          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
-      # The `dev` extra in bindings/python/pyproject.toml is the one list of
-      # tools, shared with `just py-setup`. Read it here; installing the
-      # extra itself (`pip install -e '.[dev]'`) would also compile the
-      # extension, which a later step does in release mode.
-      - name: Install test deps
-        run: |
-          pip install 'tomli; python_version < "3.11"'
-          python - > "$RUNNER_TEMP/dev-requirements.txt" <<'EOF'
-          try:
-              import tomllib
-          except ModuleNotFoundError:  # the 3.10 floor: tomllib is 3.11+
-              import tomli as tomllib
-
-          with open("bindings/python/pyproject.toml", "rb") as f:
-              extras = tomllib.load(f)["project"]["optional-dependencies"]
-          print("\n".join(extras["dev"]))
-          EOF
-          pip install -r "$RUNNER_TEMP/dev-requirements.txt"
-      # The bindings crate is excluded from the Cargo workspace, so the main
-      # CI's `just fmt-check` / `just lint` never see its Rust. Gate it here.
-      - name: cargo fmt --check (bindings Rust)
-        working-directory: bindings/python
-        run: cargo fmt --check
-      - name: clippy (bindings Rust)
-        working-directory: bindings/python
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Install into venv
-        working-directory: bindings/python
-        run: maturin develop --release
-      - name: Run pytest
-        working-directory: bindings/python
-        run: python -m pytest tests/ -v
-      - name: Run mypy --strict
-        working-directory: bindings/python
-        run: python -m mypy --strict .
-      # Runs pyright (its own pyrightconfig.json, `standard` mode). Catches
-      # union/optional-narrowing issues mypy --strict does not; needs the
-      # extension installed (maturin develop above) to resolve `marlin.*`.
-      - name: Run pyright
-        working-directory: bindings/python
-        run: pyright
-      # Compares the public stubs with the built extension: signatures,
-      # @final, positional-only. Same command as `just py-type-check`.
-      - name: Run stubtest
-        working-directory: bindings/python
-        run: python -m mypy.stubtest marlin --ignore-missing-stub --allowlist stubtest-allowlist.txt
+      - uses: extractions/setup-just@v2
+      # The same recipes as a local run, so the two cannot diverge: `py-setup`
+      # creates the venv at the repo root (not bindings/python, which would
+      # put .venv/ under `mypy --strict .`) and installs the `dev` extra;
+      # `py-ci` is fmt + clippy for the bindings Rust (workspace-excluded, so
+      # the main CI never sees it), the release build, pytest, mypy, pyright
+      # and stubtest.
+      - name: just py-setup
+        run: just py-setup
+      - name: just py-ci
+        run: just py-ci
 
   sdist:
     name: Source distribution

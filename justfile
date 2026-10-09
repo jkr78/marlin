@@ -52,7 +52,21 @@ doc-open:
 
 # Run everything CI runs, in order. Use before pushing. Includes the
 # workspace-excluded fuzz crate's fmt + clippy (stable — see below).
-ci: fmt-check build test lint doc fuzz-fmt-check fuzz-lint todo-check doc-width-check commit-check
+ci: toolchain-check fmt-check build test lint doc fuzz-fmt-check fuzz-lint todo-check doc-width-check commit-check
+
+# CI builds with the newest stable rustc, so a local stable that is behind
+# it can pass here and go red there (a new clippy lint for 0.2.0, a changed
+# std error message for 0.3.0). Fails when rustup reports a stable update.
+toolchain-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # `rustup check` can exit non-zero after printing its report (a failed
+    # self-update probe), so the report is captured before it is read.
+    report=$(rustup check || true)
+    if grep -E '^stable-.*update available' <<<"$report"; then
+        echo "local stable rustc is behind the one CI runs: rustup update stable" >&2
+        exit 1
+    fi
 
 # Check the mechanical TODO.md card rules (title length, DONE format).
 todo-check:
@@ -143,6 +157,12 @@ fuzz-clean:
 # Produce a release build. Uses the `lto = "thin"` profile from Cargo.toml.
 release:
     cargo build --workspace --release
+
+# Gate for the `release: prepare vX.Y.Z` commit: every version field agrees
+# with the workspace version and every CHANGELOG carries a dated section for
+# it with nothing left under [Unreleased]. The full order is docs/release.md.
+release-check:
+    python3 scripts/check_release.py
 
 # --- Python bindings ---
 #
