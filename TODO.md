@@ -34,8 +34,8 @@ track deliverables (not conversational state).
   `EnvelopeError`, `KlvDecodeError`, `KlvEncodeError` and
   `Nmea0183DecodeError`; `AisError` and `Nmea0183Error` unchanged;
   `PsxnLayoutParseError` became `ParsePsxnLayoutError` to match its two
-  `ParseUtc*Error` siblings. Python exception names unchanged. README and
-  docs/architecture.md still carry the old names for the doc sweep.
+  `ParseUtc*Error` siblings. Python exception names unchanged.
+  docs/architecture.md still carries the old names for the doc sweep.
   [workspace][0.3.0]
 - [ ] Align unit suffixes on numeric field names across the three crates
   AIS mixes `latitude_deg` with `speed_over_ground` and `true_heading`;
