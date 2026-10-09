@@ -123,6 +123,8 @@ fuzz-release:
     @just fuzz ais_bit_reader 3600
     @just fuzz ais_parser 3600
     @just fuzz nmea_0183_decode 3600
+    @just fuzz klv_decode 3600
+    @just fuzz klv_encode 3600
 
 # List the current fuzz corpus size (number of inputs libfuzzer has kept)
 # for the given target.

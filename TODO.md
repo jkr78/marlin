@@ -8,12 +8,16 @@ track deliverables (not conversational state).
 
 ## New tasks
 
-- [ ] Run every fuzz target in the fuzz-release recipe
-  `just fuzz-release` runs the envelope and the three AIS targets only;
-  `klv_decode`, `klv_encode` and `nmea_0183_decode` (added for 0.3.0) are
-  missing, and the release checklist says to run that recipe before any
-  tag push. Add the three at the same one-hour budget and run the full
-  set once in the 0.3.0 release prep. [ci][0.3.0][ready]
+- [x] Run every fuzz target in the fuzz-release recipe **DONE 2026-10-09**
+  `just fuzz-release` ran the envelope, the three AIS targets and
+  `nmea_0183_decode`; `klv_decode` and `klv_encode` (added for 0.3.0)
+  were missing, and the release checklist says to run that recipe before
+  any tag push. Both joined at the same one-hour budget and the full set
+  ran once for 0.3.0 (the seven targets in parallel, one CPU-hour each):
+  2.45 B executions in all (envelope 149 M, ais_armor 785 M,
+  ais_bit_reader 142 M, ais_parser 25 M, nmea_0183_decode 681 M,
+  klv_decode 417 M, klv_encode 251 M), zero panics, zero sanitizer hits,
+  zero artifacts. [ci][0.3.0]
 - [ ] Pick one policy for an unknown error variant in the Python bindings
   The Rust error enums are `#[non_exhaustive]`, so every binding
   converter has a fallback arm. `EnvelopeError` and `KlvError` map it to
@@ -51,8 +55,9 @@ track deliverables (not conversational state).
   0.3.0 already changes every field's type for the field-state work and
   is the natural moment. Decided 2026-10-08: an optional passenger, not
   a gate. It needs its own design round and lands in 0.3.0 only if ready
-  before release prep starts; otherwise the next breaking minor.
-  [workspace][0.3.0][draft]
+  before release prep starts; otherwise the next breaking minor. Missed
+  0.3.0: the design round had not started when release prep began on
+  2026-10-09, so it waits for the next breaking minor. [workspace][draft]
 - [ ] Decide what a duplicated tag in one ST 0601 local set decodes to
   `marlin_klv::decode` lets a later occurrence of a typed tag silently
   overwrite an earlier one, so a set with two Tag 13 items yields the
@@ -65,7 +70,9 @@ track deliverables (not conversational state).
   occurrence never overwrites the state an earlier occurrence gave the
   field, so re-encoding a decoded set re-decodes equal. Still open: two
   readable occurrences, where the later one wins with no trace of the
-  first. [marlin-klv][draft]
+  first. Missed 0.3.0: still open when release prep began on 2026-10-09;
+  the remaining half, if it changes the decode, waits for the next
+  breaking minor. [marlin-klv][draft]
 - [ ] Expose the nmea-0183 field helpers for downstream proprietary decoders
   The crate docs promise an extension story: a downstream crate builds
   its own enum and delegates to the public per-sentence decoders. A
@@ -98,7 +105,9 @@ track deliverables (not conversational state).
   finishes before release prep starts. May not be needed: the doc comment
   says most callers use their own lookup, and nexus re-derives only code
   0, which the not-available state now covers. Re-check that before
-  building. [marlin-ais][draft]
+  building. Missed 0.3.0: the design round had not started when release
+  prep began on 2026-10-09, so it waits for the next breaking minor.
+  [marlin-ais][draft]
 - [ ] Compile-test the crate README examples
   No crate README is doctested: none is embedded with `include_str!`, so
   a README example can drift from the API without CI noticing. The

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-09
+
 ### Added
 
 - `marlin.klv.KlvEncodeError(KlvError)`, raised by `marlin.klv.encode` for
@@ -37,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   literal and slots) and the `FieldState` union alias; `to_dataclass`
   converts a field state, and `asdict` yields
   `{"kind": "value", "value": 10.2}`.
-
 - `marlin.ais.RateOfTurn`, `marlin.ais.Timestamp` and
   `marlin.ais.Type24BExtent`: frozen sum types with one variant class
   each per Rust variant (ADR-0009), matched by `isinstance` or `match`
