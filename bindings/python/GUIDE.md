@@ -93,17 +93,41 @@ while chunk := source.read(4096):
     parser.feed(chunk)
     for msg in parser:
         if isinstance(msg, Gga):
-            print(f"fix: {msg.latitude_deg}, {msg.longitude_deg}")
+            print(f"fix: {msg.latitude_deg.value}, {msg.longitude_deg.value}")
         elif isinstance(msg, Vtg):
-            print(f"speed: {msg.speed_knots} kn")
+            print(f"speed: {msg.speed_knots.value} kn")
         elif isinstance(msg, Hdt):
-            print(f"heading: {msg.heading_true_deg}°")
+            print(f"heading: {msg.heading_true_deg.value}°")
 ```
 
 `Nmea0183Parser` decodes GGA, GLL, HDG, HDT, RMC, TLL, TTM, VTG, PSXN,
 and PRDID into typed classes. Anything it doesn't recognize, AIVDM included, surfaces
 as `Unknown`. Match `Unknown` to forward those sentences elsewhere, or
 skip it if you only care about typed messages.
+
+Every decoded field of a message is a `marlin.field.FieldState`.
+`.value` is `None` unless the field holds a value. To tell not
+available (the sender left the field empty) from invalid (the decoder
+could not read it), `match` on the variant class:
+
+```python
+from marlin.field import FieldState
+
+match msg.latitude_deg:
+    case FieldState.Value(lat):
+        print(f"lat {lat}")
+    case FieldState.NotAvailable():
+        print("no position")
+    case FieldState.Invalid(code):
+        print(f"unreadable latitude ({code})")
+    case _:
+        pass
+```
+
+A field state is always truthy, `FieldState.NotAvailable()` included:
+`if msg.latitude_deg:` never branches. Test `.value`, or the state.
+A bad field never raises; `DecodeError` means only that the sentence
+has fewer fields than its decoder's floor.
 
 For a specific PSXN or PRDID hardware dialect, pass `DecodeOptions`:
 
@@ -126,9 +150,34 @@ while chunk := source.read(4096):
     for msg in parser:
         body = msg.body
         if isinstance(body, PositionReportA):
-            print(f"MMSI {body.mmsi}: {body.latitude_deg}, {body.longitude_deg}")
+            print(f"MMSI {body.mmsi}: {body.latitude_deg.value}, {body.longitude_deg.value}")
         elif isinstance(body, StaticAndVoyageA):
-            print(f"MMSI {body.mmsi}: {body.vessel_name}")
+            print(f"MMSI {body.mmsi}: {body.vessel_name.value}")
+```
+
+AIS adds the over-range state: a speed of 102.2 kn or more is
+`FieldState.AtLeast(102.2)`, and `.value` is `None` for it. `match` to
+keep the bound, and read a status-carrying field through its own
+variant classes:
+
+```python
+from marlin.ais import RateOfTurn
+
+match body.speed_over_ground:
+    case FieldState.Value(sog):
+        print(f"{sog} kn")
+    case FieldState.AtLeast(bound):
+        print(f"{bound} kn or more")
+    case _:
+        pass
+
+match body.rate_of_turn:
+    case FieldState.Value(RateOfTurn.DegPerMin(rate)):
+        print(f"{rate} deg/min")
+    case FieldState.Value(RateOfTurn.NoIndicator(direction)):
+        print(f"turning {direction}, no indicator")
+    case _:
+        pass
 ```
 
 `AisParser` filters non-AIS sentences out, so you only see decoded AIS
@@ -188,17 +237,37 @@ and `encode` work on one complete datagram at a time:
 ```python
 from marlin.klv import St0601, decode, encode
 
+from marlin.field import FieldState
+
 s = St0601(timestamp_us=1_700_000_000_000_000)
-s.sensor_latitude_degrees = 60.1768      # engineering-unit property
+s.sensor_latitude_degrees = 60.1768      # a bare number is FieldState.Value
 s.platform_heading_degrees = 159.97
+s.platform_pitch_degrees = None          # None is FieldState.NotAvailable()
 wire = encode(s)                          # bytes
 got = decode(wire)
-print(got.sensor_latitude_degrees, got.timestamp_us)
+print(got.sensor_latitude_degrees.value, got.timestamp_us)
+
+match got.platform_roll_degrees:
+    case FieldState.Value(roll):
+        print(f"roll {roll}°")
+    case FieldState.NotAvailable():
+        print("roll omitted")
+    case FieldState.SenderError(code):
+        print(f"roll sender error, raw code {code}")
+    case FieldState.Invalid(None):
+        print("roll tag had the wrong length; its bytes are in got.unknown")
+    case _:
+        pass
 ```
 
-`St0601` fields are properties: set them with plain assignment
-(`s.sensor_latitude_degrees = ...`), never a `set_*` method call — none
-exist. `decode` raises `KlvError` on a malformed local set.
+`St0601` fields are properties in engineering units: set them with plain
+assignment (`s.sensor_latitude_degrees = ...`), never a `set_*` method
+call — none exist. A setter takes a number, `None` or a `FieldState`.
+`decode` raises `KlvError` for a structural reason only (framing, the
+checksum, the mandatory Tag 2 timestamp); a field's value never fails
+the set. `encode` raises `KlvEncodeError` for a value outside its tag's
+range or NaN (nothing is pulled into range) and for a state the wire
+cannot carry, such as `FieldState.AtLeast`.
 
 ---
 
@@ -257,6 +326,11 @@ Coverage:
   `ExtendedPositionReportB`, `AidToNavigationReport`, `StaticDataB24A`,
   `StaticDataB24B`, `Other`
 - AIS wrapper: `AisMessage`
+- field states: `Value`, `AtLeast`, `NotAvailable`, `SenderError` and
+  `Invalid`, generic frozen dataclasses with a `kind` literal, nested in
+  every message mirror on the same attributes; the AIS sum types
+  `RateOfTurn`, `Timestamp` and `Type24BExtent` as variant mirrors under
+  a namespace class of the type's name
 
 A few mirrors carry `bytes` fields: `RawSentence.fields`, `Psxn.token`,
 `PrdidRaw.fields`, `Other.raw_payload`. `json.dumps` rejects raw bytes,
@@ -267,8 +341,28 @@ def _default(value):
     return value.hex() if isinstance(value, bytes) else str(value)
 ```
 
-Enum-typed fields (`fix_quality`, `navigation_status`, `epfd`, etc.)
-are stored as their wire integer, which JSON encodes without help.
+A field state serializes as a dict with its `kind` and payload:
+`{"speed_knots": {"kind": "value", "value": 22.4}}`,
+`{"speed_over_ground": {"kind": "at_least", "bound": 102.2}}`,
+`{"hdop": {"kind": "not_available"}}`. An enum payload (`fix_quality`,
+`navigation_status`, `epfd`, etc.) is stored as its wire integer, which
+JSON encodes without help. The dict form is the one to `match` on
+after a round trip through JSON:
+
+```python
+for name, state in payload.items():
+    match state:
+        case {"kind": "value", "value": value}:
+            print(f"{name} = {value}")
+        case {"kind": "at_least", "bound": bound}:
+            print(f"{name} >= {bound}")
+        case {"kind": "not_available"}:
+            pass
+        case {"kind": "sender_error" | "invalid", "code": code}:
+            print(f"{name} unusable ({code})")
+        case _:
+            pass  # a plain attribute such as `talker` or `mmsi`
+```
 
 The mirrors plug into `msgspec`, `pydantic` adapters, structured
 loggers, or anything else that reads plain Python dataclasses.
