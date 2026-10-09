@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use marlin_field::{FieldState, Invalid, Kind, RawCode};
 
 use crate::ber::push_item;
-use crate::error::EncodeError;
+use crate::error::KlvEncodeError;
 use crate::st0601::St0601;
 
 /// Metadata for one ST 0601 tag this crate decodes into a typed field: its wire
@@ -63,14 +63,17 @@ macro_rules! scaled_tags {
         /// Append every scaled tag the set can carry on the wire to `items`, in table
         /// (ascending tag) order: a value as its range-checked count, a sender error
         /// as the tag's own sentinel; a not-available or unparsable field emits
-        /// nothing. Any other state is an [`EncodeError`].
-        pub(crate) fn encode_scaled(set: &St0601, items: &mut Vec<u8>) -> Result<(), EncodeError> {
+        /// nothing. Any other state is a [`KlvEncodeError`].
+        pub(crate) fn encode_scaled(
+            set: &St0601,
+            items: &mut Vec<u8>,
+        ) -> Result<(), KlvEncodeError> {
             $(
                 let sentinel: Option<$wire> = $sentinel;
                 match set.$field {
                     FieldState::Value(v) => {
                         if !crate::scale::in_range(v, $lo, $hi) {
-                            return Err(EncodeError::OutOfRange { tag: $tag });
+                            return Err(KlvEncodeError::OutOfRange { tag: $tag });
                         }
                         let raw: $wire = ($encode)(v);
                         push_item($tag, &raw.to_be_bytes(), items);
@@ -81,14 +84,14 @@ macro_rules! scaled_tags {
                             push_item($tag, &own.to_be_bytes(), items);
                         }
                         _ => {
-                            return Err(EncodeError::Unencodable {
+                            return Err(KlvEncodeError::Unencodable {
                                 tag: $tag,
                                 kind: Kind::SenderError(RawCode(code)),
                             });
                         }
                     },
                     other @ (FieldState::AtLeast(_) | FieldState::Invalid(Invalid::Undefined(_))) => {
-                        return Err(EncodeError::Unencodable { tag: $tag, kind: other.kind() });
+                        return Err(KlvEncodeError::Unencodable { tag: $tag, kind: other.kind() });
                     }
                 }
             )+
@@ -461,7 +464,7 @@ mod encode_tests {
 
     use marlin_field::{FieldState, Invalid, Kind, RawCode};
 
-    use crate::error::EncodeError;
+    use crate::error::KlvEncodeError;
     use crate::st0601::{decode, encode, St0601};
 
     fn round_trip(set: &St0601) -> St0601 {
@@ -470,7 +473,7 @@ mod encode_tests {
         decode(&buf).expect("decode own output")
     }
 
-    fn encode_err(set: &St0601) -> EncodeError {
+    fn encode_err(set: &St0601) -> KlvEncodeError {
         let mut buf = Vec::new();
         encode(set, &mut buf).expect_err("encode must fail")
     }
@@ -529,7 +532,11 @@ mod encode_tests {
         for v in [-0.001, 360.001, f64::NAN] {
             let mut set = St0601::new(1);
             set.platform_heading_degrees = FieldState::Value(v);
-            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 5 }, "{v}");
+            assert_eq!(
+                encode_err(&set),
+                KlvEncodeError::OutOfRange { tag: 5 },
+                "{v}"
+            );
         }
     }
 
@@ -538,7 +545,11 @@ mod encode_tests {
         for v in [-50.001, 50.001, f64::NAN] {
             let mut set = St0601::new(1);
             set.platform_roll_degrees = FieldState::Value(v);
-            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 7 }, "{v}");
+            assert_eq!(
+                encode_err(&set),
+                KlvEncodeError::OutOfRange { tag: 7 },
+                "{v}"
+            );
         }
     }
 
@@ -547,7 +558,11 @@ mod encode_tests {
         for v in [-1.0, 255.5, f64::NAN] {
             let mut set = St0601::new(1);
             set.platform_true_airspeed_mps = FieldState::Value(v);
-            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 8 }, "{v}");
+            assert_eq!(
+                encode_err(&set),
+                KlvEncodeError::OutOfRange { tag: 8 },
+                "{v}"
+            );
         }
     }
 
@@ -556,7 +571,11 @@ mod encode_tests {
         for v in [-90.0001, 90.0001, f64::NAN] {
             let mut set = St0601::new(1);
             set.sensor_latitude_degrees = FieldState::Value(v);
-            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 13 }, "{v}");
+            assert_eq!(
+                encode_err(&set),
+                KlvEncodeError::OutOfRange { tag: 13 },
+                "{v}"
+            );
         }
     }
 
@@ -565,7 +584,11 @@ mod encode_tests {
         for v in [-0.001, 5_000_000.001, f64::NAN] {
             let mut set = St0601::new(1);
             set.slant_range_meters = FieldState::Value(v);
-            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 21 }, "{v}");
+            assert_eq!(
+                encode_err(&set),
+                KlvEncodeError::OutOfRange { tag: 21 },
+                "{v}"
+            );
         }
     }
 
@@ -574,7 +597,11 @@ mod encode_tests {
         for v in [-900.001, 19000.001, f64::NAN] {
             let mut set = St0601::new(1);
             set.target_location_elevation_meters = FieldState::Value(v);
-            assert_eq!(encode_err(&set), EncodeError::OutOfRange { tag: 42 }, "{v}");
+            assert_eq!(
+                encode_err(&set),
+                KlvEncodeError::OutOfRange { tag: 42 },
+                "{v}"
+            );
         }
     }
 
@@ -584,7 +611,7 @@ mod encode_tests {
         set.sensor_latitude_degrees = FieldState::AtLeast(90.0);
         assert_eq!(
             encode_err(&set),
-            EncodeError::Unencodable {
+            KlvEncodeError::Unencodable {
                 tag: 13,
                 kind: Kind::AtLeast
             }
@@ -597,7 +624,7 @@ mod encode_tests {
         set.sensor_latitude_degrees = FieldState::Invalid(Invalid::Undefined(RawCode(7)));
         assert_eq!(
             encode_err(&set),
-            EncodeError::Unencodable {
+            KlvEncodeError::Unencodable {
                 tag: 13,
                 kind: Kind::Invalid(Invalid::Undefined(RawCode(7)))
             }
@@ -611,7 +638,7 @@ mod encode_tests {
         set.sensor_latitude_degrees = FieldState::SenderError(RawCode(i16::MIN.into()));
         assert_eq!(
             encode_err(&set),
-            EncodeError::Unencodable {
+            KlvEncodeError::Unencodable {
                 tag: 13,
                 kind: Kind::SenderError(RawCode(-32768))
             }
@@ -624,7 +651,7 @@ mod encode_tests {
         set.platform_heading_degrees = FieldState::SenderError(RawCode(0x8000));
         assert_eq!(
             encode_err(&set),
-            EncodeError::Unencodable {
+            KlvEncodeError::Unencodable {
                 tag: 5,
                 kind: Kind::SenderError(RawCode(0x8000))
             }

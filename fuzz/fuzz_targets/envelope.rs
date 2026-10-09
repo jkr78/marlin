@@ -2,7 +2,7 @@
 //!
 //! Feeds arbitrary bytes into [`Streaming`] and drains every available
 //! sentence. The contract being fuzzed: **no panic, ever**, regardless of
-//! input. Malformed bytes must surface as [`Error`] variants.
+//! input. Malformed bytes must surface as [`EnvelopeError`] variants.
 //!
 //! Run:
 //! ```sh

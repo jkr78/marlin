@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- `Error` is renamed `EnvelopeError`. Every public error type in the
+  workspace now carries its crate's prefix (ADR-0010); the variants are
+  unchanged, and `marlin_ais::AisError::Envelope` and
+  `marlin_nmea_0183::Nmea0183Error::Envelope` wrap the new name.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added

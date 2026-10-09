@@ -13,7 +13,7 @@ use marlin_nmea_envelope::RawSentence;
 use crate::sentences::status::TargetStatus;
 use crate::sentences::utc_time::UtcTime;
 use crate::util::{code, number, optional, reference_target, text};
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 /// Bearing/course reference, shared by TTM fields 3 and 6. An unnamed
 /// byte decodes to the invalid field state with the byte as its raw
@@ -138,12 +138,12 @@ const TTM_MIN_FIELDS: usize = 12;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if fewer than 12 fields.
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if fewer than 12 fields.
 #[allow(clippy::indexing_slicing)] // indices 0..12 validated; 12..15 via get
-pub fn decode_ttm(raw: &RawSentence<'_>) -> Result<TtmData, DecodeError> {
+pub fn decode_ttm(raw: &RawSentence<'_>) -> Result<TtmData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < TTM_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: TTM_MIN_FIELDS,
             got: f.len(),
         });
@@ -375,7 +375,7 @@ mod tests {
         let bytes = build(b"RATTM,1,1.0,2.0,T,3.0,4.0,T,5.0,6.0,N,name");
         let raw = parse_raw(&bytes);
         match decode_ttm(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 12,
                 got: 11,
             }) => {}

@@ -6,7 +6,7 @@
 //!
 //! Contract: **no panic on any input**, and a decode fails only for a
 //! structural reason. A field's value never fails the sentence, so the
-//! only `DecodeError` the typed layer may return is `NotEnoughFields`.
+//! only `Nmea0183DecodeError` the typed layer may return is `NotEnoughFields`.
 //!
 //! Run:
 //! ```sh
@@ -16,14 +16,14 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use marlin_nmea_0183::DecodeError;
+use marlin_nmea_0183::Nmea0183DecodeError;
 
 fuzz_target!(|data: &[u8]| {
     let Ok(raw) = marlin_nmea_envelope::parse(data) else {
         return;
     };
     match marlin_nmea_0183::decode(&raw) {
-        Ok(_) | Err(DecodeError::NotEnoughFields { .. }) => {}
+        Ok(_) | Err(Nmea0183DecodeError::NotEnoughFields { .. }) => {}
         Err(other) => panic!("decode failed for a non-structural reason: {other:?}"),
     }
 });

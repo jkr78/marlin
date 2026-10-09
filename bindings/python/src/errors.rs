@@ -10,10 +10,10 @@ use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 
 use marlin_ais::AisError as RustAisError;
-use marlin_klv::EncodeError as RustKlvEncodeError;
-use marlin_klv::Error as RustKlvError;
-use marlin_nmea_0183::DecodeError as RustDecodeError;
-use marlin_nmea_envelope::Error as RustEnvelopeError;
+use marlin_klv::KlvDecodeError as RustKlvDecodeError;
+use marlin_klv::KlvEncodeError as RustKlvEncodeError;
+use marlin_nmea_0183::Nmea0183DecodeError as RustNmea0183DecodeError;
+use marlin_nmea_envelope::EnvelopeError as RustEnvelopeError;
 
 create_exception!(_core, MarlinError, PyException);
 create_exception!(_core, EnvelopeError, MarlinError);
@@ -50,8 +50,8 @@ pub(crate) fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> 
     Ok(())
 }
 
-/// Convert a marlin-nmea-envelope `Error` into an `EnvelopeError`
-/// with a `variant` attribute set to a stable snake-case tag.
+/// Convert a marlin-nmea-envelope `EnvelopeError` into the Python
+/// `EnvelopeError` with a `variant` attribute set to a stable snake-case tag.
 pub(crate) fn envelope_err(py: Python<'_>, err: RustEnvelopeError) -> PyErr {
     let (variant, msg) = envelope_variant(&err);
     let pyerr = EnvelopeError::new_err(msg);
@@ -82,8 +82,8 @@ fn envelope_variant(err: &RustEnvelopeError) -> (&'static str, String) {
     }
 }
 
-/// Convert a marlin-nmea-0183 `DecodeError` into a `DecodeError` (Py).
-pub(crate) fn decode_err(err: RustDecodeError) -> PyErr {
+/// Convert a marlin-nmea-0183 `Nmea0183DecodeError` into a `DecodeError` (Py).
+pub(crate) fn decode_err(err: RustNmea0183DecodeError) -> PyErr {
     DecodeError::new_err(err.to_string())
 }
 
@@ -106,16 +106,16 @@ pub(crate) fn ais_err(py: Python<'_>, err: RustAisError) -> PyErr {
     }
 }
 
-/// Convert a marlin-klv `Error` into a `KlvError` with a `variant`
+/// Convert a marlin-klv `KlvDecodeError` into a `KlvError` with a `variant`
 /// attribute set to a stable snake-case tag.
-pub(crate) fn klv_err(py: Python<'_>, err: RustKlvError) -> PyErr {
+pub(crate) fn klv_err(py: Python<'_>, err: RustKlvDecodeError) -> PyErr {
     let variant = match err {
-        RustKlvError::Truncated { .. } => "truncated",
-        RustKlvError::LengthOverflow => "length_overflow",
-        RustKlvError::BadChecksum { .. } => "bad_checksum",
-        RustKlvError::MissingChecksum => "missing_checksum",
-        RustKlvError::BadTimestamp => "bad_timestamp",
-        RustKlvError::BadKey => "bad_key",
+        RustKlvDecodeError::Truncated { .. } => "truncated",
+        RustKlvDecodeError::LengthOverflow => "length_overflow",
+        RustKlvDecodeError::BadChecksum { .. } => "bad_checksum",
+        RustKlvDecodeError::MissingChecksum => "missing_checksum",
+        RustKlvDecodeError::BadTimestamp => "bad_timestamp",
+        RustKlvDecodeError::BadKey => "bad_key",
         _ => "other",
     };
     let pyerr = KlvError::new_err(err.to_string());
@@ -124,14 +124,14 @@ pub(crate) fn klv_err(py: Python<'_>, err: RustKlvError) -> PyErr {
     pyerr
 }
 
-/// Convert a marlin-klv `EncodeError` into a `KlvEncodeError` with
+/// Convert a marlin-klv `KlvEncodeError` into the Python `KlvEncodeError` with
 /// `variant`, `tag` and `kind` attributes. The enum is `#[non_exhaustive]`;
 /// a variant these bindings do not know is a binding bug, never an "other".
 pub(crate) fn klv_encode_err(py: Python<'_>, err: RustKlvEncodeError) -> PyErr {
     let (variant, tag, kind) = match err {
         RustKlvEncodeError::Unencodable { tag, kind } => ("unencodable", tag, Some(kind.name())),
         RustKlvEncodeError::OutOfRange { tag } => ("out_of_range", tag, None),
-        _ => return crate::field::unsupported_variant("EncodeError", &err),
+        _ => return crate::field::unsupported_variant("KlvEncodeError", &err),
     };
     let pyerr = KlvEncodeError::new_err(err.to_string());
     // Same setattr-infallibility rationale as envelope_err above.

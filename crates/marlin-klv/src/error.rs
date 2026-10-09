@@ -12,7 +12,7 @@ use marlin_field::Kind;
 /// always surfaces as one of these.
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Error {
+pub enum KlvDecodeError {
     /// The input ended before a length claim (the outer BER length, an
     /// item's BER length, or the 16-byte key) could be satisfied.
     #[error("input truncated: needed {needed} bytes at offset {offset}, had {available}")]
@@ -57,7 +57,7 @@ pub enum Error {
 /// these. On `Err` the output buffer is untouched.
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum EncodeError {
+pub enum KlvEncodeError {
     /// The field is in a state the tag cannot carry on the wire: over-range
     /// (`AtLeast`), an undefined raw code (`Invalid::Undefined`), or a sender
     /// error whose raw code is not the tag's own sentinel, including

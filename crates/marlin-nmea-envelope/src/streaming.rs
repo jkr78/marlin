@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{parser, Error, RawSentence, SentenceSource};
+use crate::{parser, EnvelopeError, RawSentence, SentenceSource};
 
 /// Default maximum buffer size (64 KiB).
 pub const DEFAULT_MAX_BUFFER_SIZE: usize = 64 * 1024;
@@ -30,8 +30,8 @@ const INITIAL_CAPACITY_HINT: usize = 4096;
 ///
 /// If a [`feed`](SentenceSource::feed) call would push the buffer past
 /// the configured maximum size, the oldest bytes are discarded to make
-/// room for the new bytes and an [`Error::BufferOverflow`] is queued for
-/// the next [`next_sentence`](SentenceSource::next_sentence) call.
+/// room for the new bytes and an [`EnvelopeError::BufferOverflow`] is queued
+/// for the next [`next_sentence`](SentenceSource::next_sentence) call.
 /// Parsing then continues normally.
 ///
 /// The shared nom parser core is reused from the same implementation
@@ -48,8 +48,8 @@ pub struct Streaming {
     cursor: usize,
     max_size: usize,
     /// Set when a feed call dropped bytes to stay under `max_size`. The
-    /// next `next_sentence` consumes it and yields [`Error::BufferOverflow`]
-    /// before resuming normal scanning.
+    /// next `next_sentence` consumes it and yields
+    /// [`EnvelopeError::BufferOverflow`] before resuming normal scanning.
     pending_overflow: bool,
 }
 
@@ -65,7 +65,7 @@ impl Streaming {
     /// The initial allocation is smaller than `max_size`; the buffer grows
     /// on demand and will not exceed `max_size`. If a feed would push the
     /// buffer over `max_size`, the oldest bytes are dropped and an
-    /// [`Error::BufferOverflow`] is emitted on the next
+    /// [`EnvelopeError::BufferOverflow`] is emitted on the next
     /// [`next_sentence`](SentenceSource::next_sentence).
     #[must_use]
     pub fn with_capacity(max_size: usize) -> Self {
@@ -136,10 +136,10 @@ impl SentenceSource for Streaming {
         );
     }
 
-    fn next_sentence(&mut self) -> Option<Result<Self::Item<'_>, Error>> {
+    fn next_sentence(&mut self) -> Option<Result<Self::Item<'_>, EnvelopeError>> {
         if self.pending_overflow {
             self.pending_overflow = false;
-            return Some(Err(Error::BufferOverflow));
+            return Some(Err(EnvelopeError::BufferOverflow));
         }
 
         // Loop to absorb orphaned TAG blocks (TAG prefix not followed by
@@ -520,7 +520,7 @@ mod tests {
         parser.feed(&combined);
 
         match parser.next_sentence().unwrap() {
-            Err(Error::ChecksumMismatch { .. }) => {}
+            Err(EnvelopeError::ChecksumMismatch { .. }) => {}
             other => panic!("expected ChecksumMismatch, got {other:?}"),
         }
         let s = parser.next_sentence().unwrap().unwrap();
@@ -546,7 +546,7 @@ mod tests {
 
         // First call: the queued overflow error.
         match parser.next_sentence().unwrap() {
-            Err(Error::BufferOverflow) => {}
+            Err(EnvelopeError::BufferOverflow) => {}
             other => panic!("expected BufferOverflow, got {other:?}"),
         }
 
@@ -575,7 +575,7 @@ mod tests {
 
         // First the overflow signal.
         match parser.next_sentence().unwrap() {
-            Err(Error::BufferOverflow) => {}
+            Err(EnvelopeError::BufferOverflow) => {}
             other => panic!("expected BufferOverflow, got {other:?}"),
         }
         // Then the sentence the tail contained.
@@ -732,7 +732,7 @@ mod tests {
         let mut parser = Streaming::new();
         parser.feed(&bytes);
         match parser.next_sentence().unwrap() {
-            Err(Error::MalformedTagBlock) => {}
+            Err(EnvelopeError::MalformedTagBlock) => {}
             other => panic!("expected MalformedTagBlock, got {other:?}"),
         }
     }
@@ -750,7 +750,7 @@ mod tests {
         let mut parser = Streaming::new();
         parser.feed(&bytes);
         match parser.next_sentence().unwrap() {
-            Err(Error::MalformedTagBlock) => {}
+            Err(EnvelopeError::MalformedTagBlock) => {}
             other => panic!("expected MalformedTagBlock, got {other:?}"),
         }
     }

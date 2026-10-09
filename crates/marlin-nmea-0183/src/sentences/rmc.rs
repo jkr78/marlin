@@ -18,7 +18,7 @@ use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::{code, latitude, longitude, number, optional, signed_ew};
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 use super::{DataStatus, UtcDate, UtcTime, VtgMode};
 
@@ -122,13 +122,13 @@ const RMC_MIN_FIELDS: usize = 11;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 11
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if the payload has fewer than 11
 ///   fields.
 #[allow(clippy::indexing_slicing)] // field count validated above
-pub fn decode_rmc(raw: &RawSentence<'_>) -> Result<RmcData, DecodeError> {
+pub fn decode_rmc(raw: &RawSentence<'_>) -> Result<RmcData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < RMC_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: RMC_MIN_FIELDS,
             got: f.len(),
         });
@@ -396,7 +396,7 @@ mod tests {
         let bytes = build(b"GPRMC,123519,A,4807.038");
         let raw = parse_raw(&bytes);
         match decode_rmc(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 11,
                 got: 3,
             }) => {}

@@ -6,7 +6,7 @@
 
 use marlin_nmea_envelope::{RawSentence, SentenceSource};
 
-use crate::{decode_with, DecodeError, DecodeOptions, Nmea0183Message};
+use crate::{decode_with, DecodeOptions, Nmea0183DecodeError, Nmea0183Message};
 
 // ---------------------------------------------------------------------------
 // Unified error type
@@ -31,10 +31,10 @@ use crate::{decode_with, DecodeError, DecodeOptions, Nmea0183Message};
 pub enum Nmea0183Error {
     /// Envelope-level failure (framing, checksum, TAG block, ...).
     #[error("envelope error: {0}")]
-    Envelope(#[from] marlin_nmea_envelope::Error),
+    Envelope(#[from] marlin_nmea_envelope::EnvelopeError),
     /// Typed-decode failure: fewer fields than the sentence's floor.
     #[error("decode error: {0}")]
-    Decode(#[from] DecodeError),
+    Decode(#[from] Nmea0183DecodeError),
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +331,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                Nmea0183Error::Decode(DecodeError::NotEnoughFields {
+                Nmea0183Error::Decode(Nmea0183DecodeError::NotEnoughFields {
                     expected: 14,
                     got: 3
                 })

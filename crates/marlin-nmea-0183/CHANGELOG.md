@@ -72,10 +72,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     not give the field a meaning.
   - `UtcTime` and `UtcDate` are parsed through their new `FromStr`
     impls (see Added).
-- `DecodeError` keeps `NotEnoughFields` only. `InvalidNumber`,
+- `Nmea0183DecodeError` keeps `NotEnoughFields` only. `InvalidNumber`,
   `OutOfRange`, `InvalidHemisphere`, `InvalidUtf8` and `InvalidUtcTime`
   are removed; each is now the invalid field state. `decode` on a known
   sentence type with enough fields never returns `Err`.
+- `DecodeError` is renamed `Nmea0183DecodeError` and `PsxnLayoutParseError`
+  is renamed `ParsePsxnLayoutError`. Every public error type in the
+  workspace now carries its crate's prefix, with an operation word where a
+  crate has more than one, and a value type's `FromStr` error follows the
+  standard library's verb-object order, as `ParseUtcTimeError` and
+  `ParseUtcDateError` already did (ADR-0010). The variants are unchanged
+  and `Nmea0183Error` keeps its name.
 
 ## [0.2.0] - 2026-10-08
 

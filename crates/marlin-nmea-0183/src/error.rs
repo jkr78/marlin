@@ -15,7 +15,7 @@
 /// without a breaking change. Consumers must include a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
-pub enum DecodeError {
+pub enum Nmea0183DecodeError {
     /// The sentence had fewer fields than the decoder requires.
     #[error("expected at least {expected} fields, got {got}")]
     NotEnoughFields {

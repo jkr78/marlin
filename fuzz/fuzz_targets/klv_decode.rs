@@ -4,9 +4,9 @@
 //! `marlin_klv::precision_timestamp`.
 //!
 //! Contract: **no panic on any input.** Malformed bytes surface as
-//! `marlin_klv::Error::*` — all acceptable. And for every set that decodes,
-//! `decode(&encode(&set)) == set`: every state `decode` produces re-encodes,
-//! and re-decodes to the same set.
+//! `marlin_klv::KlvDecodeError::*` — all acceptable. And for every set that
+//! decodes, `decode(&encode(&set)) == set`: every state `decode` produces
+//! re-encodes, and re-decodes to the same set.
 //!
 //! Run:
 //! ```sh

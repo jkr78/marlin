@@ -4,7 +4,7 @@ use marlin_field::{FieldState, Invalid, RawCode};
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::{latitude, longitude, number};
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 use super::UtcTime;
 
@@ -125,13 +125,13 @@ const GGA_MIN_FIELDS: usize = 14;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 14
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if the payload has fewer than 14
 ///   fields.
 #[allow(clippy::indexing_slicing)] // field count validated above
-pub fn decode_gga(raw: &RawSentence<'_>) -> Result<GgaData, DecodeError> {
+pub fn decode_gga(raw: &RawSentence<'_>) -> Result<GgaData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < GGA_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: GGA_MIN_FIELDS,
             got: f.len(),
         });
@@ -437,7 +437,7 @@ mod tests {
         let bytes = build(b"GPGGA,1,2,3");
         let raw = parse_raw(&bytes);
         match decode_gga(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 14,
                 got: 3,
             }) => {}

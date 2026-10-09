@@ -8,7 +8,7 @@ use marlin_field::FieldState;
 use marlin_nmea_envelope::RawSentence;
 
 use crate::util::{code, latitude, longitude, number, optional};
-use crate::DecodeError;
+use crate::Nmea0183DecodeError;
 
 use super::{DataStatus, UtcTime, VtgMode};
 
@@ -60,13 +60,13 @@ const GLL_MIN_FIELDS: usize = 6;
 ///
 /// # Errors
 ///
-/// - [`DecodeError::NotEnoughFields`] if the payload has fewer than 6
+/// - [`Nmea0183DecodeError::NotEnoughFields`] if the payload has fewer than 6
 ///   fields.
 #[allow(clippy::indexing_slicing)] // field count validated above
-pub fn decode_gll(raw: &RawSentence<'_>) -> Result<GllData, DecodeError> {
+pub fn decode_gll(raw: &RawSentence<'_>) -> Result<GllData, Nmea0183DecodeError> {
     let f = raw.fields.as_slice();
     if f.len() < GLL_MIN_FIELDS {
-        return Err(DecodeError::NotEnoughFields {
+        return Err(Nmea0183DecodeError::NotEnoughFields {
             expected: GLL_MIN_FIELDS,
             got: f.len(),
         });
@@ -243,7 +243,7 @@ mod tests {
         let bytes = build(b"GPGLL,4916.45,N");
         let raw = parse_raw(&bytes);
         match decode_gll(&raw) {
-            Err(DecodeError::NotEnoughFields {
+            Err(Nmea0183DecodeError::NotEnoughFields {
                 expected: 6,
                 got: 2,
             }) => {}

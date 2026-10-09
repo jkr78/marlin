@@ -12,13 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `St0601::new(timestamp_us)`: a set carrying only the mandatory Tag 2
   timestamp, every optional field `NotAvailable` and `unknown` empty.
   `decode` builds through it.
-- `EncodeError` (`#[non_exhaustive]`): `Unencodable { tag, kind }` for a
+- `KlvEncodeError` (`#[non_exhaustive]`): `Unencodable { tag, kind }` for a
   field state the tag cannot carry on the wire and `OutOfRange { tag }` for
   a value outside the tag's engineering range or NaN.
 - Re-exports of `marlin_field::{FieldState, Invalid, Kind, RawCode}` at
   the crate root; the crate depends on `marlin-field` from 0.3.0.
-- `Error::MissingChecksum` and `Error::BadTimestamp`, the two structural
-  failures a set can have besides framing and a checksum mismatch.
+- `KlvDecodeError::MissingChecksum` and `KlvDecodeError::BadTimestamp`,
+  the two structural failures a set can have besides framing and a
+  checksum mismatch.
 
 ### Changed (BREAKING)
 
@@ -51,9 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   absent (used to be `BadChecksum { computed: 0, embedded: 0 }`) or not 2
   bytes (used to be `Truncated`). `precision_timestamp` reports a
   wrong-length Tag 2 as `BadTimestamp` too. `Truncated` now means only
-  that the input ends early. The `Error` docs state the rule: a decode
-  fails for a structural reason only; a field's value never fails the set.
-- `encode` and `encode_to_bytes` return `Result<_, EncodeError>`. Per
+  that the input ends early. The `KlvDecodeError` docs state the
+  rule: a decode fails for a structural reason only; a field's value never
+  fails the set.
+- `encode` and `encode_to_bytes` return `Result<_, KlvEncodeError>`. Per
   field state: a value emits its range-checked count, `NotAvailable`
   omits the tag, `SenderError` emits the tag's own sentinel,
   `Invalid(Unparsable)` emits nothing for the typed tag (its bytes ride in
@@ -63,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Clamp-on-encode and NaN-to-minimum are gone: a value outside the tag's
   range (inclusive at both ends, checked before rounding) or NaN is
   `OutOfRange`, where it used to be clamped (NaN to the range minimum).
+- `Error` is renamed `KlvDecodeError`. Every public error type in the
+  workspace now carries its crate's prefix, with an operation word where a
+  crate has more than one (ADR-0010); the variants are unchanged.
 
 ## [0.2.0] - 2026-10-08
 

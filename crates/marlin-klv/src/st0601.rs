@@ -6,7 +6,7 @@ use crate::ber::{
     ber_decode_len, ber_encode_len, push_item, read_bytes, read_u16, read_u64, read_u8,
 };
 use crate::checksum::bcc;
-use crate::error::{EncodeError, Error};
+use crate::error::{KlvDecodeError, KlvEncodeError};
 
 /// MISB ST 0601 UAS Datalink Local Set 16-byte universal label (SMPTE UL key).
 pub const UAS_LS_KEY: [u8; 16] = [
@@ -130,8 +130,8 @@ impl St0601 {
 /// A value emits its range-checked count, a sender error the tag's own error
 /// indicator; a not-available or unparsable field emits nothing (the bytes of an
 /// unparsable field ride in `unknown`). Any other state, or a value outside the tag's
-/// range or NaN, is an [`EncodeError`], and `out` is untouched on `Err`.
-pub fn encode(set: &St0601, out: &mut Vec<u8>) -> Result<(), EncodeError> {
+/// range or NaN, is a [`KlvEncodeError`], and `out` is untouched on `Err`.
+pub fn encode(set: &St0601, out: &mut Vec<u8>) -> Result<(), KlvEncodeError> {
     let mut items: Vec<u8> = Vec::new();
     // Tag 2 Precision Time Stamp — mandatory, prepended first.
     push_item(2, &set.timestamp_us.to_be_bytes(), &mut items);
@@ -140,7 +140,7 @@ pub fn encode(set: &St0601, out: &mut Vec<u8>) -> Result<(), EncodeError> {
         FieldState::Value(version) => push_item(65, &[version], &mut items),
         FieldState::NotAvailable | FieldState::Invalid(Invalid::Unparsable) => {}
         other => {
-            return Err(EncodeError::Unencodable {
+            return Err(KlvEncodeError::Unencodable {
                 tag: 65,
                 kind: other.kind(),
             })
@@ -170,20 +170,21 @@ pub fn encode(set: &St0601, out: &mut Vec<u8>) -> Result<(), EncodeError> {
 /// Decode an ST 0601 local set: verify the UAS LS key, walk every TLV item into typed
 /// fields (unknown tags preserved in order), then verify the embedded Tag 1 checksum.
 ///
-/// Fails only for a structural reason: framing ([`Error::BadKey`], [`Error::Truncated`],
-/// [`Error::LengthOverflow`]), the checksum ([`Error::MissingChecksum`],
-/// [`Error::BadChecksum`]) or the mandatory Tag 2 timestamp absent or not 8 bytes
-/// ([`Error::BadTimestamp`]). A field's value never fails the set.
-pub fn decode(input: &[u8]) -> Result<St0601, Error> {
+/// Fails only for a structural reason: framing ([`KlvDecodeError::BadKey`],
+/// [`KlvDecodeError::Truncated`], [`KlvDecodeError::LengthOverflow`]), the checksum
+/// ([`KlvDecodeError::MissingChecksum`], [`KlvDecodeError::BadChecksum`]) or the
+/// mandatory Tag 2 timestamp absent or not 8 bytes ([`KlvDecodeError::BadTimestamp`]).
+/// A field's value never fails the set.
+pub fn decode(input: &[u8]) -> Result<St0601, KlvDecodeError> {
     let (mut offset, end) = frame(input)?;
     // The timestamp is settled after the checksum: a checksum failure outranks a
     // missing or malformed Tag 2. The 0 is a placeholder the loop never reads; the set
     // takes the decoded timestamp or is not returned.
-    let mut timestamp: Result<u64, Error> = Err(Error::BadTimestamp);
+    let mut timestamp: Result<u64, KlvDecodeError> = Err(KlvDecodeError::BadTimestamp);
     let mut set = St0601::new(0);
     let mut checksum: Option<(u16, usize)> = None;
     while offset < end {
-        let tag = *input.get(offset).ok_or(Error::Truncated {
+        let tag = *input.get(offset).ok_or(KlvDecodeError::Truncated {
             offset,
             needed: 1,
             available: 0,
@@ -191,8 +192,13 @@ pub fn decode(input: &[u8]) -> Result<St0601, Error> {
         let (len, value_start) = ber_decode_len(input, offset + 1)?;
         let value = read_bytes(input, value_start, len)?;
         match tag {
-            1 => checksum = Some((read_u16(value).ok_or(Error::MissingChecksum)?, value_start)),
-            2 => timestamp = read_u64(value).ok_or(Error::BadTimestamp),
+            1 => {
+                checksum = Some((
+                    read_u16(value).ok_or(KlvDecodeError::MissingChecksum)?,
+                    value_start,
+                ));
+            }
+            2 => timestamp = read_u64(value).ok_or(KlvDecodeError::BadTimestamp),
             65 => {
                 if let Some(v) = read_u8(value) {
                     set.version = FieldState::Value(v);
@@ -213,22 +219,23 @@ pub fn decode(input: &[u8]) -> Result<St0601, Error> {
     }
 
     // Tag 1 is mandatory and always last; verify it over everything up to its value bytes.
-    let (embedded, value_start) = checksum.ok_or(Error::MissingChecksum)?;
+    let (embedded, value_start) = checksum.ok_or(KlvDecodeError::MissingChecksum)?;
     let computed = bcc(input.get(..value_start).unwrap_or(&[]));
     if computed != embedded {
-        return Err(Error::BadChecksum { computed, embedded });
+        return Err(KlvDecodeError::BadChecksum { computed, embedded });
     }
     set.timestamp_us = timestamp?;
     Ok(set)
 }
 
 /// Cheap Tag 2 peek: skip the key + outer length, scan items for Tag 2, return its
-/// microsecond value. Returns `Ok(None)` when absent and [`Error::BadTimestamp`] when
-/// present but not 8 bytes. Does NOT verify the checksum.
-pub fn precision_timestamp(input: &[u8]) -> Result<Option<u64>, Error> {
+/// microsecond value. Returns `Ok(None)` when absent and
+/// [`KlvDecodeError::BadTimestamp`] when present but not 8 bytes. Does NOT verify
+/// the checksum.
+pub fn precision_timestamp(input: &[u8]) -> Result<Option<u64>, KlvDecodeError> {
     let (mut offset, end) = frame(input)?;
     while offset < end {
-        let tag = *input.get(offset).ok_or(Error::Truncated {
+        let tag = *input.get(offset).ok_or(KlvDecodeError::Truncated {
             offset,
             needed: 1,
             available: 0,
@@ -236,7 +243,7 @@ pub fn precision_timestamp(input: &[u8]) -> Result<Option<u64>, Error> {
         let (len, value_start) = ber_decode_len(input, offset + 1)?;
         let value = read_bytes(input, value_start, len)?;
         if tag == 2 {
-            return Ok(Some(read_u64(value).ok_or(Error::BadTimestamp)?));
+            return Ok(Some(read_u64(value).ok_or(KlvDecodeError::BadTimestamp)?));
         }
         offset = value_start + len;
     }
@@ -246,7 +253,7 @@ pub fn precision_timestamp(input: &[u8]) -> Result<Option<u64>, Error> {
 /// Encode a set into freshly allocated `bytes::Bytes` for callers that hand ownership
 /// downstream. Available under the `bytes` feature.
 #[cfg(feature = "bytes")]
-pub fn encode_to_bytes(set: &St0601) -> Result<bytes::Bytes, EncodeError> {
+pub fn encode_to_bytes(set: &St0601) -> Result<bytes::Bytes, KlvEncodeError> {
     let mut out = Vec::new();
     encode(set, &mut out)?;
     Ok(bytes::Bytes::from(out))
@@ -254,14 +261,16 @@ pub fn encode_to_bytes(set: &St0601) -> Result<bytes::Bytes, EncodeError> {
 
 /// Verify the UAS LS key and the outer BER length; return the `(first item offset,
 /// end of items)` pair.
-fn frame(input: &[u8]) -> Result<(usize, usize), Error> {
+fn frame(input: &[u8]) -> Result<(usize, usize), KlvDecodeError> {
     if read_bytes(input, 0, 16)? != UAS_LS_KEY.as_slice() {
-        return Err(Error::BadKey);
+        return Err(KlvDecodeError::BadKey);
     }
     let (value_len, offset) = ber_decode_len(input, 16)?;
-    let end = offset.checked_add(value_len).ok_or(Error::LengthOverflow)?;
+    let end = offset
+        .checked_add(value_len)
+        .ok_or(KlvDecodeError::LengthOverflow)?;
     if end > input.len() {
-        return Err(Error::Truncated {
+        return Err(KlvDecodeError::Truncated {
             offset,
             needed: value_len,
             available: input.len().saturating_sub(offset),
@@ -345,7 +354,7 @@ mod encode_tests {
         set.sensor_latitude_degrees = FieldState::Value(90.0001);
         let mut out = vec![0xDE, 0xAD];
         let err = encode(&set, &mut out).expect_err("latitude is out of range");
-        assert_eq!(err, EncodeError::OutOfRange { tag: 13 });
+        assert_eq!(err, KlvEncodeError::OutOfRange { tag: 13 });
         assert_eq!(out, vec![0xDE, 0xAD], "nothing written before the failure");
     }
 
@@ -356,7 +365,7 @@ mod encode_tests {
         let mut out = Vec::new();
         assert_eq!(
             encode(&set, &mut out),
-            Err(EncodeError::Unencodable {
+            Err(KlvEncodeError::Unencodable {
                 tag: 65,
                 kind: Kind::SenderError(RawCode(0))
             })
@@ -423,7 +432,10 @@ mod decode_tests {
             .version(1)
             .build_bad_checksum();
         let err = decode(&packet).expect_err("checksum no longer matches");
-        assert!(matches!(err, Error::BadChecksum { .. }), "got {err:?}");
+        assert!(
+            matches!(err, KlvDecodeError::BadChecksum { .. }),
+            "got {err:?}"
+        );
     }
 
     #[test]
@@ -432,7 +444,7 @@ mod decode_tests {
         let mut packet = UAS_LS_KEY.to_vec();
         packet.push(10);
         packet.extend_from_slice(&[0x02, 0x08, 0, 0, 0, 0, 0, 0, 0, 7]);
-        assert_eq!(decode(&packet), Err(Error::MissingChecksum));
+        assert_eq!(decode(&packet), Err(KlvDecodeError::MissingChecksum));
     }
 
     #[test]
@@ -441,34 +453,40 @@ mod decode_tests {
         packet.push(13);
         packet.extend_from_slice(&[0x02, 0x08, 0, 0, 0, 0, 0, 0, 0, 7]);
         packet.extend_from_slice(&[0x01, 0x01, 0x00]);
-        assert_eq!(decode(&packet), Err(Error::MissingChecksum));
+        assert_eq!(decode(&packet), Err(KlvDecodeError::MissingChecksum));
     }
 
     #[test]
     fn absent_timestamp_is_bad_timestamp() {
         let packet = KlvBuilder::new().version(9).build();
-        assert_eq!(decode(&packet), Err(Error::BadTimestamp));
+        assert_eq!(decode(&packet), Err(KlvDecodeError::BadTimestamp));
     }
 
     #[test]
     fn seven_byte_timestamp_is_bad_timestamp() {
         let packet = KlvBuilder::new().tag(2, &[0; 7]).build();
-        assert_eq!(decode(&packet), Err(Error::BadTimestamp));
+        assert_eq!(decode(&packet), Err(KlvDecodeError::BadTimestamp));
     }
 
     #[test]
     fn checksum_mismatch_outranks_a_bad_timestamp() {
         let absent = KlvBuilder::new().version(9).build_bad_checksum();
-        assert!(matches!(decode(&absent), Err(Error::BadChecksum { .. })));
+        assert!(matches!(
+            decode(&absent),
+            Err(KlvDecodeError::BadChecksum { .. })
+        ));
         let short = KlvBuilder::new().tag(2, &[0; 7]).build_bad_checksum();
-        assert!(matches!(decode(&short), Err(Error::BadChecksum { .. })));
+        assert!(matches!(
+            decode(&short),
+            Err(KlvDecodeError::BadChecksum { .. })
+        ));
     }
 
     #[test]
     fn wrong_key_is_bad_key() {
         let mut packet = KlvBuilder::new().timestamp(1).build();
         packet[0] = 0x00; // break the UL key
-        assert_eq!(decode(&packet), Err(Error::BadKey));
+        assert_eq!(decode(&packet), Err(KlvDecodeError::BadKey));
     }
 
     #[test]
@@ -535,7 +553,7 @@ mod decode_tests {
     fn item_claiming_more_bytes_than_the_input_is_truncated() {
         let mut v = UAS_LS_KEY.to_vec();
         v.extend_from_slice(&[0x03, 0x02, 0x08, 0x00]); // Tag 2 claims 8 bytes, 1 present
-        assert!(matches!(decode(&v), Err(Error::Truncated { .. })));
+        assert!(matches!(decode(&v), Err(KlvDecodeError::Truncated { .. })));
     }
 }
 
@@ -574,7 +592,10 @@ mod precision_timestamp_tests {
     #[test]
     fn wrong_length_timestamp_is_bad_timestamp() {
         let packet = KlvBuilder::new().tag(2, &[0; 4]).build();
-        assert_eq!(precision_timestamp(&packet), Err(Error::BadTimestamp));
+        assert_eq!(
+            precision_timestamp(&packet),
+            Err(KlvDecodeError::BadTimestamp)
+        );
     }
 
     #[test]
@@ -611,7 +632,7 @@ mod bytes_feature_tests {
         set.sensor_latitude_degrees = FieldState::Value(f64::NAN);
         assert_eq!(
             encode_to_bytes(&set),
-            Err(EncodeError::OutOfRange { tag: 13 })
+            Err(KlvEncodeError::OutOfRange { tag: 13 })
         );
     }
 }
